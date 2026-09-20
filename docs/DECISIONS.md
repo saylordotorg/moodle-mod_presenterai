@@ -40,6 +40,10 @@ It says grades are computed over `status = 'scored'` rows so "a retention-delete
 **C4. Hiding the `mod_url` stand in breaks what it protects.** The prior plan sets `course_modules.visible = 0`, which makes the module unavailable to students entirely, so every preserved bookmark returns "not available". The correct field is `visibleoncoursepage`, which needs `$CFG->allowstealth` (`lib/modinfolib.php:1009-1012`). See D15.
 
 **C5. The prior plan's frame numbers are wrong.** It specifies 9 frames at 512 px extracted by ffmpeg. The shipped implementation is 6 frames in 426 by 240 cells composited into one contact sheet at JPEG quality 0.72, sampled in the browser from the middle 80 percent of the recording (`amd/src/soapbox_frames.js:48-56,73`). Use the shipped numbers, and treat the cost estimate built on the old ones as void.
+**C6. A learner already reads unreviewed model prose derived from the raw note. The channel exists, it is just unnamed.**
+C1 is correct that nothing renders `session_meta['visual_observation']` itself. It is not correct that nothing derived from it reaches the learner. The raw note is written into the scoring prompt at `classes/external/score_speech.php:209-215`, the model produces per criterion `feedback` for the two visual criteria out of it, that feedback is read back at `soapbox_present.php:289` and rendered at `templates/soapbox_present.mustache:183`. So a learner already reads model prose about their body today. It is shorter than the note and it is attached to a criterion name, and nothing checks it. This changes what D21 has to cover: a gate across a new summary alone would leave the older channel open.
+
+**C7. There is no `json_parser` class in SOLA.** `IMPLEMENTATION-PLAN.md:760` lists `json_parser` in the phase 3 build and section 5.8 says asking the vision pass for JSON "costs one parse that `json_parser` already does for scoring". A repo wide grep for `json_parser` across `/Users/tom.caswell/ai-projects/ai_course_assistant` returns zero hits. Scoring parses inline: `json_decode` at `classes/external/score_speech.php:285`, a regex brace extraction fallback at `:287-289`, and a give up at `:291-293`. The conclusion survives, the parse is genuinely cheap and already happens, but `json_parser` is a class PresenterAI is planning to write, not one it can point at.
 
 ---
 
@@ -101,3 +105,81 @@ The prior plan's fixed 5 MB chunks fail on stock PHP (`post_max_size` 8M, `uploa
 
 **D20. A rate limiter and SSRF validation on admin entered endpoints are in scope for v1.**
 SOLA has both (`classes/soapbox_gesture_vision.php:85,88,161`, `soapbox_transcribe.php:52,133,150`) and the prior plan had neither. A public plugin that presigns uploads, calls paid models, and will POST a learner's audio to whatever host an admin pastes needs both before it goes near the plugin directory.
+
+**D21. The learner sees a rewritten summary of the body language evidence, never the raw note, and the same gate covers the criterion feedback that already reaches them.**
+Recorded 20 September 2026, settling plan section 9.1 in favour of its option (c). Full design in [DESIGN-visual-feedback-and-retention.md](DESIGN-visual-feedback-and-retention.md).
+
+The learner gets a short second person summary of what the sampled frames showed, generated as one extra field in the scoring call's structured response and checked before it is stored. The raw vision output stays on the recording for staff and for a privacy export, on the `visualdatadays` clock D5 already gives it. This is what makes the no consent decision (question 8) rest on something that exists, which C1 records that it never did.
+
+Three things follow that are part of the decision rather than implementation detail.
+
+The gate runs over the two visual criterion feedback strings as well as the summary, because of C6: the criterion channel is live today and is unchecked. A gate on the new field alone would have been theatre.
+
+A rejected string is never retried. It is replaced by a deterministic template built from the scores already in hand, and the plugin fires an event. A model that has just written a banned sentence is not reliably better on the second attempt, and paying the full prompt cost to find out is not a control.
+
+A rejection on a criterion's feedback sets that criterion to `assessed = false`, so it leaves both sums in `compute_overall()` (`classes/rubric_manager.php:355-366`). Keeping a mark whose only written explanation the plugin judged unfit to show is the worst of the available positions, and the mechanism that removes it already exists and is already tested.
+
+*Rejected: show the raw note.* It is unreviewed model prose about a named person's body and the shipped prompt's appearance bar is a request, not an enforcement (`classes/soapbox_gesture_vision.php:44-51` says so in the source).
+
+*Rejected: show nothing and re-take question 8 on a per instance opt in.* D17 already makes body language a per instance opt in, so that would have delivered nothing new, and it leaves the C6 channel exactly as it is.
+
+*Rejected: have the vision pass write the learner facing summary as well as the staff note.* It is free and it is the only model that has seen pixels, but it puts the model that is looking at a person's body closest to the learner, and it does not know the scores, so its summary cannot be anchored to the rubric.
+
+*Rejected: a second, dedicated rewrite call.* Its one real advantage is a cheap retry, and the no retry rule above removes it.
+
+*Rejected: a deterministic template with no model pass as the primary.* It can state the scores and it cannot state what the camera saw, and what the camera saw is the whole content of the transparency this decision exists to provide. It is kept as the fallback, where it is load bearing.
+
+**D22. Automatic deletion is off by default. Two admin options sit on top of it: whether learners may download their own recording, and deletion after X days with a notice that cannot be switched off.**
+Recorded 20 September 2026, settling plan section 9.2 in favour of its option (a). Full design in [DESIGN-visual-feedback-and-retention.md](DESIGN-visual-feedback-and-retention.md).
+
+Site `retentiondays` defaults to 0, which means nothing deletes a recording on a clock. `allowlearnerdownload` defaults to 1. Saylor sets `retentiondays = 7` explicitly on both sites, which is carried decision 7 stated rather than inherited. `expiresat = 0` already means never to the cleanup query (`classes/task/soapbox_cleanup.php:56-58`), so this is a clamp change and a settings change, as D5 says, and `RETENTION_MAX_DAYS = 28` (`classes/soapbox_config.php:41`) goes with it.
+
+Four things follow that are part of the decision.
+
+`storedattempts` defaults to 0, meaning keep every attempt's media. The plan currently has `DEFAULT="2"` (`IMPLEMENTATION-PLAN.md:105`) and the `max(1, ...)` floor at `classes/task/soapbox_cleanup.php:93` makes pruning unconditional. Pruning is a second deletion path with no clock and no notice, so a default of 2 would destroy a learner's first recording the moment they start their third, on a site whose stated default is keep forever. Keep forever is not honoured by the retention setting alone.
+
+No implicit change ever shortens an existing recording's life. `expiresat` is written once at finalize and a settings change never rewrites it. Turning deletion on does not backfill from `timecreated`, and turning deletion off does not cancel dates already shown to learners. Shortening always requires `cli/apply_retention.php` with an explicit basis, which D5 already called for.
+
+The notice is not a setting and there is no way to suppress it. Every learner facing sentence about deletion is derived from the effective instance value before recording and from the row afterwards, never from `get_config()` at render time. SOLA gets this half right and half wrong in one file: the per attempt date comes from the row (`soapbox_present.php:255-256`) while four paragraphs around it come from the live setting (`:128-131,155-159,162-166,167-170`), so the prose starts lying the moment an admin changes the window.
+
+Download and deletion are governed separately. `allowlearnerdownload` controls what a learner may keep of their own face. A grader taking a copy away is a different act and runs on `mod/presenterai:downloadany`, which is not implied by `viewallattempts` and carries `RISK_PERSONAL`. One setting cannot mean both things.
+
+*Rejected: refusing to save deletion on with download off.* It is a defensible institutional policy, that assessment evidence must not leave the platform, and the plugin does not have the context to overrule it. It gets a loud admin warning and a mandatory learner sentence before recording instead.
+
+*Rejected: a per activity download switch in v1.* Retention per activity is reasonable, because a weekly practice and a capstone are different artefacts. Download is a statement about a learner's own recorded face and differing by activity is something no learner can explain and no support person can defend. The per course lever already exists as a role override on the capability. The forward rule is fixed now so the field can be added later without a migration: a per activity download setting may only tighten the site setting, never loosen it.
+
+*Rejected: letting `visualdatadays` take 0 to mean forever.* Under the media semantics 0 means forever, and here that would restore the exact state D5 exists to abolish. The minimum is 1 and there is no forever option. The two clocks do not share semantics and the settings page says so.
+
+---
+
+## Part 4: open questions these two decisions raised
+
+These are **new information produced by designing 9.1 and 9.2**, not a reopening of either. D21 and D22 stand as taken. What the design work found is that both of them sit on top of an older assumption nobody has written down as a decision, and on four smaller choices the plan never made. They belong in `IMPLEMENTATION-PLAN.md` section 9 when it is next updated and are numbered to continue it.
+
+**9.17 Do the two visual criteria contribute to the gradebook in v1?** This is the largest of the six and it is the one D21 cannot answer, because D21 is about the words and this is about the mark.
+
+The two shipped visual criteria score a body. `classes/rubric_manager.php:80-100` makes "open hands that mark structure", "a steady stance", "weight that stays settled", "looking at the camera lens" and "facial expression that matches what you are saying" into scored criteria, and names "fidgeting, rocking or pacing" as scored distracting habits. Section 6 of the plan (`IMPLEMENTATION-PLAN.md:604`) turns that score into a gradebook number, which Soapbox never had.
+
+A learner who uses a wheelchair produces evidence in which the hands sit low and often out of frame, and passes every layer of D21's gate cleanly, because nothing the gate checks is violated: the prose is about hands, posture and framing, it names no protected term, and the judge is told to accept a negative observation about what the hands did. The output is a correct, well phrased sentence next to a low mark. The same walk holds for a tremor against "fidgeting", for a learner who does not look at lenses, and for facial paralysis against "facial expression that matches what you are saying". Nothing in the 930 line plan addresses it: `grep -n "disab\|accessib\|wheelchair\|accommodat\|exempt\|opt out"` over `IMPLEMENTATION-PLAN.md` returns one hit and it is about the video player's UI at line 768.
+
+*Options:* (a) drop body language from v1 entirely and ship the five spoken criteria, which removes the vision pass, the frame sampler, `visualevidence`, the gate, the deny lists, the judge, the new capability and the new event; (b) ship body language unscored, as a labelled camera and framing check that contributes nothing to `rawsum`, `rawmax` or any outcome; (c) ship it scored as designed.
+*Recommendation:* (b). Under (b) everything D21 specifies stays and is worth having, because a summary that carries no mark cannot discriminate in a grade, and the whole of D21's gate still earns its keep on the words. (a) is the cheaper answer if the date matters more than the feature. (c) is the one shape that should not ship: a graded criterion for gestures, assessed by a model from six thumbnails, in a course with no instructor, no moderation and no appeal (`IMPLEMENTATION-PLAN.md:612`).
+
+One line of the scoring prompt is load bearing here and is currently pointed the wrong way. `classes/external/score_speech.php:212-214` tells the model "Scoring 0 with `assessed` true means you could see the behaviour and it was absent", which steers a learner whose behaviour is visibly and permanently absent toward an assessed zero rather than toward the one flag that would have removed the criterion from both sums. `:327` then defaults an absent flag to true. If the answer to 9.17 is (c), that sentence needs the counterweight described in the design document. Under (a) or (b) the question does not arise.
+
+**9.18 Does a learner get a per attempt opt out from body language assessment?** Today the only route out is a teacher setting the instance to audio (D17), and at Saylor there is no teacher. So a learner who does not want a model judging their body has one option, which is not to submit.
+
+The machinery is already built and free. `classes/rubric_manager.php:255-257` strips the visual criteria out of the rubric entirely when there is no evidence, so they never enter the prompt and never enter the allowlist at `classes/external/score_speech.php:154-164`, and `compute_overall()` at `classes/rubric_manager.php:355-366` excludes them from numerator and denominator alike. A checkbox that sets the evidence flag false costs no model call and no grade.
+*Recommendation:* ship it, with two conditions or it is theatre. The frames must not be uploaded at all when it is ticked, rather than uploaded and ignored. And the page must say the score is computed over the remaining criteria, so ticking it does not read as forfeiting marks.
+Note this is the clean answer to the disability question in 9.17 that does not require the system to detect a disability, which would mean inferring health data from six stills.
+
+**9.19 Who reads the staff side of this at Saylor, and what should Saylor set `storevisualevidence` to?**
+D21 keeps the raw note for staff and for a privacy export, and the design adds a staff only log of gate rejections so the deny list can be tuned. At Saylor nobody holds `teacher`, `editingteacher` or `manager` in a course, so the grading screen has no reader and the admin report has no reader. The export route is also thinner than it looks: the note expires at 30 days and the statutory response window for a subject access request is one month, so by the time most requests are answered the field is already null.
+The design therefore makes storing the raw note a site setting, `storevisualevidence`, default on, which is what D21 decided. What is open is the operational answer: does Saylor turn it off, and if the answer is that nobody reads the rejection report either, then the report is not a control and should not be described as one.
+
+**9.20 Is there a per activity download setting?** D22 ships site setting plus capability and fixes the forward rule. The plan never mentioned a download setting at all: `grep -i download IMPLEMENTATION-PLAN.md` returns five hits, all of which assume download is unconditional. If a per activity field is wanted it is cheap to add later under the tighten only rule, and it should not be added on a guess.
+
+**9.21 Can a learner delete their own recording?** "Kept until it is deleted" is a lie on a keep forever site if the learner cannot be one of the people who deletes it. Under a 7 day clock a learner who regretted a recording waited a week; under D22's default their face is on the site indefinitely with no self service answer. `delete_recording` is in the phase 1 list (`IMPLEMENTATION-PLAN.md:752`) with no stated caller, and the plan names only two capabilities anywhere (`:466`, `:492`).
+*Recommendation:* yes, behind `mod/presenterai:deleteownmedia`, deleting the media only. It is safe precisely because the score row survives, so the attempt still counts toward the grade and toward the attempt cap and deleting media cannot be used to escape a bad mark.
+
+**9.22 Does PresenterAI ship the 45 non English locales?** SOLA has 46 `lang` directories. Phase 0 names only `lang/en/presenterai.php` (`IMPLEMENTATION-PLAN.md:749`) and no phase mentions translation. The learner facing strings for these two decisions alone are 34 keys, which is 1,530 translated strings at 45 locales. That is the number, and it should be decided rather than discovered. Note the related trap: SOLA's own parity test carries 68 privacy strings in an identical to English backlog (`tests/lang_completeness_test.php:796`), which passes a parity gate while a learner making a data request reads English.
