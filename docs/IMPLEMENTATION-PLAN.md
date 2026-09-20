@@ -820,7 +820,93 @@ If yes, the filesystem backend needs `tokenpluginfile.php` URLs, which are beare
 *Options:* (a) no app support in v1; (b) app support with token URLs and a short expiry.
 *Recommendation:* (a). Saylor is on S3, where the URL is already a bearer token, so this costs Saylor nothing and keeps the filesystem story clean for everyone else.
 
+### Facts established, 20 September 2026
+
+All six were measured rather than reasoned about. Redash against both production
+sites, and the public Moodle plugin directory. **One of them changes the shape of
+this project, so read 9.15 first.**
+
+**9.15 THE IMPORTANT ONE: there is no production Soapbox data to migrate.**
+
+|  | learn.saylor.org | degrees.saylor.org |
+|---|---|---|
+| `soapbox_enabled` (site) | `0` | `0` |
+| per-course overrides ON | none | one, course 16 |
+| assignments | 0 | 0 |
+| topics | 0 | 0 |
+| **recordings** | **0** | **0** |
+| distinct learners with a recording | 0 | 0 |
+| speech scores | 0 | 1 |
+| all practice_scores rows | 0 | 1 |
+
+The databases are certainly the right ones: the same queries return 209,756
+messages and 15,717 chat users on learn, and 141,696 messages and 1,237 users on
+degrees. SOLA is heavily used. Soapbox is simply switched off.
+
+Three consequences, and they are not small.
+
+1. **Migration is not a gate on SOLA 8.0 for Saylor.** The entire "removing
+   Soapbox deletes student work" argument, which is why the tables were separated
+   from the code removal, rests on there being student work. For Saylor there is
+   one score row and no recordings at all. The argument still holds in principle
+   for any other site running SOLA, and the code removal and table drop should
+   still be separated for them, but the urgency was mine rather than the
+   evidence's.
+2. **The migrator can move down the build order.** It was phased early because it
+   blocked a deadline. It does not.
+3. **Nothing shipped for Soapbox in v7.5.0, v7.5.1 or v7.5.2 has ever run in
+   production.** Both sites run plugin build `2026091001`, which is v7.4.1. That
+   does not make the defects fixed in those releases imaginary, they were real and
+   the dev fleet runs them, but it does mean no learner was ever affected by any
+   of them. The body-language observation that outlived its video never wrote a
+   row on a production site, and the course purge that kept transcripts never had
+   a Soapbox transcript to keep.
+
+**9.11 Both production sites run Moodle 4.5.13+ (Build 20260903).**
+So the 5.x core AI instance API is not reachable on any Saylor site today. This
+settles 9.4 in favour of option (a): target 4.5 and carry the version branch, or
+the core AI requirement does not exist on the only sites we run.
+
+**9.12 `mod_presenterai` is free.** `moodle.org/plugins/mod_presenterai` and
+`marketplace.moodle.com/plugins/mod_presenterai` both return 404, where a
+published plugin such as `mod_hvp` returns 200. No rename needed.
+
+Worth recording while it was checked: `local_ai_course_assistant` returns a 302
+to a login flow rather than a 404, so SOLA **is** registered in the marketplace
+and the page exists behind authentication. It is not publicly published, which is
+a different state from not being listed at all.
+
+**9.13 Zero topic PDFs on both sites.** `pdf_itemid <> 0` returns 0. The topic
+file migration stays out of scope, as the prior plan assumed.
+
+**9.14 No shared or dangling score links**, trivially, because there are no
+recordings. Nothing for the duplicate check in section 7.2 to trip on today, so
+that check exists for other sites and for safety rather than for Saylor.
+
+**9.16 Storage configuration, both sites identical:**
+
+| setting | value |
+|---|---|
+| bucket | `saylor-soapbox-prod` |
+| prefix | `soapbox/` |
+| region | `us-east-1` |
+| retention | 7 days |
+| `allowstealth` | 1 |
+
+Note this is a **dedicated bucket**, not the shared `archive-course` default this
+plan assumed from the SOLA source. That makes 9.3 much easier: a lifecycle rule
+on that bucket affects nothing but Soapbox, and with zero objects in it there is
+nothing to strand. `allowstealth = 1` means stand-in modules can be hidden from
+the course page while remaining available, which 7.4 wanted.
+
+---
+
 ### Facts I could not establish. These need a query or a console, not a decision.
+
+*(All six are now answered above. This heading is kept so the numbering in section 9 still resolves.)*
+
+#### Original list, superseded
+
 
 **9.11** Which Moodle version learn.saylor.org and degrees.saylor.org run today, and Catalyst's upgrade timeline. This decides whether the 5.x core AI path is reachable at all (9.4).
 **9.12** Whether `presenterai` is free in the Moodle plugin directory. A clash means a rename touching every file, table and string, so check before phase 0 ends.
