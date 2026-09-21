@@ -762,8 +762,15 @@ Building both stores here is a change from the prior plan, which had S3 in phase
 The prior plan had body language as its own phase because it was new work. It is a port with named source files and shipped tests, so it folds in here, which also means both features in the original brief are delivered before migration work starts, a better place to be if migration slips.
 *Ships:* everything today's Soapbox does, as an activity, with grades.
 
-**Phase 4. Migration. This phase is on SOLA 8.0's critical path.** `migration/from_local_aica`, `presenterai_migration_map`, `presenterai_migreport`, `cli/migrate_from_local.php`, `migrate.php`, the verification tiers, `--rollback`, the SOLA side interlock in `soapbox_cleanup::execute()`, `migration_test`, and the written runbook. Rollout dev, degrees, learn.
-*Ships:* Saylor can cut over, and SOLA 8.0 is unblocked.
+**Phase 4. Migration. No longer on SOLA 8.0's critical path, see 9.15.** `migration/from_local_aica`, `presenterai_migration_map`, `presenterai_migreport`, `cli/migrate_from_local.php`, `migrate.php`, the verification tiers, `--rollback`, the SOLA side interlock in `soapbox_cleanup::execute()`, `migration_test`, and the written runbook. Rollout dev, degrees, learn.
+*Ships:* Saylor can cut over, and SOLA 8.0 is unblocked for any site that has Soapbox data.
+
+This phase was written when migration was believed to gate SOLA 8.0. The measured answer to
+9.15 is that both Saylor sites have Soapbox switched off with zero recordings, so for Saylor
+there is nothing to migrate and 8.0 is already unblocked. The phase stays, because the plugin
+is public and another site may have data, and because the SOLA-side interlock in
+`soapbox_cleanup::execute()` is worth having either way. It no longer has to come before
+phase 5, and it is the first thing to cut if time is short.
 
 **Phase 5. Polish and publish.** Deck page caching into a `deckpage` file area returning pluginfile URLs, replacing the base64 data URI response that today re-renders a multi megabyte JSON payload through Ghostscript on every playback. Behat features, `monologo.svg` and icon, accessibility pass on the player and recorder, string review, plugin directory submission.
 
