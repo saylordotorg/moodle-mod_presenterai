@@ -18,7 +18,10 @@ jobs:
 
     services:
       postgres:
-        image: postgres:14
+        # 16, not 14: Moodle 5.1 requires PostgreSQL 15 or later, and a failed
+        # install makes every later step report "missing argument: plugin",
+        # which looks like a workflow syntax error rather than a database one.
+        image: postgres:16
         env:
           POSTGRES_USER: 'postgres'
           POSTGRES_HOST_AUTH_METHOD: 'trust'
