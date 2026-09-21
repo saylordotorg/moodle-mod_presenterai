@@ -140,3 +140,113 @@ function presenterai_delete_instance($id) {
 
     return true;
 }
+
+/**
+ * Serve a file from one of this module's file areas.
+ *
+ * Follows folder_pluginfile() (mod/folder/lib.php:261-294) in shape, and departs
+ * from it in three places that matter:
+ *
+ * 1. Authorisation is per request, which is the property that makes the
+ *    filesystem backend different from a presigned S3 URL. A learner who is
+ *    unenrolled, or whose capability is revoked, stops being able to play the
+ *    recording on their next request rather than when a signature expires.
+ * 2. The recording row is loaded and checked against the URL. The itemid and the
+ *    filename in the URL are only a claim until the row that owns the media
+ *    agrees with them.
+ * 3. Cacheability is stated rather than left to default. With a lifetime of 0
+ *    send_file() already emits a private, non-cacheable response
+ *    (lib/filelib.php:2617-2627), so this is not what makes the response private
+ *    today. It is stated because the default for a non-zero lifetime is public
+ *    (lib/filelib.php:2601-2609), and a shared proxy holding a copy of a
+ *    learner's face and voice is not a mistake worth leaving one edit away.
+ *
+ * @param stdClass $course The course object.
+ * @param stdClass $cm The course module.
+ * @param context $context The module context.
+ * @param string $filearea The file area being requested.
+ * @param array $args Remaining URL path segments: itemid then the filename.
+ * @param bool $forcedownload Whether the file should download rather than play inline.
+ * @param array $options Options passed through to send_stored_file().
+ * @return bool False if the file is not found or not permitted; otherwise does not return.
+ */
+function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $args, $forcedownload, array $options = []) {
+    global $CFG, $DB, $USER;
+
+    require_once($CFG->libdir . '/filelib.php');
+
+    if ($context->contextlevel != CONTEXT_MODULE) {
+        return false;
+    }
+
+    // The column on the recording row that must agree with the requested
+    // filename, per file area. An area not listed here is not ours to serve.
+    $keycolumns = [
+        'recording' => 'storagekey',
+        'deck' => 'deckkey',
+        'frames' => 'frameskey',
+    ];
+    if (!isset($keycolumns[$filearea])) {
+        return false;
+    }
+
+    require_login($course, false, $cm);
+
+    $itemid = (int) array_shift($args);
+    $filename = array_pop($args);
+    if ($itemid <= 0 || $filename === null || $filename === '') {
+        return false;
+    }
+    // fs_store writes every file at the root of its area, so anything left
+    // between the itemid and the filename is not a path this module created.
+    if (!empty($args)) {
+        return false;
+    }
+
+    $recording = $DB->get_record(
+        'presenterai_recording',
+        ['id' => $itemid, 'presenteraiid' => $cm->instance],
+        'id, userid, storagekey, deckkey, frameskey'
+    );
+    if (!$recording) {
+        return false;
+    }
+
+    // The row is the authority on which bytes belong to this attempt. Without
+    // this, any file that ever existed in the area could be fetched by naming it.
+    if ((string) $recording->{$keycolumns[$filearea]} !== (string) $filename) {
+        return false;
+    }
+
+    if ((int) $recording->userid !== (int) $USER->id) {
+        require_capability('mod/presenterai:viewallattempts', $context);
+    } else if ($forcedownload) {
+        // Keeping a copy is a separate decision from watching it back, so a site
+        // can show a learner their own recording without letting it leave.
+        require_capability('mod/presenterai:downloadown', $context);
+    }
+
+    $fs = get_file_storage();
+    $file = $fs->get_file($context->id, 'mod_presenterai', $filearea, $itemid, '/', $filename);
+    if (!$file || $file->is_directory()) {
+        return false;
+    }
+
+    if (!$forcedownload) {
+        // The bytes came from a browser, so they are learner supplied. Served
+        // inline they must not be able to reach anything else on the site.
+        header("Content-Security-Policy: default-src 'none'; media-src 'self'; img-src 'self'");
+    } else {
+        // fs_store's key is a random token, which is not a filename anyone wants
+        // saved. read_url() puts the intended name here and it is re-cleaned
+        // rather than trusted, because it arrives from the URL.
+        $downloadname = optional_param('dl', '', PARAM_FILE);
+        if ($downloadname !== '') {
+            $options['filename'] = $downloadname;
+        }
+    }
+
+    $options['cacheability'] = 'private';
+
+    send_stored_file($file, 0, 0, $forcedownload, $options);
+}
