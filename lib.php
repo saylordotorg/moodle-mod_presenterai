@@ -197,7 +197,7 @@ function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $ar
     if ($itemid <= 0 || $filename === null || $filename === '') {
         return false;
     }
-    // fs_store writes every file at the root of its area, so anything left
+    // The fs_store backend writes every file at the root of its area, so anything left
     // between the itemid and the filename is not a path this module created.
     if (!empty($args)) {
         return false;
@@ -237,7 +237,7 @@ function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $ar
         // inline they must not be able to reach anything else on the site.
         header("Content-Security-Policy: default-src 'none'; media-src 'self'; img-src 'self'");
     } else {
-        // fs_store's key is a random token, which is not a filename anyone wants
+        // The fs_store key is a random token, which is not a filename anyone wants
         // saved. read_url() puts the intended name here and it is re-cleaned
         // rather than trusted, because it arrives from the URL.
         $downloadname = optional_param('dl', '', PARAM_FILE);

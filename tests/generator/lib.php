@@ -30,7 +30,6 @@ defined('MOODLE_INTERNAL') || die();
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class mod_presenterai_generator extends testing_module_generator {
-
     /**
      * Create a PresenterAI activity instance.
      *

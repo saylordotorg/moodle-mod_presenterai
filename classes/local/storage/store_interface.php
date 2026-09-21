@@ -39,7 +39,6 @@ namespace mod_presenterai\local\storage;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 interface store_interface {
-
     /**
      * Short machine name of this backend, 's3' or 'fs'.
      *

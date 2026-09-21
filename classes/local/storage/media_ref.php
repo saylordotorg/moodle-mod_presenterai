@@ -34,7 +34,6 @@ namespace mod_presenterai\local\storage;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class media_ref {
-
     /** @var string The learner's recording itself. */
     public const KIND_RECORDING = 'recording';
 
@@ -45,6 +44,8 @@ final class media_ref {
     public const KIND_FRAMES = 'frames';
 
     /**
+     * Build a reference to one piece of media.
+     *
      * @param int $recordingid The attempt this belongs to. Zero only during
      *        begin_upload, before the row exists.
      * @param int $contextid The module context id.

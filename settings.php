@@ -32,7 +32,6 @@ defined('MOODLE_INTERNAL') || die();
 use mod_presenterai\local\storage\store_factory;
 
 if ($ADMIN->fulltree) {
-
     // Storage.
 
     $settings->add(new admin_setting_heading(
@@ -95,7 +94,7 @@ if ($ADMIN->fulltree) {
         PARAM_RAW_TRIMMED
     ));
 
-    // configpasswordunmask rather than configtext: it masks the stored value in
+    // Using configpasswordunmask rather than configtext: it masks the stored value in
     // the form and writes '********' to the config change log
     // (lib/adminlib.php:2757-2765) instead of the secret itself.
     $settings->add(new admin_setting_configpasswordunmask(
@@ -143,8 +142,10 @@ if ($ADMIN->fulltree) {
     // display only: the values stay in the database and stay valid, which
     // matters because rows written while S3 was selected still have to be
     // readable after a switch (plan section 4.7).
-    foreach (['s3bucket', 's3region', 's3key', 's3secret', 's3prefix', 's3endpoint',
-            's3pathstyle', 's3lifecycledays'] as $s3setting) {
+    foreach (
+        ['s3bucket', 's3region', 's3key', 's3secret', 's3prefix', 's3endpoint',
+            's3pathstyle', 's3lifecycledays'] as $s3setting
+    ) {
         $settings->hide_if(
             'mod_presenterai/' . $s3setting,
             'mod_presenterai/backend',

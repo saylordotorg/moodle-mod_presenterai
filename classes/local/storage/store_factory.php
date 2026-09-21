@@ -47,7 +47,6 @@ namespace mod_presenterai\local\storage;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class store_factory {
-
     /** @var string Moodle's own file storage. The default, see plan section 4.8. */
     public const BACKEND_FS = 'fs';
 

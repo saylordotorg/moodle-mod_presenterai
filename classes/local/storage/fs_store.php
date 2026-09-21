@@ -42,7 +42,6 @@ namespace mod_presenterai\local\storage;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class fs_store implements store_interface {
-
     /** @var string Backend name, written to presenterai_recording.backend. */
     public const NAME = 'fs';
 
@@ -268,7 +267,7 @@ final class fs_store implements store_interface {
                         }
                         continue;
                     }
-                    // fwrite() returns a SHORT COUNT, not false, when it cannot
+                    // PHP's fwrite() returns a SHORT COUNT, not false, when it cannot
                     // write the whole buffer: a quota boundary, a full disk, an
                     // NFS hiccup. Adding that short count to $written and then
                     // reading the next block discards the unwritten tail, and
@@ -626,7 +625,7 @@ final class fs_store implements store_interface {
         }
 
         try {
-            // locate() returning null covers two situations that must not get the
+            // A null from locate() covers two situations that must not get the
             // same answer, so they are separated here.
             //
             // A row still references this key and the stored file is already
@@ -884,7 +883,7 @@ final class fs_store implements store_interface {
             $site = self::DEFAULT_MAX_MEDIA_BYTES;
         }
 
-        // get_max_upload_file_size() returns -1 for unlimited, which must not
+        // Moodle's get_max_upload_file_size() returns -1 for unlimited, which must not
         // win a min().
         $moodlemax = (int) get_max_upload_file_size($CFG->maxbytes);
         if ($moodlemax <= 0) {

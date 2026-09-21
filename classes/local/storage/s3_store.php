@@ -46,7 +46,6 @@ namespace mod_presenterai\local\storage;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class s3_store implements store_interface {
-
     /** @var string Backend name stored on presenterai_recording.backend. */
     public const NAME = 's3';
 
@@ -193,7 +192,7 @@ class s3_store implements store_interface {
         if ($ref->key === '') {
             throw new \coding_exception('s3_store::commit_upload needs a ref carrying the key begin_upload minted');
         }
-        // null, never 0. store_interface is explicit that a caller treats null
+        // Null, never 0. store_interface is explicit that a caller treats null
         // as a failed attempt rather than an empty one, and fs_store already
         // returns null here. A zero would be reported as a successful upload of
         // nothing.
@@ -316,7 +315,7 @@ class s3_store implements store_interface {
             'followlocation' => true,
         ]);
 
-        // curl is not asked to fail on an HTTP error, so a 403 or a 404 writes
+        // The curl handle is not asked to fail on an HTTP error, so a 403 or a 404 writes
         // S3's XML error document into the file and download_one still reports
         // success. Without this check the transcriber would be handed a few
         // hundred bytes of XML and would report a learner who said nothing.
@@ -432,19 +431,28 @@ class s3_store implements store_interface {
             $curl = self::new_curl();
             $curl->put($this->sign('PUT', $key, 300), $payload);
             $code = (int) ($curl->get_info()['http_code'] ?? 0);
-            $steps[] = self::step('write', $code >= 200 && $code < 300,
-                'Presigned PUT returned HTTP ' . $code . '.');
+            $steps[] = self::step(
+                'write',
+                $code >= 200 && $code < 300,
+                'Presigned PUT returned HTTP ' . $code . '.'
+            );
 
             $size = $this->size($key);
-            $steps[] = self::step('size', $size === strlen($payload),
+            $steps[] = self::step(
+                'size',
+                $size === strlen($payload),
                 $size === null ? 'Signed HEAD found no object.'
-                    : 'Signed HEAD reported ' . $size . ' bytes, expected ' . strlen($payload) . '.');
+                : 'Signed HEAD reported ' . $size . ' bytes, expected ' . strlen($payload) . '.'
+            );
 
             $readback = $this->read_bytes($key, 1024);
-            $steps[] = self::step('read', $readback === $payload,
+            $steps[] = self::step(
+                'read',
+                $readback === $payload,
                 $readback === null ? 'Signed GET returned nothing readable.'
                     : ($readback === $payload ? 'Signed GET returned the same bytes that were written.'
-                        : 'Signed GET returned different bytes than were written.'));
+                : 'Signed GET returned different bytes than were written.')
+            );
 
             $steps[] = $this->check_unsigned_get_refused($key);
             $steps[] = $this->check_cors_preflight($key);
@@ -457,9 +465,12 @@ class s3_store implements store_interface {
             $steps[] = self::step('exception', false, get_class($e) . ': ' . $e->getMessage());
         } finally {
             $gone = $this->delete($key);
-            $steps[] = self::step('delete', $gone,
+            $steps[] = self::step(
+                'delete',
+                $gone,
                 $gone ? 'Signed DELETE removed the test object.'
-                    : 'Signed DELETE failed; a stray object may remain at ' . $key . '.');
+                : 'Signed DELETE failed; a stray object may remain at ' . $key . '.'
+            );
         }
 
         return $steps;
@@ -481,12 +492,18 @@ class s3_store implements store_interface {
         $curl->get($this->object_url($key));
         $code = (int) ($curl->get_info()['http_code'] ?? 0);
         if ($code === 200) {
-            return self::step('private', false,
-                'An unsigned GET succeeded: this bucket is PUBLIC and every stored recording is readable by anyone.');
+            return self::step(
+                'private',
+                false,
+                'An unsigned GET succeeded: this bucket is PUBLIC and every stored recording is readable by anyone.'
+            );
         }
         if ($code === 0) {
-            return self::step('private', false,
-                'An unsigned GET could not be made at all, so it proves nothing: ' . $curl->error);
+            return self::step(
+                'private',
+                false,
+                'An unsigned GET could not be made at all, so it proves nothing: ' . $curl->error
+            );
         }
         return self::step('private', true, 'An unsigned GET was refused with HTTP ' . $code . '.');
     }
@@ -519,9 +536,12 @@ class s3_store implements store_interface {
             }
         }
         if ($allow === '') {
-            return self::step('cors', false,
+            return self::step(
+                'cors',
+                false,
                 'The preflight returned no Access-Control-Allow-Origin, so a browser upload from '
-                . $CFG->wwwroot . ' will fail before it reaches this site.');
+                . $CFG->wwwroot . ' will fail before it reaches this site.'
+            );
         }
         return self::step('cors', true, 'The preflight allows ' . $allow . '.');
     }

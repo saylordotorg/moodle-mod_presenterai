@@ -35,7 +35,6 @@ use mod_presenterai\local\storage\store_factory;
  * @covers     \mod_presenterai\local\storage\store_factory
  */
 final class store_factory_test extends \advanced_testcase {
-
     /**
      * Give the site a complete and plausible S3 configuration.
      *
@@ -189,8 +188,10 @@ final class store_factory_test extends \advanced_testcase {
 
         $store = store_factory::unchecked_store(store_factory::BACKEND_S3);
 
-        $this->assertSame(store_factory::BACKEND_S3, $store->name(
-            ), 'The self test must be able to name the backend it is reporting on.',
+        $this->assertSame(
+            store_factory::BACKEND_S3,
+            $store->name(),
+            'The self test must be able to name the backend it is reporting on.'
         );
         $this->assertFalse(
             $store->is_configured(),

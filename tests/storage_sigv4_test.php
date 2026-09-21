@@ -37,7 +37,6 @@ use mod_presenterai\local\storage\s3_store;
  * @covers     \mod_presenterai\local\storage\s3_store
  */
 final class storage_sigv4_test extends \basic_testcase {
-
     /** @var string The signature AWS publishes for the worked example below. */
     private const AWS_EXAMPLE_SIGNATURE = 'aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404';
 

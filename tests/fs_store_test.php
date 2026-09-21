@@ -34,7 +34,6 @@ use mod_presenterai\local\storage\media_ref;
  * @covers     \mod_presenterai\local\storage\fs_store
  */
 final class fs_store_test extends \advanced_testcase {
-
     /** @var \stdClass The course holding the activity under test. */
     private \stdClass $course;
 
@@ -272,11 +271,16 @@ final class fs_store_test extends \advanced_testcase {
             $path,
             'Transcription and the deck renderer need a real file. A null here means an attempt can never be scored.',
         );
-        $this->assertFileExists($path, 'fetch_to_file(
-            ) returned a path that is not there, so the transcriber reads nothing and reports a silent learner.',
+        $this->assertFileExists(
+            $path,
+            'fetch_to_file() returned a path that is not there, so the transcriber reads nothing '
+                . 'and reports a silent learner.'
         );
-        $this->assertSame($content, file_get_contents(
-            $path), 'The file on disk is not the media that was stored, so the transcript belongs to some other recording.',
+        $this->assertSame(
+            $content,
+            file_get_contents($path),
+            'The file on disk is not the media that was stored, so the transcript belongs to some '
+                . 'other recording.'
         );
     }
 
@@ -355,21 +359,24 @@ final class fs_store_test extends \advanced_testcase {
         $content = str_repeat('z', 2048);
         [$key] = $this->store_media($content);
 
-        $this->assertTrue($this->store->delete(
-            $key), 'A delete an administrator asked for that reports failure stops the row being removed as well.',
+        $this->assertTrue(
+            $this->store->delete($key),
+            'A delete an administrator asked for that reports failure stops the row being removed as well.'
         );
         $this->assertNull(
             $this->store->size($key),
             'The media survived a delete. Retention promises the learner their recording is gone on a date, and a '
                 . 'file still readable after that date is the promise broken.'
         );
-        $this->assertNull($this->store->read_bytes(
-            $key,
-            1024 * 1024), 'Deleted media that still reads back means the bytes were never removed.',
+        $this->assertNull(
+            $this->store->read_bytes($key, 1024 * 1024),
+            'Deleted media that still reads back means the bytes were never removed.'
         );
-        $this->assertSame('', $this->store->read_url(
-            $key,
-            300), 'A URL for media that is gone sends the learner to an error page rather than to the deletion notice.',
+        $this->assertSame(
+            '',
+            $this->store->read_url($key, 300),
+            'A URL for media that is gone sends the learner to an error page rather than to the '
+                . 'deletion notice.'
         );
         $this->assertTrue(
             $this->store->delete($key),
