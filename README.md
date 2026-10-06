@@ -8,9 +8,9 @@ An activity module in which a learner records a video or audio presentation in t
 
 ## Demo video
 
-[![PresenterAI demo video](https://img.youtube.com/vi/z2YVb4LvD6U/maxresdefault.jpg)](https://youtu.be/z2YVb4LvD6U)
+[![PresenterAI demo video](https://img.youtube.com/vi/Apr4pe9IVxI/maxresdefault.jpg)](https://youtu.be/Apr4pe9IVxI)
 
-[Watch the three-minute demo on YouTube](https://youtu.be/z2YVb4LvD6U): an instructor sets up an assignment, a learner presents with slides, and the learner gets rubric scores, written feedback and synced playback. It was recorded on Saylor University's development site, where the presentation feature still runs inside the SOLA course assistant while this standalone activity is built. The narration is AI-generated.
+[Watch the three-minute demo on YouTube](https://youtu.be/Apr4pe9IVxI): an instructor sets up an assignment, a learner presents with slides, and the learner gets rubric scores, written feedback and synced playback. It was recorded on Saylor University's development site, where the presentation feature still runs inside the SOLA course assistant while this standalone activity is built. The narration is AI-generated.
 
 ## What it does
 
