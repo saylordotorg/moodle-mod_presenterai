@@ -49,7 +49,7 @@ class mod_presenterai_generator extends testing_module_generator {
             'minseconds' => 300,
             'maxseconds' => 420,
             'maxattempts' => 0,
-            'storedattempts' => 2,
+            'storedattempts' => 0,
             'slidesenabled' => 0,
             'slidevision' => 0,
             'videovision' => 0,
@@ -63,5 +63,83 @@ class mod_presenterai_generator extends testing_module_generator {
         }
 
         return parent::create_instance($record, $options);
+    }
+
+    /**
+     * Create a recording row directly, without going through the upload flow.
+     *
+     * The defaults describe a finished attempt with media on fs, which is the
+     * state most tests start from. Tests that need another state pass it.
+     *
+     * @param array|stdClass $record Fields for the row, requiring presenteraiid and userid.
+     * @return stdClass The row as read back from the database.
+     */
+    public function create_recording($record): stdClass {
+        global $DB;
+
+        $record = (object) (array) $record;
+        if (empty($record->presenteraiid) || empty($record->userid)) {
+            throw new coding_exception('create_recording needs presenteraiid and userid');
+        }
+        $now = time();
+        $defaults = [
+            'topicid' => null,
+            'attemptnumber' => 1,
+            'mode' => 'video',
+            'backend' => 'fs',
+            'storagekey' => null,
+            'deckkey' => null,
+            'frameskey' => null,
+            'uploadid' => null,
+            'slidetimeline' => null,
+            'durationseconds' => 60,
+            'sizebytes' => 0,
+            'status' => 'uploaded',
+            'expiresat' => 0,
+            'mediadeletedat' => 0,
+            'mediagonereason' => null,
+            'timecreated' => $now,
+            'timemodified' => $now,
+        ];
+        foreach ($defaults as $name => $value) {
+            if (!property_exists($record, $name)) {
+                $record->$name = $value;
+            }
+        }
+
+        $id = $DB->insert_record('presenterai_recording', $record);
+        return $DB->get_record('presenterai_recording', ['id' => $id], '*', MUST_EXIST);
+    }
+
+    /**
+     * Create a topic row for an instance.
+     *
+     * @param array|stdClass $record Fields for the row, requiring presenteraiid.
+     * @return stdClass The row as read back from the database.
+     */
+    public function create_topic($record): stdClass {
+        global $DB;
+
+        $record = (object) (array) $record;
+        if (empty($record->presenteraiid)) {
+            throw new coding_exception('create_topic needs presenteraiid');
+        }
+        $now = time();
+        $defaults = [
+            'title' => 'Topic',
+            'instructions' => '',
+            'instructionsformat' => FORMAT_HTML,
+            'sortorder' => 0,
+            'timecreated' => $now,
+            'timemodified' => $now,
+        ];
+        foreach ($defaults as $name => $value) {
+            if (!property_exists($record, $name)) {
+                $record->$name = $value;
+            }
+        }
+
+        $id = $DB->insert_record('presenterai_topic', $record);
+        return $DB->get_record('presenterai_topic', ['id' => $id], '*', MUST_EXIST);
     }
 }

@@ -24,41 +24,145 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$string['addtopics'] = 'Add another topic';
 $string['allowlearnerdownload'] = 'Learners may download their own recording';
 $string['allowlearnerdownload_desc'] = 'Whether a learner can save a copy of a recording they made. This is the site wide switch; a learner also needs the mod/presenterai:downloadown capability.
 
 It does not affect teachers, graders or managers, who download other people\'s recordings under a separate capability. One setting cannot express both "learners may not circulate recordings" and "a grader may not take evidence to a moderation meeting", so it only means the first.
 
 How quickly turning this off takes effect depends on the storage backend. On Moodle file storage the check runs on every request, so it is immediate. On S3 the check runs when the download link is signed, and a signed link keeps working for about fifteen minutes after that no matter who is holding it, so turning this off leaves a window of that length.';
+$string['attempt_deleted'] = 'Deleted';
+$string['attempt_deleted_on'] = 'Deleted on {$a}';
+$string['attempt_deletes_due'] = 'Due to be deleted';
+$string['attempt_deletes_on'] = 'Deletes on {$a}';
+$string['attempt_gone_learner'] = 'You deleted this recording on {$a}';
+$string['attempt_gone_manual'] = 'Removed on {$a}';
+$string['attempt_gone_missing'] = 'This recording could not be found in storage';
+$string['attempt_gone_notbackedup'] = 'This recording was not included in the backup this course was restored from';
+$string['attempt_gone_note'] = 'No longer available to watch';
+$string['attempt_gone_pruned'] = 'Replaced by a newer attempt on {$a}';
+$string['attempt_kept'] = 'Kept until deleted';
+$string['attempt_never_uploaded'] = 'Not uploaded';
 $string['backend'] = 'Storage backend';
 $string['backend_desc'] = 'Moodle file storage needs no configuration and lets Moodle do the work: backup and restore carry the media, deleting a course deletes it, and privacy requests export and delete it through the standard file handling. S3 keeps the media in a bucket you own and lets the browser upload straight to it, so the media never passes through the web server.
 
 Switching is not a migration. No recording moves and none stops working. Do not clear the S3 settings while recordings made on S3 still exist, because the plugin would then be unable to reach them, including to delete them.';
 $string['backendfs'] = 'Moodle file storage';
 $string['backends3'] = 'S3 compatible bucket';
+$string['cli_applied'] = 'Changed the deletion date of {$a} recordings.';
+$string['cli_badfrom'] = 'Choose a basis with --from=created, --from=now or --from=none. There is no default, because each one changes what learners are told in a different way.';
+$string['cli_dryrun'] = 'Dry run: nothing was changed. Run again with --execute to apply these changes.';
+$string['cli_grace'] = 'Grace floor: no recording will be given a deletion date sooner than {$a} days from now.';
+$string['cli_help'] = 'Change the deletion date of recordings that already exist.
+
+Changing the retention setting only affects recordings made after the change. This tool changes recordings that already exist, and it shows what it would do before it does anything.
+
+Options:
+--from=created|now|none  Required. created: the activity\'s retention counted from when each recording was made. now: the activity\'s retention counted from now. none: remove deletion dates, so recordings are kept until someone removes them.
+--execute                Apply the changes. Without it, this is a dry run.
+--course=ID              Only recordings in this course.
+--instance=ID            Only recordings in this PresenterAI activity.
+--olderthan=DAYS         Only recordings made at least this many days ago.
+--no-grace               With --from=created, allow deletion dates sooner than the grace floor. Requires --force.
+--force                  Apply even when many recordings would become due for deletion within 24 hours.
+-h, --help               Print this help.
+
+Example:
+php mod/presenterai/cli/apply_retention.php --from=now --course=12';
+$string['cli_nogracewithoutforce'] = '--no-grace can set deletion dates in the past, so those recordings are deleted at the next cron run. Add --force to confirm that is what you want.';
+$string['cli_summary'] = 'Basis: {$a->from}
+Recordings in scope: {$a->inscope}
+Recordings whose deletion date would change: {$a->changes}
+Recordings that would become due for deletion within 24 hours: {$a->eligiblesoon}
+Recordings currently kept until someone removes them (no deletion date): {$a->currentlyzero}
+Recordings skipped because their activity keeps recordings until someone removes them: {$a->skippednever}';
+$string['cli_toomanyeligible'] = 'Refused: more than {$a} recordings would become due for deletion within 24 hours. Check the numbers above, then run again with --force if this is what you intend.';
+$string['cli_whatitmeans'] = 'This changes what learners are told about when their recordings are deleted, not only when the cleanup task deletes them. Learners whose recordings currently have no deletion date were told their recording is kept until someone removes it.';
+$string['col_actions'] = 'Actions';
+$string['col_attempt'] = 'Attempt';
+$string['col_length'] = 'Length';
+$string['col_recorded'] = 'Recorded';
+$string['col_recording'] = 'Your recording';
+$string['col_status'] = 'Status';
+$string['deck_choose_pdf'] = 'Choose a PDF file for your slides.';
+$string['deck_failed'] = 'Your slides could not be uploaded. Try again, or record without them.';
+$string['deck_label'] = 'Slides (PDF, optional)';
+$string['deck_nopreview'] = 'Your slides were saved, but they cannot be shown on this page. You can still record.';
+$string['deck_preparing'] = 'Preparing your slides.';
+$string['deck_ready'] = '{$a} slides are ready. Move through them with the Next slide and Previous slide buttons or the arrow keys while you record.';
+$string['deck_uploading'] = 'Uploading your slides.';
+$string['delete'] = 'Delete';
+$string['delete_aria'] = 'Delete the recording you made on {$a}';
+$string['delete_confirm'] = 'Delete the recording you made on {$a}? Your score, feedback and transcript are kept, and the attempt still counts.';
+$string['delete_confirm_title'] = 'Delete recording';
+$string['delete_done'] = 'The recording was deleted. The attempt is kept, with its score and feedback.';
 $string['deletewarndays'] = 'Warn learners this many days ahead';
 $string['deletewarndays_desc'] = 'How many days before its deletion date a learner is told that their recording is about to be deleted. 0 sends no advance message. This does nothing for a recording that has no deletion date, so on a site with automatic deletion off it has no effect at all.';
+$string['download'] = 'Download';
+$string['download_aria'] = 'Download the recording you made on {$a}';
+$string['download_off_note'] = 'Downloading is switched off for this activity. You can watch your recordings here but cannot save a copy to your own device.';
+$string['durationtooshort'] = 'This must be at least {$a}.';
+$string['error:badext'] = 'This type of file cannot be uploaded here.';
+$string['error:cannotdelete'] = 'You cannot delete this recording.';
+$string['error:cannotdownload'] = 'You cannot download this recording.';
+$string['error:capreached'] = 'You have used all the attempts this activity allows.';
 $string['error:chunkoffset'] = 'This part of the upload starts at byte {$a->claimed}, but {$a->actual} bytes have been received. Resume from byte {$a->actual}.';
 $string['error:chunkread'] = 'The upload was interrupted while it was being read.';
+$string['error:deckafterrecording'] = 'Slides cannot be changed once the recording has started uploading.';
+$string['error:deletefailed'] = 'The recording could not be deleted just now. Try again in a few minutes.';
+$string['error:nodeck'] = 'There are no slides for this recording.';
+$string['error:nomedia'] = 'This recording is no longer stored, so it cannot be downloaded. Its score and feedback are kept.';
+$string['error:notuploading'] = 'This attempt is already finished, so nothing more can be uploaded to it.';
+$string['error:recordingnotfound'] = 'That recording could not be found.';
+$string['error:slidesdisabled'] = 'This activity does not use slides.';
 $string['error:stagingunwritable'] = 'The upload could not be written to temporary storage. Check that the Moodle data directory is writable.';
 $string['error:uploadbusy'] = 'Another part of this upload is still being written. Try again in a moment.';
 $string['error:uploadid'] = 'That upload id is not one this site issued.';
+$string['error:uploadmissing'] = 'The recording did not finish uploading. Try uploading it again.';
 $string['error:uploadtoolarge'] = 'This recording is larger than this site allows, which is {$a}. Record a shorter presentation, or ask your site administrator to raise the limit.';
 $string['errorstorenotconfigured'] = 'The "{$a}" storage backend is selected but is not fully configured, so the plugin has refused to read or write media rather than quietly using the other backend. Fill in the missing settings in Site administration, or, if recordings are still stored there, restore the settings they were made with.';
 $string['errorunknownbackend'] = 'Unknown storage backend "{$a}". This site is asking for a storage backend the plugin does not have, either because the setting holds a value nothing recognises or because a recording was made by a newer version of the plugin.';
+$string['eventrecordingdeleted'] = 'Recording deleted';
+$string['eventrecordingdownloaded'] = 'Recording downloaded';
+$string['feedback_media_gone'] = 'The recording for this attempt has been deleted. Your scores, written feedback and transcript below are kept.';
+$string['fschunkbytes'] = 'Upload chunk size (bytes)';
+$string['fschunkbytes_desc'] = 'With Moodle file storage a recording is uploaded in pieces, and this is the size of each piece. 0 uses 512 KB, which gets through a web server and proxy left at their defaults. Use the storage check page to measure the largest size this site really accepts and save it here. If a piece is ever refused as too large, the uploader halves it and carries on.';
+$string['maxattempts'] = 'Attempts allowed';
+$string['maxattempts_help'] = 'How many recordings a learner may submit for this activity. 0 means there is no limit. An attempt that was started and never finished does not count.';
+$string['maxmediabytes'] = 'Largest recording';
+$string['maxmediabytes_desc'] = 'The largest recording a learner can upload. The site and course maximum upload sizes also apply, and the smallest limit wins. 150 MB is room for about seven minutes at 720p. Learners see the limit before they start recording.';
+$string['maxrecordingseconds'] = 'Longest recording allowed (seconds)';
+$string['maxrecordingseconds_desc'] = 'The site wide ceiling on any activity\'s maximum length, in seconds. No activity can be set longer than this. The default is 720 seconds (12 minutes). Longer recordings are bigger uploads: at standard quality a 12 minute video is about 56 MB.';
+$string['maxseconds'] = 'Maximum length';
+$string['maxseconds_help'] = 'The longest a recording may be. It cannot be longer than the limit set for the whole site.';
+$string['maxsecondsoverlimit'] = 'This is longer than this site allows, which is {$a}.';
+$string['minseconds'] = 'Minimum length';
+$string['minseconds_help'] = 'The shortest a presentation should be. Learners are shown this alongside the maximum before they start recording.';
+$string['minsecondsovermax'] = 'The minimum length cannot be longer than the maximum length.';
+$string['mode'] = 'Recording type';
+$string['mode_help'] = 'Video records the camera and the microphone. Audio only records the microphone, which suits learners with limited bandwidth or a reason not to appear on camera, and makes much smaller files.';
+$string['modeaudio'] = 'Audio only';
+$string['modevideo'] = 'Video and audio';
 $string['modulename'] = 'PresenterAI';
 $string['modulename_help'] = 'PresenterAI asks a learner to record a spoken presentation, video or audio only, optionally alongside slides they advance while speaking. The recording is transcribed and scored against a rubric, and the learner reads written feedback on each criterion.
 
 Recordings can be stored in Moodle\'s own file storage or in an S3-compatible bucket, and can be kept until someone removes them or deleted automatically after a set number of days.';
 $string['modulenameplural'] = 'PresenterAI activities';
+$string['noattempts'] = 'You have not recorded an attempt yet.';
 $string['nopresenterais'] = 'There are no PresenterAI activities in this course.';
+$string['nostorage'] = 'Recording is not available in this activity yet, because storage for recordings has not been set up on this site. Any attempts you have already made are listed below.';
+$string['player_loading'] = 'Loading the recording.';
+$string['player_media_gone'] = 'This recording can no longer be played.';
 $string['pluginadministration'] = 'PresenterAI administration';
 $string['pluginname'] = 'PresenterAI';
 $string['presenterai:addinstance'] = 'Add a new PresenterAI activity';
 $string['presenterai:deleteanyrecording'] = 'Delete any recording';
+$string['presenterai:deleteownmedia'] = 'Delete the media of your own recording';
+$string['presenterai:downloadany'] = 'Download other people\'s recordings';
 $string['presenterai:downloadown'] = 'Download your own recording';
 $string['presenterai:grade'] = 'Grade presentations';
 $string['presenterai:managerubrics'] = 'Manage scoring rubrics';
+$string['presenterai:setretention'] = 'Change how long an activity keeps recordings';
 $string['presenterai:submit'] = 'Record and submit a presentation';
 $string['presenterai:useai'] = 'Have AI feedback generated for your attempts';
 $string['presenterai:view'] = 'View a PresenterAI activity';
@@ -70,6 +174,87 @@ $string['privacy:metadata:presenterai_recording:transcript'] = 'The text transcr
 $string['privacy:metadata:presenterai_recording:userid'] = 'The learner who made the recording.';
 $string['privacy:metadata:presenterai_score'] = 'One scored judgement of one attempt, by AI or by a teacher, with the per-criterion marks and written feedback.';
 $string['privacy:metadata:presenterai_score:userid'] = 'The learner whose attempt was scored.';
+$string['privacy_delete'] = 'It is deleted automatically {$a} days after you record it.';
+$string['privacy_download_off'] = 'Downloading is switched off for this activity, so you cannot save a copy to your own device.';
+$string['privacy_download_on'] = 'You can download a copy of your recording at any time while it is here.';
+$string['privacy_frames_delete'] = 'The still frames used for body language feedback are deleted with it.';
+$string['privacy_frames_keep'] = 'The still frames used for body language feedback are kept for as long as the recording is.';
+$string['privacy_keep'] = 'It is not deleted automatically. It is kept until it is deleted here, or until this activity or the course is removed.';
+$string['privacy_kept_after'] = 'Your transcript, scores and feedback are kept after the recording is gone.';
+$string['privacy_stem'] = 'Your recording is uploaded to {$a} storage so it can be transcribed and scored. Only you and people with permission to view submissions in this course can open it.';
+$string['privacy_visualnote'] = 'The note the AI writes about what it saw in those frames is deleted after {$a} days, whether or not the recording itself is still here.';
+$string['probe'] = 'PresenterAI storage check';
+$string['probe_chunkexplain'] = 'With Moodle file storage, recordings are uploaded in pieces. A web server or proxy in front of Moodle often refuses large requests before PHP sees them, and no PHP setting reveals that limit. This test sends pieces of 512 KB, 1 MB, 2 MB and 5 MB from your browser and saves the largest one that arrives whole.';
+$string['probe_chunkheading'] = 'Upload chunk size';
+$string['probe_chunknone'] = 'No chunk size has been measured on this site, so uploads use the default of 512 KB.';
+$string['probe_chunksaved'] = 'Chunk size measured and saved for this site: {$a}.';
+$string['probe_col_detail'] = 'Detail';
+$string['probe_col_result'] = 'Result';
+$string['probe_col_step'] = 'Check';
+$string['probe_count'] = '{$a->label}: {$a->count} recordings';
+$string['probe_countsheading'] = 'Recordings with stored media';
+$string['probe_countsnone'] = 'No recordings have stored media yet.';
+$string['probe_fail'] = 'Failed';
+$string['probe_intro'] = 'Each storage backend is tested from this server, right now, by writing, reading back and deleting a small test file. S3 is tested when it is configured or when any recording is still stored there.';
+$string['probe_measure'] = 'Measure chunk size';
+$string['probe_nolifecycle'] = 'PresenterAI cannot read the bucket lifecycle configuration, so this test cannot tell you whether a lifecycle rule will delete recordings. See the bucket lifecycle setting.';
+$string['probe_nonesaved'] = 'Even the smallest test piece, 512 KB, was refused, so nothing was saved. Uploads will fall back to smaller pieces, which is slower. Check the request size limit on the web server or proxy in front of Moodle.';
+$string['probe_notconfigured'] = 'This backend is not fully configured. Recordings already stored here cannot be reached until its settings are filled in.';
+$string['probe_ok'] = 'Passed';
+$string['probe_rungfail'] = '{$a}: refused or incomplete';
+$string['probe_rungok'] = '{$a}: received in full';
+$string['probe_running'] = 'Sending test pieces...';
+$string['probe_saved'] = 'Saved {$a} as this site\'s upload chunk size.';
+$string['probe_savefailed'] = 'The measured chunk size could not be saved. Reload the page and try again.';
+$string['probe_step_byteserving'] = 'Seeking within a recording';
+$string['probe_step_configuration'] = 'Configuration';
+$string['probe_step_cors'] = 'Browser upload rule (CORS)';
+$string['probe_step_delete'] = 'Delete';
+$string['probe_step_exception'] = 'Unexpected error';
+$string['probe_step_lifecycle'] = 'Bucket lifecycle rule';
+$string['probe_step_lock'] = 'Locking';
+$string['probe_step_phplimits'] = 'PHP upload limits';
+$string['probe_step_private'] = 'Bucket is private';
+$string['probe_step_read'] = 'Read back';
+$string['probe_step_roundtrip'] = 'File storage round trip';
+$string['probe_step_size'] = 'Size check';
+$string['probe_step_staging'] = 'Temporary storage';
+$string['probe_step_write'] = 'Write';
+$string['probe_tablecaption'] = 'Storage check results for {$a}';
+$string['probelink'] = 'Check storage and measure the upload chunk size';
+$string['quality'] = 'Video quality';
+$string['quality_desc'] = 'The resolution and bitrate the recorder asks the browser for. Higher quality means bigger uploads and more storage. For a 7 minute video, allowing for the browser overshooting its target, Low is about 23 MB, Standard about 33 MB and High about 75 MB. Audio only activities use only the audio part of the preset, which is small at every level.';
+$string['quality_high_720p'] = 'High (720p)';
+$string['quality_low_360p'] = 'Low (360p)';
+$string['quality_standard_480p'] = 'Standard (480p)';
+$string['rec_audio_only'] = 'Audio only: your microphone is recorded, not your camera.';
+$string['rec_limits'] = 'Record for between {$a->min} and {$a->max}. The largest recording this site accepts is {$a->size}.';
+$string['rec_mic_denied'] = 'Your browser did not let this page use your camera or microphone. Allow access in your browser\'s settings for this site, then try again.';
+$string['rec_near_max'] = 'Less than 15 seconds left. Recording stops automatically at the time limit.';
+$string['rec_retry'] = 'Retry upload';
+$string['rec_start_failed'] = 'Recording could not start ({$a}). Try again.';
+$string['rec_status_failed'] = 'Your recording could not be uploaded. It is still held in this page: select Retry upload to send it again, and do not close or reload the page until it has gone.';
+$string['rec_status_finalizing'] = 'Saving your attempt.';
+$string['rec_status_recording'] = 'Recording';
+$string['rec_status_uploaded'] = 'Your recording has been submitted.';
+$string['rec_status_uploading'] = 'Uploading your recording: {$a}%';
+$string['rec_too_short'] = 'That recording was too short to submit. Record for at least {$a}.';
+$string['rec_unsupported'] = 'This browser cannot record here. Use a recent version of Chrome, Edge, Firefox or Safari.';
+$string['record'] = 'Record';
+$string['record_delete_dl_body'] = 'This recording is deleted automatically {$a} days after you make it. The exact date is shown against every attempt in the list below. Your scores, written feedback and transcript are kept after the recording is gone. Download anything you want to keep before that date.';
+$string['record_delete_dl_heading'] = 'Your recording is deleted after {$a} days.';
+$string['record_delete_nodl_body'] = 'This recording is deleted automatically {$a} days after you make it, and the exact date is shown against every attempt in the list below. Downloading is switched off for this activity, so there is no way to save a copy of the recording before it goes. Your scores, written feedback and transcript are kept and stay available to you here after the recording is gone.';
+$string['record_delete_nodl_heading'] = 'Your recording is deleted after {$a} days, and cannot be downloaded.';
+$string['record_keep_dl_body'] = 'Nothing deletes this recording automatically. It stays on {$a} until it is deleted by you or by someone with permission to manage this activity, or until the activity or the course is removed. You can download a copy at any time from the list of your attempts below.';
+$string['record_keep_dl_heading'] = 'Your recording is kept until it is deleted.';
+$string['record_keep_nodl_body'] = 'Nothing deletes this recording automatically. It stays on {$a} until it is deleted by you or by someone with permission to manage this activity, or until the activity or the course is removed. Downloading is switched off for this activity, so you can watch your recording here but cannot save a copy to your own device. Your scores, written feedback and transcript are always available to you here.';
+$string['record_keep_nodl_heading'] = 'Your recording is kept until it is deleted, and cannot be downloaded.';
+$string['record_nodl_contact'] = 'If you need a copy of the recording itself, contact {$a} before that date.';
+$string['record_prune_warning'] = 'Recording again will delete your oldest recording, made on {$a}. Your score and feedback for it are kept.';
+$string['recording_blocked_cap'] = 'You have used all {$a} attempts this activity allows, so you cannot record another. Your attempts are listed below.';
+$string['recording_blocked_size'] = 'Recording is not available in this activity yet, because a recording of the length it allows could be larger than this site accepts ({$a->limit}). It becomes available once the activity\'s maximum length or the site\'s recording quality is lowered.';
+$string['recordingheading'] = 'Recording';
+$string['recordingheading_desc'] = 'How recordings are made: the quality the browser records at, and the longest recording any activity may ask for.';
 $string['retentiondays'] = 'Delete recordings after (days)';
 $string['retentiondays_desc'] = 'The number of days after a recording is finished before its media is deleted automatically. 0 means there is no automatic deletion and the media is kept until somebody removes it. There is no upper limit, and 1 day is the shortest window that deletes anything.
 
@@ -80,9 +265,23 @@ To change recordings that already exist, use the retention tool at cli/apply_ret
 An activity can set its own retention, which overrides this value.
 
 A window shorter than a few days is worth thinking about twice: scoring runs on cron, and a backlog on a busy site can mean the media is deleted before it has been transcribed.';
+$string['retentiondays_inst'] = 'Delete recordings after';
+$string['retentiondays_inst_help'] = 'Use the site default, keep recordings until someone removes them, or set a number of days. When a number is set, learners see the deletion date against every attempt, and a recording already made keeps the date it was given, so changing this here does not move an existing deletion date.';
+$string['retentiondays_locked'] = 'Recordings on this site are deleted after {$a}. Changing this per activity needs the set retention capability.';
+$string['retentiondays_locked_keep'] = 'Recordings on this site are kept until someone deletes them. Changing this per activity needs the set retention capability.';
+$string['retentiondaysmin'] = 'Enter a number of days of 1 or more.';
+$string['retentiondaysvalue'] = 'Days before deletion';
 $string['retentionheading'] = 'Retention and download';
 $string['retentionheading_desc'] = 'How long a recording\'s media is kept, and whether a learner may keep a copy of their own. A recording\'s score, written feedback and transcript are kept regardless: they belong to the learner\'s record and are not deleted when the media is.';
+$string['retentionheading_inst'] = 'Recording retention';
+$string['retentionmode'] = 'Keep recordings';
+$string['retentionmode_days'] = 'Delete recordings after a number of days';
+$string['retentionmode_keep'] = 'Keep recordings until someone deletes them';
+$string['retentionmode_site'] = 'Use the site setting ({$a})';
 $string['retentionoverridenote'] = '{$a} activities on this site set their own retention and are not affected by changes to the value above.';
+$string['retentionsitedays'] = 'deleted after {$a}';
+$string['retentionsitekeep'] = 'kept until deleted';
+$string['retentiontooshort_warning'] = 'Recordings in this activity are deleted after {$a}. Scoring and cron may not reach a recording before it is deleted, which would leave nothing to score. A window of at least 3 days is safer.';
 $string['retentionwithoutdownloadnote'] = '<strong>Check this combination.</strong> Recordings are deleted automatically and learners cannot download their own, so a learner\'s presentation is destroyed on a schedule and they were never able to keep a copy of it. That is a reasonable policy if it is the one you meant. If it is not, either set the deletion window to 0 or allow learners to download their own recording.';
 $string['s3bucket'] = 'Bucket';
 $string['s3bucket_desc'] = 'The bucket recordings are written to. It must block public access, and it needs a CORS rule allowing PUT and GET from this site, because the browser uploads to it directly. The storage self test checks both, and says so in words: a missing CORS rule otherwise shows up only as an unexplained browser error after a learner has finished speaking.';
@@ -110,5 +309,33 @@ $string['selftest:lock'] = 'Locking is available, using {$a}.';
 $string['selftest:phplimits'] = 'Measured under {$a->sapi}: upload_max_filesize {$a->uploadmax}, post_max_size {$a->postmax}, memory_limit {$a->memory}, max_input_time {$a->inputtime}, max_execution_time {$a->exectime}. Chunk size offered: {$a->chunk}. Run this from a browser rather than the command line to see the numbers a learner actually meets.';
 $string['selftest:roundtrip'] = 'Wrote a file to Moodle file storage, read the same bytes back and deleted it.';
 $string['selftest:staging'] = 'Wrote and read back a staging file in {$a}.';
+$string['setting_combination_warning'] = 'Recordings on this site are deleted after {$a} days and learners cannot download them, so a learner has no way to keep their own presentation. The activity tells them this in plain words before they record, because they would otherwise find out after the recording had gone. Scores, written feedback and transcripts are not affected and are kept. If you want the short retention window but not that outcome, turn learner download back on.';
+$string['slide_counter'] = 'Slide {$a->current} of {$a->total}';
+$string['slide_next'] = 'Next slide';
+$string['slide_prev'] = 'Previous slide';
+$string['slidesenabled'] = 'Slides';
+$string['slidesenabled_help'] = 'Learners may present a PDF slide deck and advance it while recording. Playback re-syncs the slides with the recording. A deck is optional: a learner can still record without one.';
+$string['status_abandoned'] = 'Not submitted';
+$string['status_failed'] = 'Could not be scored';
+$string['status_scored'] = 'Scored';
+$string['status_scoring'] = 'Being scored';
+$string['status_uploaded'] = 'Submitted';
+$string['status_uploading'] = 'Uploading';
+$string['stop'] = 'Stop';
 $string['storageheading'] = 'Storage';
 $string['storageheading_desc'] = 'Where recordings are kept. Each recording remembers the storage it was written to, so changing the backend applies to recordings made from now on and moves nothing that already exists. Recordings on the other backend keep working, which also means the settings for a backend must stay filled in for as long as any recording still uses it.';
+$string['storedattempts'] = 'Recordings kept per learner';
+$string['storedattempts_help'] = '0 keeps the recording of every attempt. Any other number keeps only that many of a learner\'s newest recordings and deletes the media of older ones. Scores and feedback for the older attempts are kept. When this applies, learners are warned before they record that recording again will delete their oldest recording.';
+$string['taskcleanup'] = 'Delete abandoned uploads and expired recordings';
+$string['topic_choose'] = 'Choose a topic';
+$string['topic_label'] = 'Topic';
+$string['topicfile'] = 'Topic brief (PDF)';
+$string['topicfile_help'] = 'An optional PDF for this topic, such as a case study, that learners can open while they prepare. One file per topic.';
+$string['topicinstructions'] = 'Topic instructions';
+$string['topicsheading'] = 'Topics';
+$string['topictitle'] = 'Topic title';
+$string['topictitle_help'] = 'When an activity has topics, a learner picks one before recording, and the topic is shown against their attempt. Leave every title empty for an activity with no topics. Clearing the title of an existing topic deletes that topic and its file when you save; attempts already made on it are kept, without the topic name.';
+$string['valuenotnegative'] = 'Enter 0 or a positive number.';
+$string['watch'] = 'Watch';
+$string['watch_aria'] = 'Watch the recording you made on {$a}';
+$string['yourattempts'] = 'Your attempts';

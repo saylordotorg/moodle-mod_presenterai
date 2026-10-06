@@ -67,6 +67,23 @@ $capabilities = [
         'contextlevel' => CONTEXT_MODULE,
         'archetypes' => [
             'student' => CAP_ALLOW,
+            'teacher' => CAP_ALLOW,
+            'editingteacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+
+    // Download someone else's recording. Not implied by :viewallattempts, since
+    // watching a recording here and taking a copy away are different things,
+    // and not governed by the site's allowlearnerdownload switch, which is about
+    // learners and their own recordings. See DECISIONS D22.
+    'mod/presenterai:downloadany' => [
+        'riskbitmask' => RISK_PERSONAL,
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_MODULE,
+        'archetypes' => [
+            'editingteacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
         ],
     ],
 
@@ -94,15 +111,41 @@ $capabilities = [
         ],
     ],
 
-    // Delete a recording that is not one's own. A learner deleting their own is
-    // governed by the site setting, not by this; see open question 9.21, which
-    // is still unanswered.
+    // Delete the media of another learner's recording, for takedown requests and
+    // support. Media only: the attempt, its score and its feedback are kept. A
+    // learner deleting their own media is :deleteownmedia, not this.
     'mod/presenterai:deleteanyrecording' => [
         'riskbitmask' => RISK_DATALOSS,
         'captype' => 'write',
         'contextlevel' => CONTEXT_MODULE,
         'archetypes' => [
             'editingteacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+
+    // Delete the media of one's own recording. Media only: the attempt still
+    // counts and its score and feedback are kept. Open question 9.21 is answered
+    // here per its recommendation; taking it away is an archetype change.
+    'mod/presenterai:deleteownmedia' => [
+        'riskbitmask' => RISK_DATALOSS,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_MODULE,
+        'archetypes' => [
+            'student' => CAP_ALLOW,
+            'teacher' => CAP_ALLOW,
+            'editingteacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+
+    // Change how long one activity keeps recordings. Manager only, because the
+    // retention window is a records decision for the institution, and what it
+    // is set to changes what learners are told. See design 7.3.
+    'mod/presenterai:setretention' => [
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_MODULE,
+        'archetypes' => [
             'manager' => CAP_ALLOW,
         ],
     ],
