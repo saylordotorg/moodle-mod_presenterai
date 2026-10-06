@@ -6,6 +6,12 @@ An activity module in which a learner records a video or audio presentation in t
 >
 > There is no tagged release, no `install.xml` you should trust to be stable, and no upgrade path between commits. The plan in [`docs/IMPLEMENTATION-PLAN.md`](docs/IMPLEMENTATION-PLAN.md) describes what is being built and in what order. This README describes the plugin as it is intended to work at version 1.0, so that a Moodle administrator can decide early whether it is worth watching. Where something is not built yet, this file says so.
 
+## Demo video
+
+[![PresenterAI demo video](https://img.youtube.com/vi/z2YVb4LvD6U/maxresdefault.jpg)](https://youtu.be/z2YVb4LvD6U)
+
+[Watch the three-minute demo on YouTube](https://youtu.be/z2YVb4LvD6U): an instructor sets up an assignment, a learner presents with slides, and the learner gets rubric scores, written feedback and synced playback. It was recorded on Saylor University's development site, where the presentation feature still runs inside the SOLA course assistant while this standalone activity is built. The narration is AI-generated.
+
 ## What it does
 
 1. The learner opens the activity and picks a topic, if the teacher offered a choice.
