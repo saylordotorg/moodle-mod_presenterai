@@ -179,6 +179,20 @@ class s3_store implements store_interface {
     }
 
     /**
+     * Throw away a chunked upload. Nothing to do on this backend.
+     *
+     * The browser PUTs straight to the bucket, so this server never holds a
+     * partial upload. A PUT that never finished leaves no object at all, and one
+     * that did finish is a whole object under a key the row still names, which
+     * the caller deletes through delete() like any other.
+     *
+     * @param string $uploadid The id returned by begin_upload. Never issued by this backend.
+     * @return void
+     */
+    public function abort_upload(string $uploadid): void {
+    }
+
+    /**
      * Confirm the browser really uploaded, by asking the bucket rather than the browser.
      *
      * @param media_ref $ref The media being committed, carrying its key.

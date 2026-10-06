@@ -435,4 +435,59 @@ final class fs_store_test extends \advanced_testcase {
                 . 'upload failed for work that actually succeeded, and they record the whole presentation again.'
         );
     }
+
+    /**
+     * Aborting an upload removes its staging file, and aborting nonsense does nothing.
+     *
+     * @return void
+     */
+    public function test_abort_upload_removes_the_staging_file(): void {
+        global $CFG;
+
+        $ref = new media_ref(0, $this->context->id, $this->course->id, $this->user->id, media_ref::KIND_DECK, 'pdf');
+        $begin = $this->store->begin_upload($ref);
+        $this->store->accept_chunk($begin['uploadid'], 0, $this->stream_of('%PDF-1.4 half a deck'));
+        $path = $CFG->tempdir . '/presenterai/' . $begin['uploadid'] . '.part';
+        $this->assertFileExists($path);
+
+        $this->store->abort_upload($begin['uploadid']);
+
+        $this->assertFileDoesNotExist(
+            $path,
+            'A replaced or abandoned upload left its bytes in $CFG->tempdir, which is shared storage nobody else cleans.'
+        );
+        $this->assertSame(0, $this->store->resume_offset($begin['uploadid']));
+
+        // Never throws, whatever it is handed.
+        $this->store->abort_upload('');
+        $this->store->abort_upload('../../etc/passwd');
+    }
+
+    /**
+     * The sweep removes only staging files that are both stale and unreferenced.
+     *
+     * @return void
+     */
+    public function test_sweep_removes_only_stale_unreferenced_staging(): void {
+        global $CFG, $DB;
+
+        $ref = new media_ref(0, $this->context->id, $this->course->id, $this->user->id, media_ref::KIND_RECORDING, 'webm');
+        $stale = $this->store->begin_upload($ref)['uploadid'];
+        $referenced = $this->store->begin_upload($ref)['uploadid'];
+        $fresh = $this->store->begin_upload($ref)['uploadid'];
+        $dir = $CFG->tempdir . '/presenterai/';
+        touch($dir . $stale . '.part', time() - 2 * DAYSECS);
+        touch($dir . $referenced . '.part', time() - 2 * DAYSECS);
+
+        $recordingid = $this->make_recording_row();
+        $DB->set_field('presenterai_recording', 'uploadid', $referenced, ['id' => $recordingid]);
+
+        $this->assertSame(1, fs_store::sweep_stale_staging(DAYSECS));
+        $this->assertFileDoesNotExist($dir . $stale . '.part');
+        $this->assertFileExists(
+            $dir . $referenced . '.part',
+            'The sweep removed an upload a row still names; that one is the cleanup task\'s to abort.'
+        );
+        $this->assertFileExists($dir . $fresh . '.part', 'The sweep removed an upload that may still be in progress.');
+    }
 }
