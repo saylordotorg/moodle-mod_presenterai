@@ -75,7 +75,9 @@ final class policy {
             // A route out is offered only where one exists (design 9.3).
             $contact = self::support_link();
             if ($contact !== '') {
-                $body .= ' ' . get_string('record_nodl_contact', 'mod_presenterai', $contact);
+                // The keep variant has no date, so it gets its own sentence
+                // rather than one that says "before that date".
+                $body .= ' ' . get_string('record_nodl_contact_' . ($days > 0 ? 'delete' : 'keep'), 'mod_presenterai', $contact);
             }
         }
 

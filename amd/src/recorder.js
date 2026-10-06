@@ -121,6 +121,8 @@ const isError = (err, name) => !!err && typeof err.errorcode === 'string'
  * @param {function} hooks.ensureAttempt Resolves to {recordingid, token}, creating the row on first use.
  * @param {function} hooks.forgetAttempt Drops the cached attempt so the next ensureAttempt begins again.
  * @param {function} hooks.getTopicId Returns the chosen topic id, 0 for none.
+ * @param {function} [hooks.needsTopic] True while the activity has topics to choose from and none is chosen.
+ * @param {function} [hooks.focusTopic] Moves focus to the topic choice.
  * @param {function} hooks.getSlides Returns the slide viewer, or null.
  * @param {function} hooks.announce Speaks a message through the page's live region.
  * @param {function} [hooks.onStateChange] Called with 'recording', 'submitting' or 'idle'.
@@ -464,9 +466,19 @@ export const init = (root, config, hooks) => {
 
     if (recbtn) {
         recbtn.addEventListener('click', () => {
-            if (!busy) {
-                start();
+            if (busy) {
+                return;
             }
+            // A topic has to be chosen first; the server refuses a recording
+            // without one, and it is kinder to say so before the camera starts.
+            if (hooks.needsTopic && hooks.needsTopic()) {
+                say('rec_choosetopic', null, true);
+                if (hooks.focusTopic) {
+                    hooks.focusTopic();
+                }
+                return;
+            }
+            start();
         });
     }
     if (stopbtn) {

@@ -558,7 +558,8 @@ final class recording_manager_test extends \advanced_testcase {
     }
 
     /**
-     * A topic from another activity is dropped; one from this activity is kept.
+     * A topic from another activity is never attached. With one topic of its
+     * own the activity uses that one instead, since a topic is required.
      *
      * @return void
      */
@@ -570,7 +571,11 @@ final class recording_manager_test extends \advanced_testcase {
 
         $rec = $this->begin();
         $this->send($rec, 'recording', 'abc');
-        $this->assertNull($this->finalize($rec, (int) $foreign->id)->topicid, 'A topic from another activity was attached.');
+        $this->assertSame(
+            (int) $own->id,
+            (int) $this->finalize($rec, (int) $foreign->id)->topicid,
+            'A topic from another activity was attached, or the only topic was not used.'
+        );
 
         $rec = $this->begin();
         $this->send($rec, 'recording', 'abc');

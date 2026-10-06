@@ -148,6 +148,13 @@ export const init = (rootSelector) => {
             ensureAttempt: ensureAttempt,
             forgetAttempt: forgetAttempt,
             getTopicId: getTopicId,
+            needsTopic: () => !!root.querySelector('[data-region="topic-select"]') && getTopicId() === 0,
+            focusTopic: () => {
+                const select = root.querySelector('[data-region="topic-select"]');
+                if (select) {
+                    select.focus();
+                }
+            },
             getSlides: () => slides,
             announce: announce,
             onStateChange: (state) => {

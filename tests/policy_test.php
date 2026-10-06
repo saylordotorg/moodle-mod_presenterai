@@ -139,6 +139,23 @@ final class policy_test extends \advanced_testcase {
         $this->assertStringContainsString('mailto:help@example.com', $with['body']);
         $this->assertStringStartsWith(get_string('record_delete_nodl_body', 'mod_presenterai', 14) . ' ', $with['body']);
 
+        $contact = policy::support_link();
+        $this->assertStringEndsWith(
+            ' ' . get_string('record_nodl_contact_delete', 'mod_presenterai', $contact),
+            $with['body']
+        );
+
+        // On a keep site there is no deletion date, so the sentence must not
+        // mention one: it is the keep sentence.
+        set_config('retentiondays', 0, 'mod_presenterai');
+        $keep = policy::callout($instance, $context, (int) $this->student->id);
+        $this->assertSame('keep_nodl', $keep['variant']);
+        $this->assertStringEndsWith(
+            ' ' . get_string('record_nodl_contact_keep', 'mod_presenterai', $contact),
+            $keep['body']
+        );
+        set_config('retentiondays', 14, 'mod_presenterai');
+
         // Never on a download-on variant, where there is nothing to ask for.
         set_config('allowlearnerdownload', 1, 'mod_presenterai');
         $dl = policy::callout($instance, $context, (int) $this->student->id);

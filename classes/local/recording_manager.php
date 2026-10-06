@@ -691,10 +691,18 @@ final class recording_manager {
             throw new \moodle_exception('error:capreached', 'mod_presenterai');
         }
 
-        $keeptopic = $topicid > 0 && $DB->record_exists(
-            'presenterai_topic',
-            ['id' => $topicid, 'presenteraiid' => $instance->id]
-        );
+        // A learner must choose a topic when the activity has any. With exactly
+        // one there is nothing to choose, so it is used. With several and none
+        // valid, the row is left uploading and its bytes kept, as at the cap:
+        // the learner picks a topic and presses Retry, and nothing is lost.
+        $topicids = $DB->get_fieldset_select('presenterai_topic', 'id', 'presenteraiid = ?', [$instance->id]);
+        $keeptopic = $topicid > 0 && in_array($topicid, array_map('intval', $topicids), true);
+        if (!$keeptopic && count($topicids) === 1) {
+            $topicid = (int) reset($topicids);
+            $keeptopic = true;
+        } else if (!$keeptopic && count($topicids) > 1) {
+            throw new \moodle_exception('error:topicrequired', 'mod_presenterai');
+        }
 
         $timelinejson = null;
         if (!empty($rec->deckkey)) {

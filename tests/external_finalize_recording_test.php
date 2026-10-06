@@ -103,6 +103,59 @@ final class external_finalize_recording_test extends \advanced_testcase {
     }
 
     /**
+     * With several topics, a recording without a valid choice is refused and
+     * kept, and goes through once a topic is chosen.
+     *
+     * @return void
+     */
+    public function test_several_topics_require_a_choice(): void {
+        global $DB;
+        $gen = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $first = $gen->create_topic(['presenteraiid' => $this->instance->id, 'title' => 'First']);
+        $gen->create_topic(['presenteraiid' => $this->instance->id, 'title' => 'Second']);
+        $recordingid = $this->uploaded_attempt(str_repeat('spoken words ', 50));
+
+        try {
+            finalize_recording::execute($recordingid, $this->token, 0, 30, '');
+            $this->fail('A recording with no topic was accepted on an activity with several.');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:topicrequired', $e->errorcode);
+        }
+        $row = $DB->get_record('presenterai_recording', ['id' => $recordingid]);
+        $this->assertSame('uploading', $row->status, 'The refused recording must be kept for Retry.');
+
+        // Another activity's topic is not a valid choice either.
+        $other = $this->getDataGenerator()->create_module('presenterai', ['course' => $this->course->id]);
+        $foreign = $gen->create_topic(['presenteraiid' => $other->id, 'title' => 'Elsewhere']);
+        try {
+            finalize_recording::execute($recordingid, $this->token, (int) $foreign->id, 30, '');
+            $this->fail('A topic from another activity was accepted.');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:topicrequired', $e->errorcode);
+        }
+
+        $result = finalize_recording::execute($recordingid, $this->token, (int) $first->id, 30, '');
+        $this->assertSame('uploaded', $result['status']);
+        $this->assertSame((int) $first->id, (int) $DB->get_field('presenterai_recording', 'topicid', ['id' => $recordingid]));
+    }
+
+    /**
+     * With exactly one topic there is nothing to choose, so it is used.
+     *
+     * @return void
+     */
+    public function test_a_single_topic_is_used_without_a_choice(): void {
+        global $DB;
+        $gen = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $only = $gen->create_topic(['presenteraiid' => $this->instance->id, 'title' => 'Only']);
+        $recordingid = $this->uploaded_attempt(str_repeat('spoken words ', 50));
+
+        $result = finalize_recording::execute($recordingid, $this->token, 0, 30, '');
+        $this->assertSame('uploaded', $result['status']);
+        $this->assertSame((int) $only->id, (int) $DB->get_field('presenterai_recording', 'topicid', ['id' => $recordingid]));
+    }
+
+    /**
      * Another learner cannot finalize somebody else's attempt.
      *
      * @return void
