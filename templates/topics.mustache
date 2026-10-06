@@ -49,7 +49,7 @@
     <div class="mb-2">
         <label for="mod-presenterai-topic-{{uniqid}}" class="font-weight-bold d-block">{{#str}}topic_label, mod_presenterai{{/str}}</label>
         <select id="mod-presenterai-topic-{{uniqid}}" class="custom-select mod-presenterai-topic-select" data-region="topic-select" required aria-required="true">
-            <option value="0">{{#str}}topic_choose, mod_presenterai{{/str}}</option>
+            <option value="">{{#str}}topic_choose, mod_presenterai{{/str}}</option>
             {{#topics}}
             <option value="{{id}}">{{{title}}}</option>
             {{/topics}}
