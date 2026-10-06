@@ -167,7 +167,19 @@ final class external_render_deck_test extends \advanced_testcase {
      * @return void
      */
     public function test_with_ghostscript_the_deck_renders(): void {
-        if (!class_exists('\\mod_presenterai\\local\\deck_renderer') || !deck_renderer::is_available()) {
+        global $CFG;
+
+        // Look in the usual places when the Moodle setting is not filled in, so
+        // the test runs on a developer machine with Ghostscript installed.
+        if (!deck_renderer::is_available()) {
+            foreach (['/opt/homebrew/bin/gs', '/usr/local/bin/gs', '/usr/bin/gs'] as $candidate) {
+                if (file_is_executable($candidate)) {
+                    $CFG->pathtogs = $candidate;
+                    break;
+                }
+            }
+        }
+        if (!deck_renderer::is_available()) {
             $this->markTestSkipped('Ghostscript is not available on this machine.');
         }
         $recordingid = $this->attempt_with_deck();

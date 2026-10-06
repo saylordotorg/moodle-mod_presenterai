@@ -616,7 +616,7 @@ final class recording_manager {
             if (!is_array($entry) || !array_key_exists('t', $entry) || !array_key_exists('i', $entry)) {
                 continue;
             }
-            $t =(int) round((float) $entry['t']);
+            $t = (int) round((float) $entry['t']);
             $i = (int) $entry['i'];
             if ($t < 0) {
                 $t = 0;
