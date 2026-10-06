@@ -324,7 +324,7 @@ final class topic_manager_test extends \advanced_testcase {
     public function test_serve_file_refuses_foreign_topic(): void {
         $this->resetAfterTest();
         $this->setAdminUser();
-        [$mine, $minecontext] = $this->create_activity();
+        [, $minecontext] = $this->create_activity();
         [$theirs, $theircontext] = $this->create_activity();
 
         topic_manager::save_from_form(

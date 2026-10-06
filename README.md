@@ -6,6 +6,9 @@ An activity module in which a learner records a video or audio presentation in t
 >
 > There is no tagged release, no `install.xml` you should trust to be stable, and no upgrade path between commits. The plan in [`docs/IMPLEMENTATION-PLAN.md`](docs/IMPLEMENTATION-PLAN.md) describes what is being built and in what order. This README describes the plugin as it is intended to work at version 1.0, so that a Moodle administrator can decide early whether it is worth watching. Where something is not built yet, this file says so.
 
+>
+> **Built so far (phase 1, on branch `phase1-complete`):** recording in the browser with optional PDF slides, chunked upload to Moodle file storage or a direct upload to an S3 compatible bucket, synced playback, learner download and delete governed by capabilities, the deletion date shown against every attempt, topics with an optional PDF brief, a storage check page that measures the upload chunk size, the hourly cleanup task, `cli/apply_retention.php`, and backup and restore of the activity and its topics. **Not built yet:** transcription, scoring and every other AI feature (phase 3), the gradebook, grader screens and the privacy provider (phase 2), and recordings in course backups.
+
 ## Demo video
 
 [![PresenterAI demo video](https://img.youtube.com/vi/Apr4pe9IVxI/maxresdefault.jpg)](https://youtu.be/Apr4pe9IVxI)

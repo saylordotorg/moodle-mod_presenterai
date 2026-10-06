@@ -48,6 +48,11 @@ if ((string) $rec->status === recording_manager::STATUS_UPLOADING) {
     throw new moodle_exception('error:recordingnotfound', 'mod_presenterai');
 }
 
+// Someone who cannot see the recording learns nothing about it, including
+// whether its media is still stored.
+if (!access::may_view($rec, $context, (int) $USER->id)) {
+    throw new moodle_exception('error:cannotdownload', 'mod_presenterai');
+}
 if (empty($rec->storagekey)) {
     throw new moodle_exception('error:nomedia', 'mod_presenterai');
 }
