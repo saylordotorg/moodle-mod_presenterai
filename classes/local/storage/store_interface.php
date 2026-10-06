@@ -112,6 +112,23 @@ interface store_interface {
     public function accept_chunk(string $uploadid, int $offset, $stream): int;
 
     /**
+     * Throw away a chunked upload that will never be finished.
+     *
+     * Called when an upload is replaced (a learner picks a different deck), when
+     * the cleanup task gives up on an attempt left in 'uploading', and when an
+     * attempt's media is dropped while a staging file may still exist. A no-op
+     * on a direct-upload backend, which has nothing staged on this server.
+     *
+     * Never throws. Every caller is already on its way to clearing the row, and
+     * a staging file that could not be removed is swept later by age, whereas a
+     * throw here would stop the row being cleared and leave the attempt stuck.
+     *
+     * @param string $uploadid The id returned by begin_upload, which may be empty or stale.
+     * @return void
+     */
+    public function abort_upload(string $uploadid): void;
+
+    /**
      * Finish an upload and confirm the bytes are really there.
      *
      * This is the only proof that a browser did what it said it did. On S3 it is
