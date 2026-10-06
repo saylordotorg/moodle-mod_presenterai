@@ -17,8 +17,10 @@
 /**
  * Main view for one PresenterAI activity.
  *
- * Phase 0: the intro only. The recorder, the attempt list and the feedback panel
- * arrive in phases 1 to 3.
+ * Phase 1: topics, the retention and download policy, the recorder and the
+ * attempt list. Feedback arrives with scoring in phase 3. The page itself is
+ * \mod_presenterai\output\view_page; this file only resolves the activity,
+ * checks access and logs the view.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -43,7 +45,8 @@ require_capability('mod/presenterai:view', $context);
 
 $instance = $DB->get_record('presenterai', ['id' => $cm->instance], '*', MUST_EXIST);
 
-$event = \core\event\course_module_viewed::create([
+// The module's own subclass: the core class is abstract and cannot be created.
+$event = \mod_presenterai\event\course_module_viewed::create([
     'objectid' => $cm->instance,
     'context' => $context,
 ]);
@@ -60,11 +63,20 @@ $PAGE->set_heading(format_string($course->fullname));
 $PAGE->set_context($context);
 $PAGE->set_activity_record($instance);
 
+// Only a selector. The recorder settings travel as data attributes on the root
+// element the template renders, which keeps them under Moodle's 1024 character
+// js_call_amd() warning and in one place.
+$PAGE->requires->js_call_amd('mod_presenterai/view', 'init', ['#mod-presenterai-view']);
+
+$page = new \mod_presenterai\output\view_page($instance, $course, $context, (int) $USER->id);
+
 echo $OUTPUT->header();
 echo $OUTPUT->heading(format_string($instance->name));
 
 if (trim(strip_tags($instance->intro ?? ''))) {
     echo $OUTPUT->box(format_module_intro('presenterai', $instance, $cm->id), 'generalbox', 'intro');
 }
+
+echo $OUTPUT->render_from_template('mod_presenterai/view', $page->export_for_template($OUTPUT));
 
 echo $OUTPUT->footer();
