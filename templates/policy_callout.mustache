@@ -1,0 +1,52 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/policy_callout
+
+    What happens to the recording the learner is about to make: whether it is
+    deleted, whether they can keep a copy, and, when pruning applies, which
+    older recording the next one will replace.
+
+    Body text in reading order with a real heading, before the record button
+    (design section 11, rules 4 and 5): no role="note", no alert role, no
+    modal and no tooltip, because a screen reader user finds a notice by
+    jumping headings and a sighted user reads it on the way to the button.
+
+    body is HTML: it carries the site name through format_string and, for the
+    no-download variants, the support contact link.
+
+    Context variables required for this template:
+    * variant - One of keep_dl, keep_nodl, delete_dl, delete_nodl.
+    * heading - The heading sentence.
+    * body - The body, HTML.
+    * prunewarning - The pruning warning, or empty.
+
+    Example context (json):
+    {
+        "variant": "delete_nodl",
+        "heading": "Your recording is deleted after 30 days, and cannot be downloaded.",
+        "body": "This recording is deleted automatically 30 days after you make it.",
+        "prunewarning": "Recording again will delete your oldest recording, made on 1 October 2026. Your score and feedback for it are kept."
+    }
+}}
+<div class="mod-presenterai-callout mod-presenterai-callout-{{variant}} border rounded p-3 mb-3">
+    <h4 class="mt-0">{{heading}}</h4>
+    <p class="mb-0">{{{body}}}</p>
+    {{#prunewarning}}
+    <p class="mod-presenterai-prune mt-2 mb-0">{{prunewarning}}</p>
+    {{/prunewarning}}
+</div>

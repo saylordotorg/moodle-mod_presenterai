@@ -1,0 +1,98 @@
+/* PresenterAI activity page. Every rule is prefixed, because this file loads on every page of the site. */
+
+.mod-presenterai-callout {
+    background-color: #f8f9fa;
+}
+
+.mod-presenterai-preview {
+    display: block;
+    width: 100%;
+    max-width: 640px;
+    max-height: 360px;
+    background: #000;
+    border-radius: 6px;
+}
+
+.mod-presenterai-controls {
+    gap: 12px;
+}
+
+.mod-presenterai-audio {
+    gap: 10px;
+}
+
+.mod-presenterai-mic-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #6c757d;
+}
+
+/* The recording and near-limit states are also shown as words (the
+   recording-indicator and near-max elements), so colour is never the only
+   signal (design section 11, rule 9). */
+.mod-presenterai-recording .mod-presenterai-mic-dot,
+.mod-presenterai-recording .mod-presenterai-rec-indicator {
+    color: #b02a37;
+}
+
+.mod-presenterai-recording .mod-presenterai-mic-dot {
+    background: #b02a37;
+}
+
+.mod-presenterai-rec-indicator,
+.mod-presenterai-near-max-text {
+    font-weight: bold;
+}
+
+.mod-presenterai-near-max .mod-presenterai-timer,
+.mod-presenterai-near-max .mod-presenterai-near-max-text {
+    color: #b02a37;
+}
+
+.mod-presenterai-slides {
+    max-width: 640px;
+}
+
+.mod-presenterai-slides:focus {
+    outline: 2px solid #0f6cbf;
+    outline-offset: 2px;
+}
+
+.mod-presenterai-slide-img,
+.mod-presenterai-play-slide {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.mod-presenterai-slide-controls {
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.mod-presenterai-play {
+    gap: 12px;
+}
+
+.mod-presenterai-play-col {
+    flex: 1 1 320px;
+    min-width: 0;
+}
+
+.mod-presenterai-play-media {
+    display: block;
+    width: 100%;
+    max-height: 360px;
+}
+
+video.mod-presenterai-play-media {
+    background: #000;
+}
+
+/* A row whose media is gone keeps its words in the state and actions cells;
+   the muted colour only adds to them. */
+.mod-presenterai-attempt-nomedia td {
+    color: #495057;
+}

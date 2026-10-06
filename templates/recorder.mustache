@@ -1,0 +1,73 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/recorder
+
+    The recorder: an optional slide deck, the camera preview or a microphone
+    indicator, Record and Stop, the timer and a status line. Behaviour is in
+    mod_presenterai/recorder and mod_presenterai/view, which find elements by
+    data-region and data-action, so those attributes are the contract.
+
+    The limits line is the published ceiling of plan section 4.4, shown before
+    the learner starts. The recording and near-the-limit indicators carry
+    words, not only a colour (design section 11, rule 9).
+
+    Context variables required for this template:
+    * isaudio - Audio only.
+    * isvideo - Camera and microphone.
+    * slides - Whether a slide deck may be added.
+    * limits - The length and size limits sentence.
+
+    Example context (json):
+    {
+        "isaudio": false,
+        "isvideo": true,
+        "slides": true,
+        "limits": "Record for between 5:00 and 7:00. The largest recording this site accepts is 150 MB."
+    }
+}}
+<div class="mod-presenterai-recorder card p-3 mb-4" data-region="recorder">
+    <p class="mod-presenterai-limits small mb-2">{{limits}}</p>
+    {{#slides}}
+    <div class="mod-presenterai-deck mb-3">
+        <label for="mod-presenterai-deck-{{uniqid}}" class="font-weight-bold d-block">{{#str}}deck_label, mod_presenterai{{/str}}</label>
+        <input type="file" accept="application/pdf,.pdf" id="mod-presenterai-deck-{{uniqid}}" class="form-control-file" data-region="deck-input">
+        <div class="mod-presenterai-deck-status small mt-1" data-region="deck-status"></div>
+        <div class="mod-presenterai-slides mt-2" data-region="slide-viewer"></div>
+    </div>
+    {{/slides}}
+    {{#isvideo}}
+    <video class="mod-presenterai-preview mb-2" data-region="preview" playsinline muted></video>
+    {{/isvideo}}
+    {{#isaudio}}
+    <div class="mod-presenterai-audio d-flex align-items-center mb-2">
+        <span class="mod-presenterai-mic-dot" aria-hidden="true"></span>
+        <span>{{#str}}rec_audio_only, mod_presenterai{{/str}}</span>
+    </div>
+    {{/isaudio}}
+    <div class="mod-presenterai-controls d-flex flex-wrap align-items-center mb-2">
+        <button type="button" class="btn btn-primary" data-action="record">{{#str}}record, mod_presenterai{{/str}}</button>
+        <button type="button" class="btn btn-secondary" data-action="stop" disabled>{{#str}}stop, mod_presenterai{{/str}}</button>
+        <span class="mod-presenterai-timer font-weight-bold" data-region="timer">0:00</span>
+        <span class="mod-presenterai-rec-indicator" data-region="recording-indicator" hidden>{{#str}}rec_status_recording, mod_presenterai{{/str}}</span>
+        <span class="mod-presenterai-near-max-text" data-region="near-max" hidden>{{#str}}rec_near_max, mod_presenterai{{/str}}</span>
+    </div>
+    <div class="mod-presenterai-status" data-region="status"></div>
+    <div class="mt-2" data-region="retry" hidden>
+        <button type="button" class="btn btn-primary" data-action="retry">{{#str}}rec_retry, mod_presenterai{{/str}}</button>
+    </div>
+</div>
