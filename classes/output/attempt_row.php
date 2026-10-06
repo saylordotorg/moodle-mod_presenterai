@@ -17,6 +17,7 @@
 namespace mod_presenterai\output;
 
 use mod_presenterai\local\access;
+use mod_presenterai\local\storage\store_factory;
 
 /**
  * One row of a learner's attempt list.
@@ -64,9 +65,11 @@ final class attempt_row {
      * @param \stdClass $rec A presenterai_recording row.
      * @param int $now The time to compare expiresat against.
      * @param bool $cleanupenabled Whether the cleanup task that honours expiresat is enabled.
+     * @param bool $s3lifecycle Whether a bucket lifecycle rule is declared for S3, which
+     *                          deletes S3 recordings whether or not the task runs.
      * @return array ['key' => lang string key, 'a' => its {$a} or null]
      */
-    public static function state(\stdClass $rec, int $now, bool $cleanupenabled): array {
+    public static function state(\stdClass $rec, int $now, bool $cleanupenabled, bool $s3lifecycle = false): array {
         $status = (string) ($rec->status ?? '');
         if (in_array($status, self::NEVER_UPLOADED, true)) {
             return ['key' => 'attempt_never_uploaded', 'a' => null];
@@ -74,9 +77,12 @@ final class attempt_row {
 
         $expiresat = (int) ($rec->expiresat ?? 0);
         if (self::has_media($rec)) {
-            if ($expiresat <= 0 || !$cleanupenabled) {
-                // A disabled task never arrives at the date, so promising one
-                // would be a statement the site is not going to keep (8.7f).
+            // A disabled task never arrives at the date, so promising one would
+            // be a statement the site is not going to keep (8.7f). A declared
+            // bucket lifecycle is the exception: the bucket deletes whether the
+            // task runs or not, and the row must never say "kept" then (8.6, 1).
+            $bucketdeletes = $s3lifecycle && (string) ($rec->backend ?? '') === store_factory::BACKEND_S3;
+            if ($expiresat <= 0 || (!$cleanupenabled && !$bucketdeletes)) {
                 return ['key' => 'attempt_kept', 'a' => null];
             }
             if ($expiresat > $now) {
@@ -157,10 +163,18 @@ final class attempt_row {
      * @param int $userid The user the page is being built for.
      * @param int $now The time to compare expiresat against.
      * @param bool $cleanupenabled Whether the cleanup task is enabled.
+     * @param bool $s3lifecycle Whether a bucket lifecycle rule is declared for S3.
      * @return array
      */
-    public static function export(\stdClass $rec, \context_module $ctx, int $userid, int $now, bool $cleanupenabled): array {
-        $state = self::state($rec, $now, $cleanupenabled);
+    public static function export(
+        \stdClass $rec,
+        \context_module $ctx,
+        int $userid,
+        int $now,
+        bool $cleanupenabled,
+        bool $s3lifecycle = false
+    ): array {
+        $state = self::state($rec, $now, $cleanupenabled, $s3lifecycle);
         $hasmedia = self::has_media($rec);
         $neveruploaded = in_array((string) $rec->status, self::NEVER_UPLOADED, true);
 

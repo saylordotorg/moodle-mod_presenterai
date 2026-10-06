@@ -34,7 +34,8 @@
     * data-region="probe-results"
 
     Context variables required for this template:
-    * arms - list of {name, label, configured, steps: [{step, label, ok, detail}]}
+    * arms - list of {name, label, configured, steps: [{step, label, ok, info, detail}]}
+      (info marks a step that was not tested, which gets a neutral badge rather than a pass)
     * hascounts - whether any recording has media
     * counts - list of {text}, one line per backend
     * hassaved - whether a chunk size has been saved
@@ -51,7 +52,8 @@
                 "configured": true,
                 "steps": [
                     {"step": "staging", "label": "Staging directory", "ok": true, "detail": "Wrote and read back a staging file."},
-                    {"step": "byteserving", "label": "Seeking", "ok": false, "detail": "Byte serving is off."}
+                    {"step": "byteserving", "label": "Seeking", "ok": false, "detail": "Byte serving is off."},
+                    {"step": "lifecycle", "label": "Bucket lifecycle rule", "ok": true, "info": true, "detail": "Cannot be read."}
                 ]
             }
         ],
@@ -85,8 +87,11 @@
             <tr>
                 <th scope="row">{{label}}</th>
                 <td>
+                    {{#info}}<span class="badge bg-secondary text-white">{{#str}} probe_notchecked, mod_presenterai {{/str}}</span>{{/info}}
+                    {{^info}}
                     {{#ok}}<span class="badge bg-success text-white">{{#str}} probe_ok, mod_presenterai {{/str}}</span>{{/ok}}
                     {{^ok}}<span class="badge bg-danger text-white">{{#str}} probe_fail, mod_presenterai {{/str}}</span>{{/ok}}
+                    {{/info}}
                 </td>
                 <td>{{detail}}</td>
             </tr>

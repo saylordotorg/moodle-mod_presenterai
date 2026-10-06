@@ -247,9 +247,10 @@ final class view_page implements \renderable, \templatable {
         );
 
         $cleanupenabled = retention::cleanup_task_enabled();
+        $s3lifecycle = retention::lifecycle_days(store_factory::BACKEND_S3) > 0;
         $out = [];
         foreach ($rows as $row) {
-            $out[] = attempt_row::export($row, $this->context, $this->userid, $this->now, $cleanupenabled);
+            $out[] = attempt_row::export($row, $this->context, $this->userid, $this->now, $cleanupenabled, $s3lifecycle);
         }
 
         return $out;

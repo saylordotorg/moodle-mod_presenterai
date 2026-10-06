@@ -32,6 +32,9 @@ use mod_presenterai\local\storage\fs_store;
  * @covers     \mod_presenterai\external\finalize_recording
  */
 final class external_finalize_recording_test extends \advanced_testcase {
+    /** @var string The token begin_attempt returned for the attempt under test. */
+    private string $token = '';
+
     /** @var \stdClass The course. */
     private \stdClass $course;
 
@@ -65,11 +68,12 @@ final class external_finalize_recording_test extends \advanced_testcase {
     private function uploaded_attempt(string $content): int {
         $this->setUser($this->alice);
         $begin = begin_attempt::execute((int) $this->instance->cmid);
-        $target = start_upload::execute($begin['recordingid'], 'recording', 'webm', strlen($content));
+        $target = start_upload::execute($begin['recordingid'], 'recording', 'webm', strlen($content), $begin['attempttoken']);
         $stream = fopen('php://memory', 'r+b');
         fwrite($stream, $content);
         rewind($stream);
         (new fs_store())->accept_chunk($target['uploadid'], 0, $stream);
+        $this->token = (string) $begin['attempttoken'];
 
         return (int) $begin['recordingid'];
     }
@@ -85,7 +89,7 @@ final class external_finalize_recording_test extends \advanced_testcase {
 
         $result = external_api::clean_returnvalue(
             finalize_recording::execute_returns(),
-            finalize_recording::execute($recordingid, 0, 42, '')
+            finalize_recording::execute($recordingid, $this->token, 0, 42, '')
         );
 
         $this->assertSame($recordingid, $result['recordingid']);
@@ -94,7 +98,7 @@ final class external_finalize_recording_test extends \advanced_testcase {
         $this->assertSame(0, $result['expiresat']);
         $this->assertSame(strlen($content), $result['sizebytes'], 'The size must be the store\'s answer, not the browser\'s.');
 
-        $again = finalize_recording::execute($recordingid, 0, 42, '');
+        $again = finalize_recording::execute($recordingid, $this->token, 0, 42, '');
         $this->assertSame($result['attemptnumber'], $again['attemptnumber'], 'A retried finalize changed the answer.');
     }
 
@@ -110,7 +114,7 @@ final class external_finalize_recording_test extends \advanced_testcase {
         $this->setUser($this->getDataGenerator()->create_and_enrol($this->course, 'student'));
 
         try {
-            finalize_recording::execute($recordingid);
+            finalize_recording::execute($recordingid, $this->token);
             $this->fail('A learner finalized another learner\'s attempt.');
         } catch (\moodle_exception $e) {
             $this->assertSame('error:recordingnotfound', $e->errorcode);
@@ -128,6 +132,6 @@ final class external_finalize_recording_test extends \advanced_testcase {
         $this->setUser($this->getDataGenerator()->create_and_enrol($this->course, 'teacher'));
 
         $this->expectException(\required_capability_exception::class);
-        finalize_recording::execute($recordingid);
+        finalize_recording::execute($recordingid, $this->token);
     }
 }

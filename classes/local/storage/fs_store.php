@@ -129,9 +129,10 @@ final class fs_store implements store_interface {
      * than into a failure after they have spoken for seven minutes.
      *
      * @param media_ref $ref The media being uploaded. Its recordingid may be 0.
+     * @param int $sizebytes Unused here: every chunk passes through PHP, which counts it.
      * @return array Upload instructions for the browser.
      */
-    public function begin_upload(media_ref $ref): array {
+    public function begin_upload(media_ref $ref, int $sizebytes = 0): array {
         if (!$ref->has_valid_kind()) {
             throw new \coding_exception('Unknown media kind: ' . $ref->kind);
         }
@@ -633,11 +634,15 @@ final class fs_store implements store_interface {
      *
      * @param string $key The stored key.
      * @param string $ext Extension for the temporary file, without the dot.
-     * @return string|null Absolute path, or null if the object is gone.
+     * @param int $maxbytes Largest object accepted, or 0 for no limit.
+     * @return string|null Absolute path, or null if the object is gone or too large.
      */
-    public function fetch_to_file(string $key, string $ext): ?string {
+    public function fetch_to_file(string $key, string $ext, int $maxbytes = 0): ?string {
         $file = $this->locate($key);
         if ($file === null) {
+            return null;
+        }
+        if ($maxbytes > 0 && (int) $file->get_filesize() > $maxbytes) {
             return null;
         }
 

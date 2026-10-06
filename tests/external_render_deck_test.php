@@ -98,7 +98,7 @@ final class external_render_deck_test extends \advanced_testcase {
         $this->setUser($this->alice);
         $begin = begin_attempt::execute((int) $this->instance->cmid);
         $pdf = $this->minimal_pdf();
-        $target = start_upload::execute($begin['recordingid'], 'deck', 'pdf', strlen($pdf));
+        $target = start_upload::execute($begin['recordingid'], 'deck', 'pdf', strlen($pdf), $begin['attempttoken']);
         $stream = fopen('php://memory', 'r+b');
         fwrite($stream, $pdf);
         rewind($stream);

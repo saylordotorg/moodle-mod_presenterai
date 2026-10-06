@@ -87,6 +87,45 @@ final class retention_test extends \advanced_testcase {
     }
 
     /**
+     * On S3 with a declared lifecycle, the row says what the callout promised.
+     *
+     * The callout folded the lifecycle in and finalize did not, so a learner
+     * told "deleted after 7 days" then read "kept until removed", or a date
+     * after the bucket had already deleted the bytes (design 8.6, point 1).
+     *
+     * @return void
+     */
+    public function test_callout_and_row_agree_on_an_s3_lifecycle(): void {
+        $this->resetAfterTest();
+        set_config('backend', 's3', 'mod_presenterai');
+        set_config('s3lifecycledays', 7, 'mod_presenterai');
+        $now = 1790000000;
+        $instance = (object) ['retentiondays' => -1];
+
+        foreach ([0 => 7, 30 => 7, 3 => 3] as $site => $expected) {
+            set_config('retentiondays', $site, 'mod_presenterai');
+            $promised = retention::prospective_days($instance);
+            $expiresat = retention::expiry_for($instance, $now, 's3');
+            $this->assertSame($expected, $promised);
+            $this->assertSame($now + $promised * DAYSECS, $expiresat, "Retention {$site}: the row and the callout disagree.");
+
+            $row = (object) ['status' => 'uploaded', 'backend' => 's3', 'storagekey' => 'k.webm', 'expiresat' => $expiresat];
+            $state = \mod_presenterai\output\attempt_row::state($row, $now, true, true);
+            $this->assertSame('attempt_deletes_on', $state['key'], "Retention {$site}: the row did not give the date.");
+        }
+
+        // The bucket deletes whether or not the task runs, so the row still gives the date.
+        $row = (object) ['status' => 'uploaded', 'backend' => 's3', 'storagekey' => 'k.webm', 'expiresat' => $now + DAYSECS];
+        $this->assertSame('attempt_deletes_on', \mod_presenterai\output\attempt_row::state($row, $now, false, true)['key']);
+        $row->backend = 'fs';
+        $this->assertSame('attempt_kept', \mod_presenterai\output\attempt_row::state($row, $now, false, true)['key']);
+
+        // A rule declared for S3 says nothing about a recording on Moodle file storage.
+        set_config('retentiondays', 0, 'mod_presenterai');
+        $this->assertSame(0, retention::expiry_for($instance, $now, 'fs'));
+    }
+
+    /**
      * The callout promises nothing when the cleanup task is off, and the bucket's rule when one is declared.
      *
      * @return void

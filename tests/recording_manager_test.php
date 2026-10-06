@@ -119,9 +119,10 @@ final class recording_manager_test extends \advanced_testcase {
      * @param \stdClass $rec The uploading row.
      * @param string $kind media_ref::KIND_RECORDING or media_ref::KIND_DECK.
      * @param string $content The bytes.
+     * @param string|null $token The page's token, or null to act as a server-side caller.
      * @return array The upload target start_upload returned.
      */
-    private function send(\stdClass $rec, string $kind, string $content): array {
+    private function send(\stdClass $rec, string $kind, string $content, ?string $token = null): array {
         $ext = $kind === media_ref::KIND_DECK ? 'pdf' : 'webm';
         $target = recording_manager::start_upload(
             $rec,
@@ -130,7 +131,8 @@ final class recording_manager_test extends \advanced_testcase {
             $this->context,
             $kind,
             $ext,
-            strlen($content)
+            strlen($content),
+            $token
         );
         (new fs_store())->accept_chunk($target['uploadid'], 0, $this->stream_of($content));
 
@@ -201,6 +203,132 @@ final class recording_manager_test extends \advanced_testcase {
         $later = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->user->id);
         $this->assertFalse($later['resumed']);
         $this->assertNotSame((int) $first->id, (int) $later['recording']->id);
+    }
+
+    /**
+     * A second tab that resumes an unused row takes it over, and the first tab is refused.
+     *
+     * @return void
+     */
+    public function test_resuming_hands_the_row_to_the_new_page(): void {
+        $first = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->user->id);
+        $second = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->user->id);
+        $this->assertTrue($second['resumed']);
+        $this->assertSame((int) $first['recording']->id, (int) $second['recording']->id);
+        $this->assertNotSame($first['token'], $second['token'], 'Two pages were given the same token for one row.');
+
+        $rec = $first['recording'];
+        $this->assert_refused(
+            'error:attemptsuperseded',
+            fn() => $this->send($rec, 'recording', 'tab one', $first['token']),
+            'The page that lost the row could still mint a key in it.'
+        );
+        $this->assertEmpty($this->reload((int) $rec->id)->storagekey, 'The refused page still wrote a key.');
+
+        $this->send($rec, 'recording', 'tab two', $second['token']);
+        $this->assertNotEmpty($this->reload((int) $rec->id)->storagekey);
+    }
+
+    /**
+     * A row that already holds a recording key is never handed to another page.
+     *
+     * Two tabs used to share it: the second tab's start_upload deleted the
+     * first tab's object and replaced its upload id, so one recording was lost.
+     *
+     * @return void
+     */
+    public function test_a_row_with_a_recording_key_is_not_resumed(): void {
+        $first = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->user->id);
+        $this->send($first['recording'], 'recording', 'tab one bytes', $first['token']);
+        $key = (string) $this->reload((int) $first['recording']->id)->storagekey;
+
+        $second = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->user->id);
+        $this->assertFalse($second['resumed'], 'A row already being uploaded into was handed to a second page.');
+        $this->assertNotSame((int) $first['recording']->id, (int) $second['recording']->id);
+
+        $this->send($second['recording'], 'recording', 'tab two bytes', $second['token']);
+        $this->assertSame(
+            $key,
+            (string) $this->reload((int) $first['recording']->id)->storagekey,
+            'Tab two disturbed tab one\'s upload.'
+        );
+
+        $finalize = fn(array $begun) => recording_manager::finalize(
+            $begun['recording'],
+            $this->instance,
+            $this->course,
+            $this->context,
+            0,
+            30,
+            '',
+            $begun['token']
+        );
+        $one = $finalize($first);
+        $two = $finalize($second);
+        $this->assertSame('uploaded', $one->status);
+        $this->assertSame('uploaded', $two->status);
+        $this->assertSame([1, 2], [(int) $one->attemptnumber, (int) $two->attemptnumber]);
+        $this->assertEmpty($one->clienttoken, 'A finalized row kept its token.');
+    }
+
+    /**
+     * After a failed upload and a reload, slides work and the old deck does not follow.
+     *
+     * @return void
+     */
+    public function test_reload_after_a_failed_upload_starts_clean(): void {
+        $old = $this->begin();
+        $this->send($old, 'deck', '%PDF-1.4 old deck');
+        $this->send($old, 'recording', 'upload that never finished');
+
+        $fresh = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->user->id);
+        $this->assertFalse($fresh['resumed']);
+        $this->assertEmpty($fresh['recording']->deckkey, 'A deck this page never showed was carried into its attempt.');
+
+        // Refused with error:deckafterrecording when the old row was resumed.
+        $this->send($fresh['recording'], 'deck', '%PDF-1.4 new deck', $fresh['token']);
+        $this->assertNotEmpty($this->reload((int) $fresh['recording']->id)->deckkey);
+    }
+
+    /**
+     * Finalize refuses a page whose token is not the row's.
+     *
+     * @return void
+     */
+    public function test_finalize_refuses_a_stale_token(): void {
+        $begun = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->user->id);
+        $rec = $begun['recording'];
+        $this->send($rec, 'recording', 'bytes', $begun['token']);
+
+        $this->assert_refused(
+            'error:attemptsuperseded',
+            fn() => recording_manager::finalize($rec, $this->instance, $this->course, $this->context, 0, 30, '', 'not-the-token'),
+            'A page without the row\'s token finalized it.'
+        );
+        $this->assertSame('uploading', $this->reload((int) $rec->id)->status);
+    }
+
+    /**
+     * A learner cannot open unfinished attempts without limit.
+     *
+     * @return void
+     */
+    public function test_begin_refuses_too_many_open_attempts(): void {
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        for ($i = 0; $i < recording_manager::MAX_OPEN_ATTEMPTS; $i++) {
+            $generator->create_recording([
+                'presenteraiid' => $this->instance->id,
+                'userid' => $this->user->id,
+                'status' => 'uploading',
+                'deckkey' => 'deck' . $i . '.pdf',
+            ]);
+        }
+
+        $this->assert_refused(
+            'error:toomanyopen',
+            fn() => $this->begin(),
+            'Each open row can hold a deck, so they must be bounded.'
+        );
     }
 
     /**
@@ -608,6 +736,47 @@ final class recording_manager_test extends \advanced_testcase {
             "contextid = :ctx AND component = 'mod_presenterai' AND filename <> '.'",
             ['ctx' => $this->context->id]
         ), 'Media survived the deletion of its activity.');
+    }
+
+    /**
+     * S3 objects that cannot be deleted with their activity are queued, not forgotten.
+     *
+     * The rows are deleted straight afterwards and are the only record that
+     * the objects exist, so a delete that fails here must leave a task behind
+     * that keeps trying (design 8.6, point 5).
+     *
+     * @return void
+     */
+    public function test_undeletable_s3_media_is_queued_for_a_retry(): void {
+        // S3 is not configured, which is the "credential somebody cleared" case.
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $generator->create_recording([
+            'presenteraiid' => $this->instance->id,
+            'userid' => $this->user->id,
+            'backend' => 's3',
+            'storagekey' => 'presenterai/1/2/rec.webm',
+            'deckkey' => 'presenterai/1/2/deck.pdf',
+        ]);
+        $generator->create_recording([
+            'presenteraiid' => $this->instance->id,
+            'userid' => $this->user->id,
+            'backend' => 'fs',
+            'storagekey' => 'nothing-stored-under-this.webm',
+        ]);
+
+        recording_manager::delete_all_media_for_instance((int) $this->instance->id);
+        $this->assertDebuggingCalled();
+
+        $tasks = \core\task\manager::get_adhoc_tasks(\mod_presenterai\task\delete_orphaned_media::class);
+        $this->assertCount(1, $tasks, 'The undeletable S3 objects were dropped with nothing left to delete them.');
+        $task = reset($tasks);
+        $data = $task->get_custom_data();
+        $this->assertSame('s3', $data->backend);
+        $this->assertEqualsCanonicalizing(['presenterai/1/2/rec.webm', 'presenterai/1/2/deck.pdf'], (array) $data->keys);
+
+        // While the bucket is still unreachable the task fails, so core runs it again later.
+        $this->expectException(\moodle_exception::class);
+        $task->execute();
     }
 
     /**

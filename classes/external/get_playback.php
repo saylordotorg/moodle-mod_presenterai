@@ -108,7 +108,7 @@ class get_playback extends external_api {
         $result['ttl'] = $store->supports_direct_upload() ? recording_manager::PLAYBACK_TTL : 0;
 
         if (!empty($rec->deckkey) && !empty($rec->slidetimeline) && deck_renderer::is_available()) {
-            $path = $store->fetch_to_file((string) $rec->deckkey, 'pdf');
+            $path = $store->fetch_to_file((string) $rec->deckkey, 'pdf', recording_manager::MAX_DECK_BYTES);
             if ($path !== null) {
                 $result['pages'] = deck_renderer::render_to_datauris($path);
             }

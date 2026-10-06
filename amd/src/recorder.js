@@ -118,7 +118,8 @@ const isError = (err, name) => !!err && typeof err.errorcode === 'string'
  * @param {number} config.videokbps
  * @param {number} config.audiokbps
  * @param {object} hooks What the page controller provides.
- * @param {function} hooks.ensureAttempt Resolves to the recording id, creating the row on first use.
+ * @param {function} hooks.ensureAttempt Resolves to {recordingid, token}, creating the row on first use.
+ * @param {function} hooks.forgetAttempt Drops the cached attempt so the next ensureAttempt begins again.
  * @param {function} hooks.getTopicId Returns the chosen topic id, 0 for none.
  * @param {function} hooks.getSlides Returns the slide viewer, or null.
  * @param {function} hooks.announce Speaks a message through the page's live region.
@@ -226,11 +227,12 @@ export const init = (root, config, hooks) => {
         show(retrywrap, false);
         window.addEventListener('beforeunload', guard);
         try {
-            const recordingid = await hooks.ensureAttempt();
-            const send = async() => {
+            const send = async(attempt) => {
+                const recordingid = attempt.recordingid;
                 const target = await Ajax.call([{
                     methodname: 'mod_presenterai_start_upload',
-                    args: {recordingid: recordingid, kind: 'recording', ext: pending.ext, sizebytes: pending.blob.size},
+                    args: {recordingid: recordingid, kind: 'recording', ext: pending.ext, sizebytes: pending.blob.size,
+                        attempttoken: attempt.token},
                 }])[0];
                 let lastpct = -1;
                 let sending = true;
@@ -253,29 +255,46 @@ export const init = (root, config, hooks) => {
                     sending = false;
                 }
             };
-            const finalize = () => Ajax.call([{
+            const finalize = (attempt) => Ajax.call([{
                 methodname: 'mod_presenterai_finalize_recording',
                 args: {
-                    recordingid: recordingid,
+                    recordingid: attempt.recordingid,
+                    attempttoken: attempt.token,
                     topicid: hooks.getTopicId(),
                     durationseconds: pending.duration,
                     slidetimeline: pending.timeline,
                 },
             }])[0];
 
-            await say('rec_status_uploading', 0, true);
-            await send();
-            await say('rec_status_finalizing', null, false);
+            const deliver = async(attempt) => {
+                await say('rec_status_uploading', 0, true);
+                await send(attempt);
+                await say('rec_status_finalizing', null, false);
+                try {
+                    await finalize(attempt);
+                } catch (err) {
+                    // The server did not find the bytes. Send them once more, then
+                    // ask again; a second miss goes to the Retry button.
+                    if (!isError(err, 'uploadmissing')) {
+                        throw err;
+                    }
+                    await send(attempt);
+                    await finalize(attempt);
+                }
+            };
+
             try {
-                await finalize();
+                await deliver(await hooks.ensureAttempt());
             } catch (err) {
-                // The server did not find the bytes. Send them once more, then
-                // ask again; a second miss goes to the Retry button.
-                if (!isError(err, 'uploadmissing')) {
+                // Another tab took the row over, or the cleanup task closed it.
+                // The recording is still in memory, so it goes to a new
+                // attempt rather than to the Retry button, and a Retry later
+                // does the same rather than reusing a row it cannot have.
+                if (!isError(err, 'attemptsuperseded') && !isError(err, 'notuploading')) {
                     throw err;
                 }
-                await send();
-                await finalize();
+                hooks.forgetAttempt();
+                await deliver(await hooks.ensureAttempt());
             }
 
             pending = null;

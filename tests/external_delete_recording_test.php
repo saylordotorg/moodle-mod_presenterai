@@ -67,12 +67,12 @@ final class external_delete_recording_test extends \advanced_testcase {
         $this->setUser($this->alice);
         $content = 'recorded-bytes';
         $begin = begin_attempt::execute((int) $this->instance->cmid);
-        $target = start_upload::execute($begin['recordingid'], 'recording', 'webm', strlen($content));
+        $target = start_upload::execute($begin['recordingid'], 'recording', 'webm', strlen($content), $begin['attempttoken']);
         $stream = fopen('php://memory', 'r+b');
         fwrite($stream, $content);
         rewind($stream);
         (new fs_store())->accept_chunk($target['uploadid'], 0, $stream);
-        finalize_recording::execute($begin['recordingid']);
+        finalize_recording::execute($begin['recordingid'], $begin['attempttoken']);
 
         return $DB->get_record('presenterai_recording', ['id' => $begin['recordingid']], '*', MUST_EXIST);
     }

@@ -70,7 +70,8 @@ final class access {
             return true;
         }
 
-        return has_capability('mod/presenterai:viewallattempts', $ctx, $userid);
+        return has_capability('mod/presenterai:viewallattempts', $ctx, $userid)
+            && self::group_allows($rec, $ctx, $userid);
     }
 
     /**
@@ -96,7 +97,8 @@ final class access {
         }
 
         // Not implied by viewallattempts, and not governed by allowlearnerdownload.
-        return has_capability('mod/presenterai:downloadany', $ctx, $userid);
+        return has_capability('mod/presenterai:downloadany', $ctx, $userid)
+            && self::group_allows($rec, $ctx, $userid);
     }
 
     /**
@@ -122,7 +124,8 @@ final class access {
             return has_capability('mod/presenterai:deleteownmedia', $ctx, $userid);
         }
 
-        return has_capability('mod/presenterai:deleteanyrecording', $ctx, $userid);
+        return has_capability('mod/presenterai:deleteanyrecording', $ctx, $userid)
+            && self::group_allows($rec, $ctx, $userid);
     }
 
     /**
@@ -154,6 +157,43 @@ final class access {
      */
     private static function has_media(\stdClass $rec): bool {
         return !empty($rec->storagekey) && (string) ($rec->status ?? '') !== recording_manager::STATUS_UPLOADING;
+    }
+
+    /**
+     * Whether group mode lets the user act on another learner's recording.
+     *
+     * In separate groups a teacher sees only the learners who share a group
+     * with them, unless they hold moodle/site:accessallgroups, which is the
+     * rule every core activity applies to its grading screens. The activity
+     * declares FEATURE_GROUPS, so without this a non-editing teacher in one
+     * group could watch any learner's recording by guessing its id. Visible
+     * groups and no groups restrict nothing. The course module comes from the
+     * context, never from the request.
+     *
+     * @param \stdClass $rec A presenterai_recording row.
+     * @param \context_module $ctx The activity's module context.
+     * @param int $userid The user asking, who is not the owner.
+     * @return bool
+     */
+    private static function group_allows(\stdClass $rec, \context_module $ctx, int $userid): bool {
+        $cm = get_coursemodule_from_id('presenterai', (int) $ctx->instanceid, 0, false, IGNORE_MISSING);
+        if (!$cm) {
+            return false;
+        }
+        if ((int) groups_get_activity_groupmode($cm) !== SEPARATEGROUPS) {
+            return true;
+        }
+        if (has_capability('moodle/site:accessallgroups', $ctx, $userid)) {
+            return true;
+        }
+
+        $mine = groups_get_all_groups((int) $cm->course, $userid, (int) $cm->groupingid, 'g.id');
+        if (empty($mine)) {
+            return false;
+        }
+        $theirs = groups_get_all_groups((int) $cm->course, (int) $rec->userid, (int) $cm->groupingid, 'g.id');
+
+        return !empty(array_intersect_key($mine, $theirs));
     }
 
     /**

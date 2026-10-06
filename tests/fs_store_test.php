@@ -311,6 +311,20 @@ final class fs_store_test extends \advanced_testcase {
     }
 
     /**
+     * fetch_to_file() refuses an object over the ceiling it is given.
+     *
+     * @return void
+     */
+    public function test_fetch_to_file_refuses_an_object_over_the_ceiling(): void {
+        $content = str_repeat('z', 2048);
+        [$key] = $this->store_media($content);
+
+        $this->assertNull($this->store->fetch_to_file($key, 'pdf', strlen($content) - 1));
+        $this->assertNotNull($this->store->fetch_to_file($key, 'pdf', strlen($content)));
+        $this->assertNotNull($this->store->fetch_to_file($key, 'pdf'), 'No ceiling means no limit here, as before.');
+    }
+
+    /**
      * A playback URL points at pluginfile, and a download URL asks for a download.
      *
      * @return void

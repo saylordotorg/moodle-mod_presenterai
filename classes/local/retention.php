@@ -65,14 +65,58 @@ final class retention {
     /**
      * The expiresat value for a recording finalized at $now.
      *
+     * When the recording is on S3 and the administrator has declared a bucket
+     * lifecycle rule, the bucket deletes on its own clock, so the shorter of the
+     * two is written, and a lifecycle with no plugin retention is still a date
+     * (design 8.6, point 1). That is the same arithmetic prospective_days()
+     * uses for the callout, so the date a learner was promised before speaking
+     * and the date their row shows afterwards agree. Writing the earlier date
+     * also lets the cleanup task record the deletion on the row rather than
+     * finding the object gone later.
+     *
      * @param \stdClass $instance A presenterai row carrying retentiondays.
      * @param int $now The finalize time.
+     * @param string $backend The recording's backend, or '' when it is not known.
      * @return int A unix time, or 0 when nothing will delete the media on a clock.
      */
-    public static function expiry_for(\stdClass $instance, int $now): int {
-        $days = self::effective_days($instance);
+    public static function expiry_for(\stdClass $instance, int $now, string $backend = ''): int {
+        $days = self::bounded_by_lifecycle(self::effective_days($instance), $backend);
 
         return $days > 0 ? $now + $days * DAYSECS : 0;
+    }
+
+    /**
+     * The days a bucket lifecycle rule allows a recording on this backend, or 0.
+     *
+     * Read live from the setting, because the declaration describes the bucket
+     * as it is now. Only S3 has a lifecycle.
+     *
+     * @param string $backend A store_factory BACKEND_* name.
+     * @return int Days, or 0 when no lifecycle rule is declared for this backend.
+     */
+    public static function lifecycle_days(string $backend): int {
+        if ($backend !== store_factory::BACKEND_S3) {
+            return 0;
+        }
+        $lifecycle = (int) get_config('mod_presenterai', 's3lifecycledays');
+
+        return $lifecycle > 0 ? $lifecycle : 0;
+    }
+
+    /**
+     * Shorten a retention period to a declared bucket lifecycle.
+     *
+     * @param int $days Plugin retention in days, 0 for none.
+     * @param string $backend A store_factory BACKEND_* name.
+     * @return int Days, or 0 when nothing deletes on a clock.
+     */
+    private static function bounded_by_lifecycle(int $days, string $backend): int {
+        $lifecycle = self::lifecycle_days($backend);
+        if ($lifecycle > 0) {
+            return $days > 0 ? min($days, $lifecycle) : $lifecycle;
+        }
+
+        return $days;
     }
 
     /**
@@ -97,14 +141,7 @@ final class retention {
     public static function prospective_days(\stdClass $instance): int {
         $days = self::cleanup_task_enabled() ? self::effective_days($instance) : 0;
 
-        if (store_factory::default_backend() === store_factory::BACKEND_S3) {
-            $lifecycle = (int) get_config('mod_presenterai', 's3lifecycledays');
-            if ($lifecycle > 0) {
-                return $days > 0 ? min($days, $lifecycle) : $lifecycle;
-            }
-        }
-
-        return $days;
+        return self::bounded_by_lifecycle($days, store_factory::default_backend());
     }
 
     /**

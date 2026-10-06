@@ -43,6 +43,7 @@ class finalize_recording extends external_api {
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'recordingid' => new external_value(PARAM_INT, 'Recording id from begin_attempt'),
+            'attempttoken' => new external_value(PARAM_ALPHANUM, 'The token begin_attempt returned with this recording id'),
             'topicid' => new external_value(PARAM_INT, 'Chosen topic id, 0 for none', VALUE_DEFAULT, 0),
             'durationseconds' => new external_value(PARAM_INT, 'Recorded length in seconds', VALUE_DEFAULT, 0),
             'slidetimeline' => new external_value(PARAM_RAW, 'JSON slide-advance timeline', VALUE_DEFAULT, ''),
@@ -53,6 +54,7 @@ class finalize_recording extends external_api {
      * Finalize the attempt.
      *
      * @param int $recordingid Recording id.
+     * @param string $attempttoken The token from begin_attempt.
      * @param int $topicid Topic id or 0.
      * @param int $durationseconds Recorded length.
      * @param string $slidetimeline JSON timeline or empty.
@@ -60,6 +62,7 @@ class finalize_recording extends external_api {
      */
     public static function execute(
         int $recordingid,
+        string $attempttoken,
         int $topicid = 0,
         int $durationseconds = 0,
         string $slidetimeline = ''
@@ -68,6 +71,7 @@ class finalize_recording extends external_api {
 
         $params = self::validate_parameters(self::execute_parameters(), [
             'recordingid' => $recordingid,
+            'attempttoken' => $attempttoken,
             'topicid' => $topicid,
             'durationseconds' => $durationseconds,
             'slidetimeline' => $slidetimeline,
@@ -87,7 +91,8 @@ class finalize_recording extends external_api {
             $context,
             (int) $params['topicid'],
             (int) $params['durationseconds'],
-            (string) $params['slidetimeline']
+            (string) $params['slidetimeline'],
+            (string) $params['attempttoken']
         );
 
         return [

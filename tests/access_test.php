@@ -211,6 +211,50 @@ final class access_test extends \advanced_testcase {
     }
 
     /**
+     * In separate groups a non-editing teacher reaches only the learners in their groups.
+     *
+     * @return void
+     */
+    public function test_separate_groups_limit_other_peoples_recordings(): void {
+        global $DB;
+
+        $generator = $this->getDataGenerator();
+        $cm = get_coursemodule_from_id('presenterai', (int) $this->context->instanceid, 0, false, MUST_EXIST);
+        $DB->set_field('course_modules', 'groupmode', SEPARATEGROUPS, ['id' => $cm->id]);
+        rebuild_course_cache((int) $this->course->id, true);
+
+        $groupa = $generator->create_group(['courseid' => $this->course->id]);
+        $groupb = $generator->create_group(['courseid' => $this->course->id]);
+        $generator->create_group_member(['groupid' => $groupa->id, 'userid' => $this->teacher->id]);
+        $generator->create_group_member(['groupid' => $groupb->id, 'userid' => $this->owner->id]);
+
+        // The teacher role holds downloadany and deleteanyrecording here only so
+        // the group rule is what is being tested, not the role matrix.
+        $teacherrole = $this->get_role_id('teacher');
+        assign_capability('mod/presenterai:downloadany', CAP_ALLOW, $teacherrole, $this->context->id, true);
+        assign_capability('mod/presenterai:deleteanyrecording', CAP_ALLOW, $teacherrole, $this->context->id, true);
+        accesslib_clear_all_caches_for_unit_testing();
+
+        $teacherid = (int) $this->teacher->id;
+        $this->assertFalse(
+            access::may_view($this->rec, $this->context, $teacherid),
+            'A teacher in group A watched a group B learner\'s recording in separate groups.'
+        );
+        $this->assertFalse(access::may_download($this->rec, $this->context, $teacherid));
+        $this->assertFalse(access::may_delete($this->rec, $this->context, $teacherid));
+
+        // Sharing a group restores access, and the owner is never affected.
+        $generator->create_group_member(['groupid' => $groupb->id, 'userid' => $this->teacher->id]);
+        $this->assertTrue(access::may_view($this->rec, $this->context, $teacherid));
+        $this->assertTrue(access::may_download($this->rec, $this->context, $teacherid));
+        $this->assertTrue(access::may_delete($this->rec, $this->context, $teacherid));
+        $this->assertTrue(access::may_view($this->rec, $this->context, (int) $this->owner->id));
+
+        // A manager holds accessallgroups and is in no group at all.
+        $this->assertTrue(access::may_view($this->rec, $this->context, (int) $this->manager->id));
+    }
+
+    /**
      * The id of an archetype role.
      *
      * @param string $shortname Role shortname.

@@ -82,7 +82,11 @@ class render_deck extends external_api {
 
         // Read only. On the File API this can be Moodle's own content
         // addressed file, shared with every other copy of the same bytes.
-        $path = store_factory::for_recording($rec)->fetch_to_file((string) $rec->deckkey, 'pdf');
+        $path = store_factory::for_recording($rec)->fetch_to_file(
+            (string) $rec->deckkey,
+            'pdf',
+            recording_manager::MAX_DECK_BYTES
+        );
         if ($path === null) {
             throw new \moodle_exception('error:nodeck', 'mod_presenterai');
         }

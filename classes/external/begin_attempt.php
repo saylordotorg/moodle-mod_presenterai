@@ -23,7 +23,7 @@ use core_external\external_value;
 use mod_presenterai\local\recording_manager;
 
 /**
- * Start an attempt, or resume the one this learner left unfinished.
+ * Start an attempt, or resume the one this learner left unused.
  *
  * Replaces Soapbox's get_upload_url (D16). It creates the row and nothing else:
  * no key is minted here, because the recording's key is asked for only when
@@ -72,6 +72,7 @@ class begin_attempt extends external_api {
 
         return [
             'recordingid' => (int) $rec->id,
+            'attempttoken' => (string) $result['token'],
             'resumed' => (bool) $result['resumed'],
             'hasdeck' => !empty($rec->deckkey),
             'backend' => (string) $rec->backend,
@@ -86,6 +87,10 @@ class begin_attempt extends external_api {
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'recordingid' => new external_value(PARAM_INT, 'The attempt\'s recording id'),
+            'attempttoken' => new external_value(
+                PARAM_ALPHANUM,
+                'Ties the attempt to this page; start_upload and finalize_recording require it'
+            ),
             'resumed' => new external_value(PARAM_BOOL, 'Whether an unfinished attempt was picked up rather than a new one made'),
             'hasdeck' => new external_value(PARAM_BOOL, 'Whether the resumed attempt already has a slide deck'),
             'backend' => new external_value(PARAM_ALPHANUMEXT, 'Storage backend the attempt uploads to: fs or s3'),

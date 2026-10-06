@@ -160,17 +160,15 @@ final class instance_manager {
     /**
      * The retention that applies to an activity storing this retentiondays value.
      *
-     * Used by the form to describe what is in force. The runtime authority on
-     * expiry dates is the retention class, which follows the same rule.
+     * Used by the form to describe what is in force. A thin wrapper over the
+     * retention class, so the form and the expiry date written at finalize
+     * cannot drift apart.
      *
      * @param int $retentiondays The instance column: -1 site, 0 keep, N days.
      * @return int Days, or 0 for no automatic deletion.
      */
     public static function effective_retention_days(int $retentiondays): int {
-        if ($retentiondays < 0) {
-            return self::site_retention_days();
-        }
-        return $retentiondays;
+        return retention::effective_days((object) ['retentiondays' => $retentiondays]);
     }
 
     /**

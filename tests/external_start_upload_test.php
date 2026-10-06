@@ -72,7 +72,7 @@ final class external_start_upload_test extends \advanced_testcase {
         $begin = begin_attempt::execute((int) $this->instance->cmid);
         $result = external_api::clean_returnvalue(
             start_upload::execute_returns(),
-            start_upload::execute($begin['recordingid'], 'recording', 'webm', 2048)
+            start_upload::execute($begin['recordingid'], 'recording', 'webm', 2048, $begin['attempttoken'])
         );
 
         $this->assertSame('POST', $result['method']);
@@ -97,7 +97,7 @@ final class external_start_upload_test extends \advanced_testcase {
 
         $this->setUser($this->bob);
         try {
-            start_upload::execute($begin['recordingid'], 'recording', 'webm', 2048);
+            start_upload::execute($begin['recordingid'], 'recording', 'webm', 2048, $begin['attempttoken']);
             $this->fail('A learner was handed an upload target for another learner\'s attempt.');
         } catch (\moodle_exception $e) {
             $this->assertSame('error:recordingnotfound', $e->errorcode);
@@ -122,7 +122,7 @@ final class external_start_upload_test extends \advanced_testcase {
         $this->setUser($this->alice);
 
         try {
-            start_upload::execute((int) $rec->id, 'recording', 'webm', 10);
+            start_upload::execute((int) $rec->id, 'recording', 'webm', 10, 'anytoken');
             $this->fail('A finished attempt accepted a second recording.');
         } catch (\moodle_exception $e) {
             $this->assertSame('error:notuploading', $e->errorcode);
@@ -146,6 +146,6 @@ final class external_start_upload_test extends \advanced_testcase {
         accesslib_clear_all_caches_for_unit_testing();
 
         $this->expectException(\required_capability_exception::class);
-        start_upload::execute($begin['recordingid'], 'recording', 'webm', 10);
+        start_upload::execute($begin['recordingid'], 'recording', 'webm', 10, $begin['attempttoken']);
     }
 }

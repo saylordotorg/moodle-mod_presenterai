@@ -20,11 +20,14 @@
  * the attempt row lazily on the first deck or the first Record press, runs the
  * optional deck flow, and wires Watch and Delete in the attempt list.
  *
- * One attempt row per page load. begin_attempt is called at most once and its
- * recording id is reused for the deck and the recording, because both belong
- * to the same attempt and the server reads both keys from that row. Calling it
- * lazily, rather than on page load, means a learner who only looks at their
- * attempts never creates a row.
+ * One attempt row per page load. begin_attempt is called once and its
+ * recording id and token are reused for the deck and the recording, because
+ * both belong to the same attempt and the server reads both keys from that
+ * row. The one exception is a server that says the row has moved on (another
+ * tab took it over, or the cleanup task closed it): then the cached attempt is
+ * forgotten and the next call begins again. Calling it lazily, rather than on
+ * page load, means a learner who only looks at their attempts never creates a
+ * row.
  *
  * @module     mod_presenterai/view
  * @copyright  2026 Saylor Academy
@@ -64,6 +67,15 @@ const readConfig = (root) => {
 };
 
 /**
+ * Whether a core/ajax failure says this page's attempt row has moved on.
+ *
+ * @param {object} err A core/ajax rejection.
+ * @return {boolean}
+ */
+const isMovedOn = (err) => !!err && typeof err.errorcode === 'string'
+    && ['error:attemptsuperseded', 'attemptsuperseded', 'error:notuploading', 'notuploading'].indexOf(err.errorcode) !== -1;
+
+/**
  * Wire the page.
  *
  * @param {string} rootSelector The page root, #mod-presenterai-view.
@@ -101,13 +113,19 @@ export const init = (rootSelector) => {
             attempt = Ajax.call([{
                 methodname: 'mod_presenterai_begin_attempt',
                 args: {cmid: config.cmid},
-            }])[0].then((result) => result.recordingid).catch((err) => {
+            }])[0].then((result) => ({
+                recordingid: result.recordingid,
+                token: result.attempttoken,
+            })).catch((err) => {
                 // Let the next press try again rather than caching a failure.
                 attempt = null;
                 throw err;
             });
         }
         return attempt;
+    };
+    const forgetAttempt = () => {
+        attempt = null;
     };
 
     const getTopicId = () => {
@@ -128,6 +146,7 @@ export const init = (rootSelector) => {
     if (recorderroot && config.cmid && config.maxseconds) {
         Recorder.init(recorderroot, config, {
             ensureAttempt: ensureAttempt,
+            forgetAttempt: forgetAttempt,
             getTopicId: getTopicId,
             getSlides: () => slides,
             announce: announce,
@@ -142,7 +161,7 @@ export const init = (rootSelector) => {
     }
 
     if (config.slides && deckinput) {
-        wireDeck(recorderroot, deckinput, recbtn, ensureAttempt, config, announce, (viewer) => {
+        wireDeck(recorderroot, deckinput, recbtn, {ensureAttempt, forgetAttempt}, config, announce, (viewer) => {
             if (slides) {
                 slides.destroy();
             }
@@ -196,12 +215,14 @@ const watchRecording = async(recordingid, container, label) => {
  * @param {HTMLElement} recorderroot The recorder element.
  * @param {HTMLInputElement} input The deck file input.
  * @param {HTMLElement|null} recbtn The Record button.
- * @param {function} ensureAttempt Resolves to the recording id.
+ * @param {object} attempts The page's attempt hooks.
+ * @param {function} attempts.ensureAttempt Resolves to {recordingid, token}.
+ * @param {function} attempts.forgetAttempt Drops the cached attempt so the next call begins again.
  * @param {object} config The page config.
  * @param {function} announce Speaks a message.
  * @param {function} onViewer Receives a new slide viewer.
  */
-const wireDeck = (recorderroot, input, recbtn, ensureAttempt, config, announce, onViewer) => {
+const wireDeck = (recorderroot, input, recbtn, attempts, config, announce, onViewer) => {
     const status = recorderroot.querySelector('[data-region="deck-status"]');
     const viewer = recorderroot.querySelector('[data-region="slide-viewer"]');
     const say = async(key, a) => {
@@ -232,12 +253,29 @@ const wireDeck = (recorderroot, input, recbtn, ensureAttempt, config, announce, 
             recbtn.disabled = true;
         }
         try {
-            const recordingid = await ensureAttempt();
+            const startDeck = async() => {
+                const attempt = await attempts.ensureAttempt();
+                const target = await Ajax.call([{
+                    methodname: 'mod_presenterai_start_upload',
+                    args: {recordingid: attempt.recordingid, kind: 'deck', ext: 'pdf', sizebytes: file.size,
+                        attempttoken: attempt.token},
+                }])[0];
+                return {recordingid: attempt.recordingid, target: target};
+            };
             await say('deck_uploading');
-            const target = await Ajax.call([{
-                methodname: 'mod_presenterai_start_upload',
-                args: {recordingid: recordingid, kind: 'deck', ext: 'pdf', sizebytes: file.size},
-            }])[0];
+            let started;
+            try {
+                started = await startDeck();
+            } catch (err) {
+                // This page no longer holds the attempt, so begin a new one once.
+                if (!isMovedOn(err)) {
+                    throw err;
+                }
+                attempts.forgetAttempt();
+                started = await startDeck();
+            }
+            const recordingid = started.recordingid;
+            const target = started.target;
             await upload(target, file, {
                 cmid: config.cmid,
                 recordingid: recordingid,

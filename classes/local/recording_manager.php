@@ -44,6 +44,15 @@ use mod_presenterai\local\storage\store_interface;
  * makes the rule simple to state: while storagekey is empty, uploadid belongs
  * to the deck; once storagekey is set, it belongs to the recording.
  *
+ * One attempt row belongs to one page. begin() hands out a fresh clienttoken
+ * every time it returns a row, and start_upload() and finalize() refuse a
+ * token that is no longer the row's. A row is resumed only while nothing has
+ * been uploaded into it, so a second tab that resumes a row the first tab has
+ * not used yet takes it over cleanly (the first tab's next call is refused and
+ * it begins again), and a row that already holds a deck or a recording key is
+ * never handed to anybody else. Without that, two tabs shared one row and each
+ * deleted the other's upload when it started its own.
+ *
  * Media gone is storagekey IS NULL on a row that is not uploading (D8), with
  * mediadeletedat and mediagonereason saying when and why. drop_media() is the
  * only way a finished attempt loses its media, and it never touches status.
@@ -79,6 +88,12 @@ final class recording_manager {
 
     /** @var int Seconds after which an unfinished attempt is abandoned by the cleanup task. */
     public const ABANDON_AFTER = DAYSECS;
+
+    /** @var int Unfinished attempts one learner may hold on one activity before begin() refuses another. */
+    public const MAX_OPEN_ATTEMPTS = 10;
+
+    /** @var int Length of the per-row token that ties an attempt to the page that began it. */
+    private const TOKEN_LENGTH = 32;
 
     /** @var string[] Extensions a recording may be uploaded with. */
     public const RECORDING_EXTS = ['webm', 'mp4', 'm4a', 'ogg', 'oga'];
@@ -221,72 +236,125 @@ final class recording_manager {
     }
 
     /**
-     * Start an attempt, or pick up the one this learner left unfinished.
+     * Start an attempt, or pick up the one this learner left unused.
      *
      * Resuming is what bounds row spam: a learner who reloads the page twelve
-     * times gets one uploading row, not twelve. The window is short enough that
-     * a resumed row is still well inside the cleanup task's 24 hour sweep.
+     * times gets one uploading row, not twelve. Only a row nothing has been
+     * uploaded into is resumed, and its token is replaced, so the page that had
+     * it before is refused on its next call and begins again. A row that
+     * already holds a deck or a recording key belongs to the page that put it
+     * there and is left alone; the cleanup task sweeps it within a day if that
+     * page never comes back.
      *
      * The cap is checked here so a learner who has no attempts left is told
-     * before they speak, and again at finalize under a lock, because two tabs
+     * before they speak, and again at finalize under the lock, because two tabs
      * can both pass this check.
      *
      * @param \stdClass $instance The presenterai row.
      * @param \stdClass $cm The course module row.
      * @param \context_module $ctx The module context.
      * @param int $userid The learner.
-     * @return array ['recording' => \stdClass, 'resumed' => bool]
+     * @return array ['recording' => \stdClass, 'resumed' => bool, 'token' => string]
      */
     public static function begin(\stdClass $instance, \stdClass $cm, \context_module $ctx, int $userid): array {
-        global $DB;
+        return self::with_attempt_lock((int) $instance->id, $userid, function () use ($instance, $userid): array {
+            global $DB;
 
-        $now = time();
-        $existing = $DB->get_records_select(
-            'presenterai_recording',
-            'presenteraiid = :presenteraiid AND userid = :userid AND status = :status AND timecreated > :since',
-            [
-                'presenteraiid' => $instance->id,
+            $now = time();
+            $token = random_string(self::TOKEN_LENGTH);
+            $existing = $DB->get_records_select(
+                'presenterai_recording',
+                'presenteraiid = :presenteraiid AND userid = :userid AND status = :status AND timecreated > :since
+                    AND storagekey IS NULL AND deckkey IS NULL AND uploadid IS NULL',
+                [
+                    'presenteraiid' => $instance->id,
+                    'userid' => $userid,
+                    'status' => self::STATUS_UPLOADING,
+                    'since' => $now - self::RESUME_WINDOW,
+                ],
+                'timecreated DESC, id DESC',
+                '*',
+                0,
+                1
+            );
+            if ($existing) {
+                $rec = reset($existing);
+                $rec->clienttoken = $token;
+                $rec->timemodified = $now;
+                $DB->update_record('presenterai_recording', (object) [
+                    'id' => $rec->id,
+                    'clienttoken' => $token,
+                    'timemodified' => $now,
+                ]);
+                return ['recording' => $rec, 'resumed' => true, 'token' => $token];
+            }
+
+            $open = $DB->count_records_select(
+                'presenterai_recording',
+                'presenteraiid = :presenteraiid AND userid = :userid AND status = :status AND timecreated > :since',
+                [
+                    'presenteraiid' => $instance->id,
+                    'userid' => $userid,
+                    'status' => self::STATUS_UPLOADING,
+                    'since' => $now - self::ABANDON_AFTER,
+                ]
+            );
+            if ($open >= self::MAX_OPEN_ATTEMPTS) {
+                // Each open row can hold a deck, so without this a script could
+                // park a 20 MB deck per call until the sweep caught up.
+                throw new \moodle_exception('error:toomanyopen', 'mod_presenterai');
+            }
+
+            if (self::cap_reached($instance, $userid)) {
+                throw new \moodle_exception('error:capreached', 'mod_presenterai');
+            }
+
+            // Throws errorstorenotconfigured when S3 is selected and not
+            // configured, which is right: a recording must not quietly go to the
+            // other backend. Stamped from the store's own name(), which is the
+            // backend that will actually accept the bytes.
+            $store = store_factory::default_store();
+
+            $id = $DB->insert_record('presenterai_recording', (object) [
+                'presenteraiid' => (int) $instance->id,
                 'userid' => $userid,
+                // Assigned at finalize, so an attempt that is abandoned never uses up a number.
+                'attemptnumber' => 0,
+                'mode' => (string) ($instance->mode ?? 'video'),
+                'backend' => $store->name(),
                 'status' => self::STATUS_UPLOADING,
-                'since' => $now - self::RESUME_WINDOW,
-            ],
-            'timecreated DESC, id DESC',
-            '*',
-            0,
-            1
-        );
-        if ($existing) {
-            return ['recording' => reset($existing), 'resumed' => true];
+                'clienttoken' => $token,
+                'expiresat' => 0,
+                'mediadeletedat' => 0,
+                'timecreated' => $now,
+                'timemodified' => $now,
+            ]);
+
+            return [
+                'recording' => $DB->get_record('presenterai_recording', ['id' => $id], '*', MUST_EXIST),
+                'resumed' => false,
+                'token' => $token,
+            ];
+        });
+    }
+
+    /**
+     * Refuse a request from a page that no longer holds this attempt.
+     *
+     * @param \stdClass $rec The recording row as read under the attempt lock.
+     * @param string|null $token The token the page was given by begin(). Null skips
+     *                           the check, for server-side callers that act for no page;
+     *                           every web service passes the browser's value.
+     * @return void
+     */
+    private static function require_token(\stdClass $rec, ?string $token): void {
+        if ($token === null) {
+            return;
         }
-
-        if (self::cap_reached($instance, $userid)) {
-            throw new \moodle_exception('error:capreached', 'mod_presenterai');
+        $held = (string) ($rec->clienttoken ?? '');
+        if ($held === '' || !hash_equals($held, $token)) {
+            throw new \moodle_exception('error:attemptsuperseded', 'mod_presenterai');
         }
-
-        // Throws errorstorenotconfigured when S3 is selected and not
-        // configured, which is right: a recording must not quietly go to the
-        // other backend. Stamped from the store's own name(), which is the
-        // backend that will actually accept the bytes.
-        $store = store_factory::default_store();
-
-        $id = $DB->insert_record('presenterai_recording', (object) [
-            'presenteraiid' => (int) $instance->id,
-            'userid' => $userid,
-            // Assigned at finalize, so an attempt that is abandoned never uses up a number.
-            'attemptnumber' => 0,
-            'mode' => (string) ($instance->mode ?? 'video'),
-            'backend' => $store->name(),
-            'status' => self::STATUS_UPLOADING,
-            'expiresat' => 0,
-            'mediadeletedat' => 0,
-            'timecreated' => $now,
-            'timemodified' => $now,
-        ]);
-
-        return [
-            'recording' => $DB->get_record('presenterai_recording', ['id' => $id], '*', MUST_EXIST),
-            'resumed' => false,
-        ];
     }
 
     /**
@@ -302,13 +370,14 @@ final class recording_manager {
      * first, while the row still names it, because fs_store cannot resolve a key
      * no row references and an unresolvable file is never deleted by anything.
      *
-     * @param \stdClass $rec The recording row, status uploading.
+     * @param \stdClass $rec The recording row, status uploading. Updated in place.
      * @param \stdClass $instance The presenterai row.
      * @param \stdClass $course The course row.
      * @param \context_module $ctx The module context.
      * @param string $kind media_ref::KIND_RECORDING or media_ref::KIND_DECK.
      * @param string $ext File extension without the dot.
      * @param int $sizebytes The size the browser says it is about to send.
+     * @param string|null $token The page's token from begin(), or null for a server-side caller.
      * @return array ['method', 'url', 'uploadid', 'chunkbytes', 'expires', 'maxbytes']
      */
     public static function start_upload(
@@ -318,13 +387,58 @@ final class recording_manager {
         \context_module $ctx,
         string $kind,
         string $ext,
-        int $sizebytes
+        int $sizebytes,
+        ?string $token = null
+    ): array {
+        // Under the same lock as begin(), so a token cannot be replaced between
+        // the check below and the key being written.
+        return self::with_attempt_lock(
+            (int) $instance->id,
+            (int) $rec->userid,
+            function () use ($rec, $instance, $course, $ctx, $kind, $ext, $sizebytes, $token): array {
+                global $DB;
+
+                $fresh = $DB->get_record('presenterai_recording', ['id' => $rec->id], '*', MUST_EXIST);
+                $target = self::start_upload_locked($fresh, $instance, $course, $ctx, $kind, $ext, $sizebytes, $token);
+                // Callers keep using the row they passed in, so it is brought up
+                // to date in place, as it was before the lock re-read it.
+                foreach (get_object_vars($fresh) as $name => $value) {
+                    $rec->$name = $value;
+                }
+                return $target;
+            }
+        );
+    }
+
+    /**
+     * start_upload(), with the attempt lock held and the row freshly read.
+     *
+     * @param \stdClass $rec The recording row.
+     * @param \stdClass $instance The presenterai row.
+     * @param \stdClass $course The course row.
+     * @param \context_module $ctx The module context.
+     * @param string $kind media_ref::KIND_RECORDING or media_ref::KIND_DECK.
+     * @param string $ext File extension without the dot.
+     * @param int $sizebytes The declared size.
+     * @param string|null $token The page's token, or null for a server-side caller.
+     * @return array As start_upload().
+     */
+    private static function start_upload_locked(
+        \stdClass $rec,
+        \stdClass $instance,
+        \stdClass $course,
+        \context_module $ctx,
+        string $kind,
+        string $ext,
+        int $sizebytes,
+        ?string $token
     ): array {
         global $DB;
 
         if ((string) $rec->status !== self::STATUS_UPLOADING) {
             throw new \moodle_exception('error:notuploading', 'mod_presenterai');
         }
+        self::require_token($rec, $token);
         if ($kind !== media_ref::KIND_RECORDING && $kind !== media_ref::KIND_DECK) {
             throw new \invalid_parameter_exception('kind must be recording or deck');
         }
@@ -368,7 +482,9 @@ final class recording_manager {
         }
 
         $ref = new media_ref((int) $rec->id, (int) $ctx->id, (int) $course->id, (int) $rec->userid, $kind, $ext);
-        $target = $store->begin_upload($ref);
+        // The declared size is checked against the ceiling above, and on S3 it
+        // is signed into the PUT, so the bytes that arrive cannot exceed it.
+        $target = $store->begin_upload($ref, max(0, $sizebytes));
 
         $rec->$column = (string) $target['key'];
         $rec->uploadid = isset($target['uploadid']) ? (string) $target['uploadid'] : null;
@@ -479,6 +595,7 @@ final class recording_manager {
      * @param int $topicid The chosen topic, or 0.
      * @param int $durationseconds The recorded length the browser reports.
      * @param string $timeline The slide-advance timeline as JSON, or empty.
+     * @param string|null $token The page's token from begin(), or null for a server-side caller.
      * @return \stdClass The updated row.
      */
     public static function finalize(
@@ -488,102 +605,155 @@ final class recording_manager {
         \context_module $ctx,
         int $topicid,
         int $durationseconds,
-        string $timeline
+        string $timeline,
+        ?string $token = null
     ): \stdClass {
-        global $DB;
-
         if (self::finalized_already($rec)) {
             return $rec;
         }
 
+        return self::with_attempt_lock(
+            (int) $instance->id,
+            (int) $rec->userid,
+            function () use ($rec, $instance, $course, $ctx, $topicid, $durationseconds, $timeline, $token): \stdClass {
+                return self::finalize_locked($rec, $instance, $course, $ctx, $topicid, $durationseconds, $timeline, $token);
+            }
+        );
+    }
+
+    /**
+     * finalize(), with the attempt lock held.
+     *
+     * @param \stdClass $rec The recording row.
+     * @param \stdClass $instance The presenterai row.
+     * @param \stdClass $course The course row.
+     * @param \context_module $ctx The module context.
+     * @param int $topicid The chosen topic, or 0.
+     * @param int $durationseconds The recorded length the browser reports.
+     * @param string $timeline The slide-advance timeline as JSON, or empty.
+     * @param string|null $token The page's token, or null for a server-side caller.
+     * @return \stdClass The updated row.
+     */
+    private static function finalize_locked(
+        \stdClass $rec,
+        \stdClass $instance,
+        \stdClass $course,
+        \context_module $ctx,
+        int $topicid,
+        int $durationseconds,
+        string $timeline,
+        ?string $token
+    ): \stdClass {
+        global $DB;
+
+        // Re-read under the lock: another request may have finalized it.
+        $rec = $DB->get_record('presenterai_recording', ['id' => $rec->id], '*', MUST_EXIST);
+        if (self::finalized_already($rec)) {
+            return $rec;
+        }
+        self::require_token($rec, $token);
+        if (empty($rec->storagekey)) {
+            throw new \moodle_exception('error:uploadmissing', 'mod_presenterai');
+        }
+
+        self::commit_pending_deck($rec, $ctx, $course);
+
+        $store = store_factory::for_recording($rec);
+        $key = (string) $rec->storagekey;
+        $ref = self::ref($rec, $ctx, $course, media_ref::KIND_RECORDING, $key);
+        if ($store->supports_direct_upload()) {
+            $size = $store->commit_upload($ref);
+        } else {
+            // A retry after a commit whose row update was lost finds the
+            // file already stored; asking first keeps that a success.
+            $size = $store->size($key);
+            if ($size === null) {
+                $size = $store->commit_upload($ref, (string) ($rec->uploadid ?? ''));
+            }
+        }
+        if ($size === null) {
+            // The row stays uploading, so the client can upload again and retry.
+            throw new \moodle_exception('error:uploadmissing', 'mod_presenterai');
+        }
+
+        $ceiling = self::max_media_bytes($course);
+        if ($size > $ceiling) {
+            self::abandon($rec, $store);
+            throw new \moodle_exception('error:uploadtoolarge', 'mod_presenterai', '', display_size($ceiling));
+        }
+
+        // This row is uploading, so counted_attempts() already leaves it out.
+        $counted = self::counted_attempts((int) $instance->id, (int) $rec->userid);
+        $max = (int) ($instance->maxattempts ?? 0);
+        if ($max > 0 && $counted >= $max) {
+            // The row is left uploading and its bytes kept: nothing the
+            // learner did is lost, and the sweep collects it in a day.
+            throw new \moodle_exception('error:capreached', 'mod_presenterai');
+        }
+
+        $keeptopic = $topicid > 0 && $DB->record_exists(
+            'presenterai_topic',
+            ['id' => $topicid, 'presenteraiid' => $instance->id]
+        );
+
+        $timelinejson = null;
+        if (!empty($rec->deckkey)) {
+            $events = self::normalise_timeline($timeline);
+            if (!empty($events)) {
+                $timelinejson = json_encode($events);
+            }
+        }
+
+        $maxseconds = (int) ($instance->maxseconds ?? 0);
+        $configmax = config::max_recording_seconds();
+        $limit = ($maxseconds > 0 ? min($maxseconds, $configmax) : $configmax) + 60;
+        $duration = max(0, min($durationseconds, $limit));
+
+        $now = time();
+        $DB->update_record('presenterai_recording', (object) [
+            'id' => $rec->id,
+            'topicid' => $keeptopic ? $topicid : null,
+            'slidetimeline' => $timelinejson,
+            'durationseconds' => $duration,
+            'sizebytes' => $size,
+            'attemptnumber' => $counted + 1,
+            // Written here and nowhere else. A later settings change never
+            // rewrites it; cli/apply_retention.php is the only tool that does.
+            // The backend is passed so a declared bucket lifecycle shortens it,
+            // which keeps the row's date the one the callout promised.
+            'expiresat' => retention::expiry_for($instance, $now, (string) $rec->backend),
+            'status' => self::STATUS_UPLOADED,
+            'uploadid' => null,
+            'clienttoken' => null,
+            'timemodified' => $now,
+        ]);
+
+        // Phase 3: queue \mod_presenterai\task\score_recording here.
+
+        return $DB->get_record('presenterai_recording', ['id' => $rec->id], '*', MUST_EXIST);
+    }
+
+    /**
+     * Run $fn holding the lock for one learner on one activity.
+     *
+     * begin(), start_upload() and finalize() all take it: begin() because it
+     * replaces a row's token, start_upload() because it checks that token and
+     * then writes a key, and finalize() because it re-checks the cap and
+     * assigns the attempt number.
+     *
+     * @param int $presenteraiid The activity instance id.
+     * @param int $userid The learner.
+     * @param callable $fn The work to do.
+     * @return mixed Whatever $fn returns.
+     */
+    private static function with_attempt_lock(int $presenteraiid, int $userid, callable $fn) {
         $factory = \core\lock\lock_config::get_lock_factory(self::LOCK_TYPE);
-        $lock = $factory->get_lock($instance->id . '_' . $rec->userid, self::LOCK_TIMEOUT);
+        $lock = $factory->get_lock($presenteraiid . '_' . $userid, self::LOCK_TIMEOUT);
         if (!$lock) {
             throw new \moodle_exception('error:uploadbusy', 'mod_presenterai');
         }
-
         try {
-            // Re-read under the lock: another request may have finalized it.
-            $rec = $DB->get_record('presenterai_recording', ['id' => $rec->id], '*', MUST_EXIST);
-            if (self::finalized_already($rec)) {
-                return $rec;
-            }
-            if (empty($rec->storagekey)) {
-                throw new \moodle_exception('error:uploadmissing', 'mod_presenterai');
-            }
-
-            self::commit_pending_deck($rec, $ctx, $course);
-
-            $store = store_factory::for_recording($rec);
-            $key = (string) $rec->storagekey;
-            $ref = self::ref($rec, $ctx, $course, media_ref::KIND_RECORDING, $key);
-            if ($store->supports_direct_upload()) {
-                $size = $store->commit_upload($ref);
-            } else {
-                // A retry after a commit whose row update was lost finds the
-                // file already stored; asking first keeps that a success.
-                $size = $store->size($key);
-                if ($size === null) {
-                    $size = $store->commit_upload($ref, (string) ($rec->uploadid ?? ''));
-                }
-            }
-            if ($size === null) {
-                // The row stays uploading, so the client can upload again and retry.
-                throw new \moodle_exception('error:uploadmissing', 'mod_presenterai');
-            }
-
-            $ceiling = self::max_media_bytes($course);
-            if ($size > $ceiling) {
-                self::abandon($rec, $store);
-                throw new \moodle_exception('error:uploadtoolarge', 'mod_presenterai', '', display_size($ceiling));
-            }
-
-            // This row is uploading, so counted_attempts() already leaves it out.
-            $counted = self::counted_attempts((int) $instance->id, (int) $rec->userid);
-            $max = (int) ($instance->maxattempts ?? 0);
-            if ($max > 0 && $counted >= $max) {
-                // The row is left uploading and its bytes kept: nothing the
-                // learner did is lost, and the sweep collects it in a day.
-                throw new \moodle_exception('error:capreached', 'mod_presenterai');
-            }
-
-            $keeptopic = $topicid > 0 && $DB->record_exists(
-                'presenterai_topic',
-                ['id' => $topicid, 'presenteraiid' => $instance->id]
-            );
-
-            $timelinejson = null;
-            if (!empty($rec->deckkey)) {
-                $events = self::normalise_timeline($timeline);
-                if (!empty($events)) {
-                    $timelinejson = json_encode($events);
-                }
-            }
-
-            $maxseconds = (int) ($instance->maxseconds ?? 0);
-            $configmax = config::max_recording_seconds();
-            $limit = ($maxseconds > 0 ? min($maxseconds, $configmax) : $configmax) + 60;
-            $duration = max(0, min($durationseconds, $limit));
-
-            $now = time();
-            $DB->update_record('presenterai_recording', (object) [
-                'id' => $rec->id,
-                'topicid' => $keeptopic ? $topicid : null,
-                'slidetimeline' => $timelinejson,
-                'durationseconds' => $duration,
-                'sizebytes' => $size,
-                'attemptnumber' => $counted + 1,
-                // Written here and nowhere else. A later settings change never
-                // rewrites it; cli/apply_retention.php is the only tool that does.
-                'expiresat' => retention::expiry_for($instance, $now),
-                'status' => self::STATUS_UPLOADED,
-                'uploadid' => null,
-                'timemodified' => $now,
-            ]);
-
-            // Phase 3: queue \mod_presenterai\task\score_recording here.
-
-            return $DB->get_record('presenterai_recording', ['id' => $rec->id], '*', MUST_EXIST);
+            return $fn();
         } finally {
             $lock->release();
         }
@@ -702,10 +872,11 @@ final class recording_manager {
      * so deleting rows first strands every object in the bucket for good. That
      * is the Soapbox defect this plugin was not going to repeat.
      *
-     * Best effort and it never throws. An object that cannot be deleted, or a
-     * backend that is no longer configured, is reported through debugging and
-     * skipped, because a teacher deleting an activity must not be stopped by a
-     * bucket credential somebody cleared.
+     * Best effort and it never throws, because a teacher deleting an activity
+     * must not be stopped by a bucket credential somebody cleared. An S3 object
+     * that cannot be deleted now, including every object on an S3 backend that
+     * is no longer configured, is handed to the delete_orphaned_media task,
+     * which keeps trying after the rows are gone (design 8.6, point 5).
      *
      * @param int $presenteraiid The activity instance id.
      * @return void
@@ -721,30 +892,42 @@ final class recording_manager {
             'id',
             'id, backend, storagekey, deckkey, frameskey, uploadid'
         );
+        $orphans = [];
         foreach ($rs as $rec) {
+            $keys = [];
+            foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
+                if (!empty($rec->$column)) {
+                    $keys[] = (string) $rec->$column;
+                }
+            }
             try {
                 $store = store_factory::for_recording($rec);
-                foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
-                    if (!empty($rec->$column) && !$store->delete((string) $rec->$column)) {
-                        debugging(
-                            'mod_presenterai could not delete the ' . $column . ' of recording ' . $rec->id
-                                . ' while deleting activity ' . $presenteraiid . '.',
-                            DEBUG_DEVELOPER
-                        );
+                foreach ($keys as $key) {
+                    if (!$store->delete($key)) {
+                        $orphans[(string) $rec->backend][] = $key;
                     }
                 }
                 if (!empty($rec->uploadid)) {
                     $store->abort_upload((string) $rec->uploadid);
                 }
             } catch (\Throwable $e) {
+                foreach ($keys as $key) {
+                    $orphans[(string) $rec->backend][] = $key;
+                }
                 debugging(
-                    'mod_presenterai skipped the media of recording ' . $rec->id . ' while deleting activity '
+                    'mod_presenterai could not reach the store of recording ' . $rec->id . ' while deleting activity '
                         . $presenteraiid . ': ' . get_class($e),
                     DEBUG_DEVELOPER
                 );
             }
         }
         $rs->close();
+
+        // Only S3 needs a later attempt: an fs file goes with the context, and
+        // fs_store could not find it again once the row is gone anyway.
+        if (!empty($orphans[store_factory::BACKEND_S3])) {
+            \mod_presenterai\task\delete_orphaned_media::queue(store_factory::BACKEND_S3, $orphans[store_factory::BACKEND_S3]);
+        }
     }
 
     /**

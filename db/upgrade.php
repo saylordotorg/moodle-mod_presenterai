@@ -72,5 +72,18 @@ function xmldb_presenterai_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026100600, 'presenterai');
     }
 
+    if ($oldversion < 2026100601) {
+        // One page per unfinished attempt: two tabs sharing a row each deleted
+        // the other's upload. Null on existing rows, which begin_attempt
+        // replaces the next time it hands a row out.
+        $table = new xmldb_table('presenterai_recording');
+        $field = new xmldb_field('clienttoken', XMLDB_TYPE_CHAR, '32', null, null, null, null, 'uploadid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026100601, 'presenterai');
+    }
+
     return true;
 }

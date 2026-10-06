@@ -16,6 +16,7 @@
 
 namespace mod_presenterai;
 
+use mod_presenterai\local\storage\media_ref;
 use mod_presenterai\local\storage\s3_store;
 
 /**
@@ -157,6 +158,31 @@ final class storage_sigv4_test extends \basic_testcase {
             $url,
             'S3 needs to be told which headers were signed or it cannot verify the signature.',
         );
+    }
+
+    /**
+     * A sized upload signs Content-Length, so the URL cannot carry a different object later.
+     *
+     * Without it the PUT stays good for its whole lifetime after finalize has
+     * measured the object, and a far larger object can replace it.
+     *
+     * @return void
+     */
+    public function test_a_sized_upload_signs_its_content_length(): void {
+        $ref = new media_ref(5, 2, 3, 4, media_ref::KIND_DECK, 'pdf');
+
+        $sized = $this->store()->begin_upload($ref, 1048576)['url'];
+        $this->assertStringContainsString('X-Amz-SignedHeaders=content-length%3Bhost', $sized);
+
+        $unsized = $this->store()->begin_upload($ref)['url'];
+        $this->assertStringContainsString('X-Amz-SignedHeaders=host', $unsized);
+
+        // The length is inside the signature: the same request signed for another size differs.
+        $params = $this->aws_example_params();
+        $one = s3_store::presign_url($params + ['headers' => ['content-length' => '100']]);
+        $two = s3_store::presign_url($params + ['headers' => ['content-length' => '101']]);
+        $this->assertNotSame($this->signature_of($one), $this->signature_of($two));
+        $this->assertNotSame($this->signature_of($one), self::AWS_EXAMPLE_SIGNATURE);
     }
 
     /**

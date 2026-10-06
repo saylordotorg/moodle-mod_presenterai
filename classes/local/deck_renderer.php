@@ -24,13 +24,17 @@ namespace mod_presenterai\local;
  * own $CFG->pathtogs, the binary assignfeedback_editpdf already relies on, so a
  * site needs nothing new installed.
  *
- * Three things are added, because the input is a file a learner chose:
+ * Four things are added, because the input is a file a learner chose:
  *
  * - The first five bytes must be "%PDF-". The extension and the MIME type the
  *   browser sent are claims; the magic bytes are what Ghostscript will act on.
  * - Ghostscript runs under a timeout and is killed when it expires. A hostile
  *   or merely broken PDF can keep it busy indefinitely, and SOLA's exec() would
  *   hold the web request, and a PHP worker, for as long as it liked.
+ * - Every page is fitted into a fixed 16:9 page (-dFIXEDMEDIA -dPDFFitPage), so
+ *   the output size is bounded whatever MediaBox the PDF declares. Without it a
+ *   page declared 200 inches square renders at 22000 pixels a side, and the
+ *   base64 of a few of those exhausts memory_limit.
  * - The process is started with an argument vector rather than a shell string,
  *   so there is no shell to interpret anything and the process the timeout
  *   kills is Ghostscript itself, not a /bin/sh wrapped around it.
@@ -51,6 +55,15 @@ final class deck_renderer {
 
     /** @var int Seconds Ghostscript may run before it is killed. */
     public const TIMEOUT = 120;
+
+    /** @var int Width every page is fitted into, in points: a 16:9 slide 13.33 inches wide. */
+    public const PAGE_WIDTH_PT = 960;
+
+    /** @var int Height every page is fitted into, in points. */
+    public const PAGE_HEIGHT_PT = 540;
+
+    /** @var int Most PNG bytes render_to_datauris() reads into memory for one deck, 24 MB. */
+    public const MAX_TOTAL_BYTES = 25165824;
 
     /** @var string The bytes every PDF starts with. */
     private const PDF_MAGIC = '%PDF-';
@@ -146,7 +159,14 @@ final class deck_renderer {
      */
     public static function render_to_datauris(string $pdfpath, int $maxpages = self::MAX_PAGES): array {
         $uris = [];
+        $total = 0;
         foreach (self::render($pdfpath, $maxpages) as $file) {
+            // Stop before reading a page that would take the deck past the cap,
+            // and return the pages before it, as a render that stopped early does.
+            $total += (int) filesize($file);
+            if ($total > self::MAX_TOTAL_BYTES) {
+                break;
+            }
             $data = file_get_contents($file);
             if ($data === false) {
                 break;
@@ -173,6 +193,12 @@ final class deck_renderer {
             '-dSAFER',
             '-sDEVICE=png16m',
             '-r' . self::DPI,
+            // Fit every page into one fixed slide-sized page, which bounds the
+            // pixels per page whatever size the PDF claims.
+            '-dDEVICEWIDTHPOINTS=' . self::PAGE_WIDTH_PT,
+            '-dDEVICEHEIGHTPOINTS=' . self::PAGE_HEIGHT_PT,
+            '-dFIXEDMEDIA',
+            '-dPDFFitPage',
             '-dTextAlphaBits=4',
             '-dGraphicsAlphaBits=4',
             '-dFirstPage=1',

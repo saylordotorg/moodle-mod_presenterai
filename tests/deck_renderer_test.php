@@ -81,6 +81,8 @@ final class deck_renderer_test extends \advanced_testcase {
         $this->assertStringContainsString(' -r110 ', $command);
         $this->assertStringContainsString(' -dFirstPage=1 ', $command);
         $this->assertStringContainsString(' -dLastPage=5 ', $command);
+        $this->assertStringContainsString(' -dFIXEDMEDIA ', $command);
+        $this->assertStringContainsString(' -dPDFFitPage ', $command);
         $this->assertStringContainsString(' -sOutputFile=' . escapeshellarg('/tmp/out/page-%d.png') . ' ', $command);
         $this->assertStringEndsWith(' ' . escapeshellarg('/tmp/deck.pdf'), $command);
     }
@@ -154,6 +156,62 @@ final class deck_renderer_test extends \advanced_testcase {
         }
 
         $this->assertCount(2, deck_renderer::render($this->fixture('deck-3pages.pdf'), 2));
+    }
+
+    /**
+     * Every page is fitted into a fixed slide size, whatever MediaBox the PDF declares.
+     *
+     * A page declared about 70 inches square rendered at 110 DPI used to come
+     * out over 7600 pixels a side, and a deck of such pages, base64 encoded
+     * into one response, exhausts memory_limit.
+     *
+     * @return void
+     */
+    public function test_an_oversized_page_is_fitted_to_a_slide(): void {
+        $this->resetAfterTest();
+        $this->require_ghostscript();
+
+        $path = make_request_directory() . '/huge.pdf';
+        file_put_contents($path, $this->pdf_with_mediabox(5000, 5000));
+
+        $pages = deck_renderer::render($path);
+        $this->assertCount(1, $pages);
+        [$width, $height] = getimagesize($pages[0]);
+        $maxwidth = (int) ceil(deck_renderer::PAGE_WIDTH_PT / 72 * deck_renderer::DPI);
+        $maxheight = (int) ceil(deck_renderer::PAGE_HEIGHT_PT / 72 * deck_renderer::DPI);
+        $this->assertLessThanOrEqual($maxwidth, $width, 'The page was rendered at the size the PDF claimed.');
+        $this->assertLessThanOrEqual($maxheight, $height, 'The page was rendered at the size the PDF claimed.');
+    }
+
+    /**
+     * A one page PDF with the given MediaBox and a filled rectangle, xref and all.
+     *
+     * @param int $width Points.
+     * @param int $height Points.
+     * @return string
+     */
+    private function pdf_with_mediabox(int $width, int $height): string {
+        $content = "0.2 0.4 0.8 rg 0 0 {$width} {$height} re f";
+        $objects = [
+            '<< /Type /Catalog /Pages 2 0 R >>',
+            '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {$width} {$height}] /Contents 4 0 R >>",
+            '<< /Length ' . strlen($content) . " >>\nstream\n{$content}\nendstream",
+        ];
+        $pdf = "%PDF-1.4\n";
+        $offsets = [];
+        foreach ($objects as $i => $body) {
+            $offsets[] = strlen($pdf);
+            $pdf .= ($i + 1) . " 0 obj\n{$body}\nendobj\n";
+        }
+        $xref = strlen($pdf);
+        $pdf .= 'xref' . "\n0 " . (count($objects) + 1) . "\n0000000000 65535 f \n";
+        foreach ($offsets as $offset) {
+            $pdf .= sprintf("%010d 00000 n \n", $offset);
+        }
+        $pdf .= 'trailer' . "\n<< /Size " . (count($objects) + 1) . " /Root 1 0 R >>\nstartxref\n{$xref}\n%%EOF\n";
+
+        return $pdf;
     }
 
     /**

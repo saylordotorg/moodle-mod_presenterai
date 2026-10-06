@@ -45,6 +45,7 @@ class start_upload extends external_api {
             'kind' => new external_value(PARAM_ALPHA, 'What is being uploaded: recording or deck'),
             'ext' => new external_value(PARAM_ALPHANUM, 'File extension without the dot'),
             'sizebytes' => new external_value(PARAM_INT, 'Size the browser is about to send, in bytes'),
+            'attempttoken' => new external_value(PARAM_ALPHANUM, 'The token begin_attempt returned with this recording id'),
         ]);
     }
 
@@ -55,9 +56,10 @@ class start_upload extends external_api {
      * @param string $kind recording or deck.
      * @param string $ext File extension.
      * @param int $sizebytes Declared size.
+     * @param string $attempttoken The token from begin_attempt.
      * @return array
      */
-    public static function execute(int $recordingid, string $kind, string $ext, int $sizebytes): array {
+    public static function execute(int $recordingid, string $kind, string $ext, int $sizebytes, string $attempttoken): array {
         global $USER;
 
         $params = self::validate_parameters(self::execute_parameters(), [
@@ -65,6 +67,7 @@ class start_upload extends external_api {
             'kind' => $kind,
             'ext' => $ext,
             'sizebytes' => $sizebytes,
+            'attempttoken' => $attempttoken,
         ]);
 
         [$rec, $instance, $course, , $context] = recording_manager::load((int) $params['recordingid']);
@@ -84,7 +87,8 @@ class start_upload extends external_api {
             $context,
             (string) $params['kind'],
             (string) $params['ext'],
-            (int) $params['sizebytes']
+            (int) $params['sizebytes'],
+            (string) $params['attempttoken']
         );
     }
 

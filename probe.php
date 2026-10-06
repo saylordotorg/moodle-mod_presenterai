@@ -108,7 +108,8 @@ if ($action === 'chunk' || $action === 'save') {
  * Template context for one backend's self test.
  *
  * @param string $name Backend machine name.
- * @param array $steps Ordered ['step', 'ok', 'detail'] entries from selftest().
+ * @param array $steps Ordered ['step', 'ok', 'detail'] entries from selftest(), optionally with 'info'
+ *                     for a step that was not tested.
  * @param bool $configured Whether the backend reports itself configured.
  * @return array
  */
@@ -121,6 +122,7 @@ function mod_presenterai_probe_arm(string $name, array $steps, bool $configured)
             'label' => get_string_manager()->string_exists($key, 'mod_presenterai')
                 ? get_string($key, 'mod_presenterai') : (string) $step['step'],
             'ok' => (bool) $step['ok'],
+            'info' => !empty($step['info']),
             'detail' => (string) $step['detail'],
         ];
     }
@@ -143,7 +145,14 @@ if ($s3->is_configured() || $s3rows) {
     $steps = $s3->selftest();
     // Always last and always in words: a green self test is not evidence that
     // the bucket keeps what the plugin believes it keeps (design 8.6).
-    $steps[] = ['step' => 'lifecycle', 'ok' => true, 'detail' => get_string('probe_nolifecycle', 'mod_presenterai')];
+    // Marked info, so it reads "Not checked" rather than "Passed" beside a
+    // sentence saying it could not be checked.
+    $steps[] = [
+        'step' => 'lifecycle',
+        'ok' => true,
+        'info' => true,
+        'detail' => get_string('probe_nolifecycle', 'mod_presenterai'),
+    ];
     $arms[] = mod_presenterai_probe_arm(store_factory::BACKEND_S3, $steps, $s3->is_configured());
 }
 
