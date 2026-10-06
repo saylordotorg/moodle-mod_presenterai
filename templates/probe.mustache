@@ -1,0 +1,125 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/probe
+
+    The storage check page: each backend's self test as a table, the count of
+    recordings with media per backend, and the upload chunk ladder.
+
+    Every result carries a word as well as a colour, so the page reads the
+    same to someone who cannot tell the badges apart. The results of the
+    ladder are announced through a polite live region that exists when the
+    page loads, because a region added later is not reliably announced.
+
+    Classes required for JS:
+    * none
+
+    Data attributes required for JS:
+    * data-region="mod_presenterai-probe" with data-url and data-rungs
+    * data-action="measure"
+    * data-region="probe-results"
+
+    Context variables required for this template:
+    * arms - list of {name, label, configured, steps: [{step, label, ok, info, detail}]}
+      (info marks a step that was not tested, which gets a neutral badge rather than a pass)
+    * hascounts - whether any recording has media
+    * counts - list of {text}, one line per backend
+    * hassaved - whether a chunk size has been saved
+    * chunksaved - the saved chunk size, formatted
+    * probeurl - URL of probe.php
+    * rungs - JSON list of {bytes, label}
+
+    Example context (json):
+    {
+        "arms": [
+            {
+                "name": "fs",
+                "label": "Moodle file storage",
+                "configured": true,
+                "steps": [
+                    {"step": "staging", "label": "Staging directory", "ok": true, "detail": "Wrote and read back a staging file."},
+                    {"step": "byteserving", "label": "Seeking", "ok": false, "detail": "Byte serving is off."},
+                    {"step": "lifecycle", "label": "Bucket lifecycle rule", "ok": true, "info": true, "detail": "Cannot be read."}
+                ]
+            }
+        ],
+        "hascounts": true,
+        "counts": [{"text": "Moodle file storage: 12 recordings"}],
+        "hassaved": true,
+        "chunksaved": "1 MB",
+        "probeurl": "https://example.org/mod/presenterai/probe.php",
+        "rungs": "[{\"bytes\":524288,\"label\":\"512 KB\"}]"
+    }
+}}
+<div data-region="mod_presenterai-probe" data-url="{{probeurl}}" data-rungs="{{rungs}}">
+    <p>{{#str}} probe_intro, mod_presenterai {{/str}}</p>
+
+    {{#arms}}
+    <h3>{{label}}</h3>
+    {{^configured}}
+    <p class="alert alert-warning">{{#str}} probe_notconfigured, mod_presenterai {{/str}}</p>
+    {{/configured}}
+    <table class="generaltable">
+        <caption class="accesshide">{{#str}} probe_tablecaption, mod_presenterai, {{label}} {{/str}}</caption>
+        <thead>
+            <tr>
+                <th scope="col">{{#str}} probe_col_step, mod_presenterai {{/str}}</th>
+                <th scope="col">{{#str}} probe_col_result, mod_presenterai {{/str}}</th>
+                <th scope="col">{{#str}} probe_col_detail, mod_presenterai {{/str}}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#steps}}
+            <tr>
+                <th scope="row">{{label}}</th>
+                <td>
+                    {{#info}}<span class="badge bg-secondary text-white">{{#str}} probe_notchecked, mod_presenterai {{/str}}</span>{{/info}}
+                    {{^info}}
+                    {{#ok}}<span class="badge bg-success text-white">{{#str}} probe_ok, mod_presenterai {{/str}}</span>{{/ok}}
+                    {{^ok}}<span class="badge bg-danger text-white">{{#str}} probe_fail, mod_presenterai {{/str}}</span>{{/ok}}
+                    {{/info}}
+                </td>
+                <td>{{detail}}</td>
+            </tr>
+            {{/steps}}
+        </tbody>
+    </table>
+    {{/arms}}
+
+    <h3>{{#str}} probe_countsheading, mod_presenterai {{/str}}</h3>
+    {{#hascounts}}
+    <ul>
+        {{#counts}}
+        <li>{{text}}</li>
+        {{/counts}}
+    </ul>
+    {{/hascounts}}
+    {{^hascounts}}
+    <p>{{#str}} probe_countsnone, mod_presenterai {{/str}}</p>
+    {{/hascounts}}
+
+    <h3>{{#str}} probe_chunkheading, mod_presenterai {{/str}}</h3>
+    <p>{{#str}} probe_chunkexplain, mod_presenterai {{/str}}</p>
+    {{#hassaved}}
+    <p>{{#str}} probe_chunksaved, mod_presenterai, {{chunksaved}} {{/str}}</p>
+    {{/hassaved}}
+    {{^hassaved}}
+    <p>{{#str}} probe_chunknone, mod_presenterai {{/str}}</p>
+    {{/hassaved}}
+    <button type="button" class="btn btn-secondary" data-action="measure">{{#str}} probe_measure, mod_presenterai {{/str}}</button>
+    <div class="mt-3" aria-live="polite" data-region="probe-results"></div>
+</div>

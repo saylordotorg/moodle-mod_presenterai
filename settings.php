@@ -154,6 +154,69 @@ if ($ADMIN->fulltree) {
         );
     }
 
+    // The ceiling for one recording on either backend. fs_store enforces it
+    // per chunk and local\recording_manager at start and at finalize, both
+    // lowered further by $CFG->maxbytes and the course maxbytes.
+    $mediasizes = [];
+    foreach ([52428800, 104857600, 157286400, 262144000, 524288000] as $bytes) {
+        $mediasizes[$bytes] = display_size($bytes);
+    }
+    $settings->add(new admin_setting_configselect(
+        'mod_presenterai/maxmediabytes',
+        get_string('maxmediabytes', 'mod_presenterai'),
+        get_string('maxmediabytes_desc', 'mod_presenterai'),
+        157286400,
+        $mediasizes
+    ));
+
+    // Written by the chunk ladder on probe.php (D19). fs_store floors it to a
+    // 64 KiB multiple and caps it at 5 MiB, so a hand-typed value cannot break
+    // uploads, only slow them.
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/fschunkbytes',
+        get_string('fschunkbytes', 'mod_presenterai'),
+        get_string('fschunkbytes_desc', 'mod_presenterai'),
+        0,
+        PARAM_INT
+    ));
+    $settings->hide_if('mod_presenterai/fschunkbytes', 'mod_presenterai/backend', 'neq', store_factory::BACKEND_FS);
+
+    $settings->add(new admin_setting_description(
+        'mod_presenterai/probelink',
+        '',
+        html_writer::link(new moodle_url('/mod/presenterai/probe.php'), get_string('probelink', 'mod_presenterai'))
+    ));
+
+    // Recording.
+
+    $settings->add(new admin_setting_heading(
+        'mod_presenterai/recordingheading',
+        get_string('recordingheading', 'mod_presenterai'),
+        get_string('recordingheading_desc', 'mod_presenterai')
+    ));
+
+    // Built from the preset list so a new preset is added in one place.
+    $qualitychoices = [];
+    foreach (array_keys(\mod_presenterai\local\config::QUALITY_PRESETS) as $qualitykey) {
+        $qualitychoices[$qualitykey] = get_string('quality_' . $qualitykey, 'mod_presenterai');
+    }
+    $settings->add(new admin_setting_configselect(
+        'mod_presenterai/quality',
+        get_string('quality', 'mod_presenterai'),
+        get_string('quality_desc', 'mod_presenterai'),
+        \mod_presenterai\local\config::DEFAULT_QUALITY,
+        $qualitychoices
+    ));
+
+    // Zero or negative is read as the default by config::max_recording_seconds().
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/maxrecordingseconds',
+        get_string('maxrecordingseconds', 'mod_presenterai'),
+        get_string('maxrecordingseconds_desc', 'mod_presenterai'),
+        \mod_presenterai\local\config::DEFAULT_MAX_RECORDING_SECONDS,
+        PARAM_INT
+    ));
+
     // Retention and download.
 
     $settings->add(new admin_setting_heading(

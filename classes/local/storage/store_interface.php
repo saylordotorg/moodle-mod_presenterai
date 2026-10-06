@@ -79,10 +79,15 @@ interface store_interface {
      * carries 'uploadid' and 'chunkbytes', the latter negotiated down from the
      * site's real PHP limits rather than assumed.
      *
+     * A direct-upload backend given $sizebytes binds the upload to exactly
+     * that many bytes, so the URL cannot be reused for a different, larger
+     * object once the attempt has been checked and finalized.
+     *
      * @param media_ref $ref The media being uploaded. Its recordingid may be 0.
+     * @param int $sizebytes The exact size the browser will send, or 0 when not known.
      * @return array Upload instructions for the browser.
      */
-    public function begin_upload(media_ref $ref): array;
+    public function begin_upload(media_ref $ref, int $sizebytes = 0): array;
 
     /**
      * How many bytes of a chunked upload have already landed.
@@ -110,6 +115,23 @@ interface store_interface {
      * @return int The new total length of the staging file.
      */
     public function accept_chunk(string $uploadid, int $offset, $stream): int;
+
+    /**
+     * Throw away a chunked upload that will never be finished.
+     *
+     * Called when an upload is replaced (a learner picks a different deck), when
+     * the cleanup task gives up on an attempt left in 'uploading', and when an
+     * attempt's media is dropped while a staging file may still exist. A no-op
+     * on a direct-upload backend, which has nothing staged on this server.
+     *
+     * Never throws. Every caller is already on its way to clearing the row, and
+     * a staging file that could not be removed is swept later by age, whereas a
+     * throw here would stop the row being cleared and leave the attempt stuck.
+     *
+     * @param string $uploadid The id returned by begin_upload, which may be empty or stale.
+     * @return void
+     */
+    public function abort_upload(string $uploadid): void;
 
     /**
      * Finish an upload and confirm the bytes are really there.
@@ -178,11 +200,16 @@ interface store_interface {
      * free, and the path it returns points at Moodle's own stored file, so a
      * caller must never write to it.
      *
+     * With $maxbytes, an object larger than that is refused before it is
+     * transferred. The deck renderer passes MAX_DECK_BYTES, because a deck is
+     * learner-supplied and fetched on every render.
+     *
      * @param string $key The stored key.
      * @param string $ext Extension for the temporary file, without the dot.
-     * @return string|null Absolute path, or null if the object is gone.
+     * @param int $maxbytes Largest object accepted, or 0 for no limit.
+     * @return string|null Absolute path, or null if the object is gone or too large.
      */
-    public function fetch_to_file(string $key, string $ext): ?string;
+    public function fetch_to_file(string $key, string $ext, int $maxbytes = 0): ?string;
 
     /**
      * Read the object into memory, refusing anything larger than $maxbytes.

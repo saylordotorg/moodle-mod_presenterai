@@ -78,10 +78,18 @@ function presenterai_supports($feature) {
 function presenterai_add_instance($data, $mform = null) {
     global $DB;
 
+    $data = \mod_presenterai\local\instance_manager::normalise($data, null);
     $data->timecreated = time();
     $data->timemodified = $data->timecreated;
+    $data->id = (int) $DB->insert_record('presenterai', $data);
 
-    return (int) $DB->insert_record('presenterai', $data);
+    \mod_presenterai\local\topic_manager::save_from_form(
+        $data,
+        (int) $data->id,
+        \context_module::instance($data->coursemodule)
+    );
+
+    return $data->id;
 }
 
 /**
@@ -94,9 +102,17 @@ function presenterai_add_instance($data, $mform = null) {
 function presenterai_update_instance($data, $mform = null) {
     global $DB;
 
+    $existing = $DB->get_record('presenterai', ['id' => $data->instance], '*', MUST_EXIST);
+    $data = \mod_presenterai\local\instance_manager::normalise($data, $existing);
     $data->id = $data->instance;
     $data->timemodified = time();
     $DB->update_record('presenterai', $data);
+
+    \mod_presenterai\local\topic_manager::save_from_form(
+        $data,
+        (int) $data->instance,
+        \context_module::instance($data->coursemodule)
+    );
 
     return true;
 }
@@ -106,9 +122,9 @@ function presenterai_update_instance($data, $mform = null) {
  *
  * Children before parents, because the child rows resolve through the parent and
  * an orphaned child is unreachable from either side. Media objects are deleted
- * by the storage layer in phase 1; this function will call it rather than
- * leaving the bytes behind, which is the defect this project inherited from
- * Soapbox and is not going to repeat.
+ * through the storage layer first, while the rows that reference them still
+ * exist, rather than leaving the bytes behind, which is the defect this project
+ * inherited from Soapbox and is not going to repeat.
  *
  * @param int $id The instance id.
  * @return bool Always true.
@@ -120,6 +136,10 @@ function presenterai_delete_instance($id) {
     if (!$instance) {
         return true;
     }
+
+    // Before any row goes: fs_store finds a file through the row that names it.
+    // Best effort per row, and it never throws.
+    \mod_presenterai\local\recording_manager::delete_all_media_for_instance((int) $instance->id);
 
     $recordingids = $DB->get_fieldset_select(
         'presenterai_recording',
@@ -133,7 +153,7 @@ function presenterai_delete_instance($id) {
     }
 
     $DB->delete_records('presenterai_recording', ['presenteraiid' => $id]);
-    $DB->delete_records('presenterai_topic', ['presenteraiid' => $id]);
+    \mod_presenterai\local\topic_manager::delete_all((int) $id);
     $DB->delete_records('presenterai', ['id' => $id]);
 
     return true;
@@ -177,6 +197,14 @@ function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $ar
         return false;
     }
 
+    // Topic briefs are teacher content, not attempt media, so they are served
+    // to anyone who can view the activity and have no recording row to check.
+    if ($filearea === \mod_presenterai\local\topic_manager::FILEAREA) {
+        require_login($course, false, $cm);
+        require_capability('mod/presenterai:view', $context);
+        return \mod_presenterai\local\topic_manager::serve_file($context, $args, (bool) $forcedownload, $options);
+    }
+
     // The column on the recording row that must agree with the requested
     // filename, per file area. An area not listed here is not ours to serve.
     $keycolumns = [
@@ -204,9 +232,11 @@ function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $ar
     $recording = $DB->get_record(
         'presenterai_recording',
         ['id' => $itemid, 'presenteraiid' => $cm->instance],
-        'id, userid, storagekey, deckkey, frameskey'
+        '*'
     );
-    if (!$recording) {
+    // An uploading row can already carry keys (start_upload mints them before
+    // the bytes arrive), so it is not a finished attempt with media to serve.
+    if (!$recording || $recording->status === 'uploading') {
         return false;
     }
 
@@ -216,12 +246,14 @@ function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $ar
         return false;
     }
 
-    if ((int) $recording->userid !== (int) $USER->id) {
-        require_capability('mod/presenterai:viewallattempts', $context);
-    } else if ($forcedownload) {
-        // Keeping a copy is a separate decision from watching it back, so a site
-        // can show a learner their own recording without letting it leave.
-        require_capability('mod/presenterai:downloadown', $context);
+    // Keeping a copy is a separate decision from watching it back (D22), and
+    // only the recording itself is ever offered as a download.
+    if ($forcedownload) {
+        if ($filearea !== 'recording' || !\mod_presenterai\local\access::may_download($recording, $context, (int) $USER->id)) {
+            return false;
+        }
+    } else if (!\mod_presenterai\local\access::may_view($recording, $context, (int) $USER->id)) {
+        return false;
     }
 
     $fs = get_file_storage();
@@ -245,6 +277,11 @@ function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $ar
     }
 
     $options['cacheability'] = 'private';
+
+    if ($forcedownload) {
+        // Design 7.5: every download leaves a trace.
+        \mod_presenterai\event\recording_downloaded::create_from_recording($recording, $context)->trigger();
+    }
 
     send_stored_file($file, 0, 0, $forcedownload, $options);
 }

@@ -129,9 +129,10 @@ final class fs_store implements store_interface {
      * than into a failure after they have spoken for seven minutes.
      *
      * @param media_ref $ref The media being uploaded. Its recordingid may be 0.
+     * @param int $sizebytes Unused here: every chunk passes through PHP, which counts it.
      * @return array Upload instructions for the browser.
      */
-    public function begin_upload(media_ref $ref): array {
+    public function begin_upload(media_ref $ref, int $sizebytes = 0): array {
         if (!$ref->has_valid_kind()) {
             throw new \coding_exception('Unknown media kind: ' . $ref->kind);
         }
@@ -146,8 +147,11 @@ final class fs_store implements store_interface {
             'key' => $this->mint_key($ref->ext),
             'method' => 'POST',
             // Not a presigned target and not time limited: every chunk is an
-            // ordinary authenticated Moodle request, so there is no 'expires'
-            // to report. upload.php arrives with the web service layer.
+            // ordinary authenticated Moodle request to upload.php, which checks
+            // login, sesskey and the submit capability and then hands the body
+            // to accept_chunk() through local\upload_handler, so there is no
+            // 'expires' to report. The browser adds the cmid, recording id,
+            // upload id, offset and sesskey as query parameters.
             'url' => (new \core\url('/mod/presenterai/upload.php'))->out(false),
             'uploadid' => $uploadid,
             'chunkbytes' => $this->chunk_bytes(),
@@ -166,7 +170,7 @@ final class fs_store implements store_interface {
      * @return int Byte offset to resume from.
      */
     public function resume_offset(string $uploadid): int {
-        if (!$this->is_valid_uploadid($uploadid)) {
+        if (!self::is_valid_uploadid($uploadid)) {
             return 0;
         }
 
@@ -216,7 +220,7 @@ final class fs_store implements store_interface {
      * @return int The new total length of the staging file.
      */
     public function accept_chunk(string $uploadid, int $offset, $stream): int {
-        if (!$this->is_valid_uploadid($uploadid)) {
+        if (!self::is_valid_uploadid($uploadid)) {
             throw new \moodle_exception('error:uploadid', 'mod_presenterai');
         }
         if (!is_resource($stream)) {
@@ -347,7 +351,7 @@ final class fs_store implements store_interface {
         $fs = get_file_storage();
         $area = $this->area_for_kind($ref->kind);
 
-        if (!$this->is_valid_uploadid($uploadid)) {
+        if (!self::is_valid_uploadid($uploadid)) {
             return null;
         }
 
@@ -420,6 +424,94 @@ final class fs_store implements store_interface {
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Throw away a chunked upload that will never be finished.
+     *
+     * Takes the same per-upload lock accept_chunk() and commit_upload() take,
+     * for the reason commit_upload() spells out: an unlink outside the lock can
+     * land between another request's offset check and its append, and that
+     * request then writes into an unlinked inode and reports a length no file on
+     * disk has.
+     *
+     * Never throws, per store_interface. A lock that cannot be had within the
+     * timeout means another request is still writing; the staging file is then
+     * left for sweep_stale_staging(), which removes it by age once no row names
+     * the upload.
+     *
+     * @param string $uploadid The id returned by begin_upload, which may be empty or stale.
+     * @return void
+     */
+    public function abort_upload(string $uploadid): void {
+        if (!self::is_valid_uploadid($uploadid)) {
+            return;
+        }
+
+        try {
+            $lock = $this->acquire_lock($uploadid);
+        } catch (\Throwable $e) {
+            debugging('mod_presenterai fs_store could not lock an upload to abort it: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            return;
+        }
+
+        try {
+            $this->discard_staging($uploadid);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Remove staging files nobody is coming back for.
+     *
+     * The cleanup task aborts the uploads it knows about through their rows.
+     * This catches the rest: a staging file whose row was deleted with its
+     * course, or whose upload id was replaced before abort_upload() could run.
+     * Two conditions, both required. The file must be older than $olderthan by
+     * its modification time, which every append in accept_chunk() bumps, so an
+     * upload that is still moving is never touched. And no recording row may
+     * name its upload id, so an upload the cleanup task will handle through its
+     * row is left to the cleanup task.
+     *
+     * No lock is taken. A file that is a day stale and that no row names has no
+     * request that could append to it: upload.php refuses a chunk whose upload
+     * id is not on an uploading row before the store is ever reached.
+     *
+     * @param int $olderthan Seconds since the last write before a file counts as stale.
+     * @return int How many staging files were removed.
+     */
+    public static function sweep_stale_staging(int $olderthan): int {
+        global $CFG, $DB;
+
+        $dir = $CFG->tempdir . '/' . self::STAGING_DIR;
+        if (!is_dir($dir)) {
+            return 0;
+        }
+
+        $cutoff = time() - max(0, $olderthan);
+        $removed = 0;
+        $paths = glob($dir . '/*' . self::STAGING_SUFFIX);
+        foreach ($paths ?: [] as $path) {
+            $uploadid = basename($path, self::STAGING_SUFFIX);
+            if (!self::is_valid_uploadid($uploadid)) {
+                // Not a name this store mints, so not a file this store owns.
+                continue;
+            }
+            clearstatcache(true, $path);
+            $mtime = @filemtime($path);
+            if ($mtime === false || $mtime > $cutoff) {
+                continue;
+            }
+            if ($DB->record_exists('presenterai_recording', ['uploadid' => $uploadid])) {
+                continue;
+            }
+            if (@unlink($path)) {
+                $removed++;
+            }
+        }
+
+        return $removed;
     }
 
     /**
@@ -542,11 +634,15 @@ final class fs_store implements store_interface {
      *
      * @param string $key The stored key.
      * @param string $ext Extension for the temporary file, without the dot.
-     * @return string|null Absolute path, or null if the object is gone.
+     * @param int $maxbytes Largest object accepted, or 0 for no limit.
+     * @return string|null Absolute path, or null if the object is gone or too large.
      */
-    public function fetch_to_file(string $key, string $ext): ?string {
+    public function fetch_to_file(string $key, string $ext, int $maxbytes = 0): ?string {
         $file = $this->locate($key);
         if ($file === null) {
+            return null;
+        }
+        if ($maxbytes > 0 && (int) $file->get_filesize() > $maxbytes) {
             return null;
         }
 
@@ -862,12 +958,25 @@ final class fs_store implements store_interface {
     }
 
     /**
-     * The largest a single piece of media may be, in bytes.
+     * The largest a single piece of media may be at site level, in bytes.
      *
-     * The smaller of the site's own limit and Moodle's effective maximum upload
-     * size. Honouring get_max_upload_file_size() is a condition of passing
-     * Moodle plugin review, and it is also the number an administrator believes
-     * they set, so ignoring it would make the site setting a lie.
+     * The smaller of this plugin's maxmediabytes setting and the site's
+     * $CFG->maxbytes. local\recording_manager::max_media_bytes() applies the
+     * same rule and adds the course's own maxbytes, which this store cannot see:
+     * a chunk arrives with an upload id and nothing else, and looking the course
+     * up on every chunk would cost queries per half megabyte for a limit that
+     * is enforced anyway when the upload starts and when it is finalized. This
+     * ceiling only has to stop an unbounded POST into $CFG->tempdir. Keep the
+     * two in step.
+     *
+     * This deliberately does NOT call get_max_upload_file_size(), which it used
+     * to. That function folds in upload_max_filesize and post_max_size
+     * (lib/moodlelib.php:6389-6416), which are per-request limits, and chunking
+     * exists precisely so that a recording can be larger than one request. On
+     * a stock php.ini it returned 2 MB, so every recording larger than that was
+     * refused with a 413 on the chunk that crossed it. Honouring the site's
+     * maxbytes, which is the number an administrator believes they set and the
+     * one plugin review checks, does not need the ini limits.
      *
      * Read on every chunk rather than cached, because an upload spans many
      * requests and an administrator may lower the limit between two of them.
@@ -883,9 +992,8 @@ final class fs_store implements store_interface {
             $site = self::DEFAULT_MAX_MEDIA_BYTES;
         }
 
-        // Moodle's get_max_upload_file_size() returns -1 for unlimited, which must not
-        // win a min().
-        $moodlemax = (int) get_max_upload_file_size($CFG->maxbytes);
+        // Zero or negative means the site sets no limit, which must not win a min().
+        $moodlemax = (int) ($CFG->maxbytes ?? 0);
         if ($moodlemax <= 0) {
             return $site;
         }
@@ -909,7 +1017,7 @@ final class fs_store implements store_interface {
     private function staging_path(string $uploadid, bool $createdir = true): string {
         global $CFG;
 
-        if (!$this->is_valid_uploadid($uploadid)) {
+        if (!self::is_valid_uploadid($uploadid)) {
             // Reached only through a bug: every public entry point validates
             // first. The id becomes a path segment, so this is not a place to
             // be lenient.
@@ -930,7 +1038,7 @@ final class fs_store implements store_interface {
      * @return void
      */
     private function discard_staging(string $uploadid): void {
-        if (!$this->is_valid_uploadid($uploadid)) {
+        if (!self::is_valid_uploadid($uploadid)) {
             return;
         }
         $path = $this->staging_path($uploadid, false);
@@ -949,7 +1057,7 @@ final class fs_store implements store_interface {
      * @param string $uploadid The candidate id.
      * @return bool
      */
-    private function is_valid_uploadid(string $uploadid): bool {
+    private static function is_valid_uploadid(string $uploadid): bool {
         return (bool) preg_match('/^[A-Za-z0-9]{' . self::TOKEN_LENGTH . '}$/', $uploadid);
     }
 

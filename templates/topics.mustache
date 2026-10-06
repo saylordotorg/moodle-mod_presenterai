@@ -1,0 +1,75 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/topics
+
+    The topics a teacher set for this activity. With two or more there is a
+    labelled picker whose first option asks the learner to choose; a single
+    topic is shown with nothing to pick. Each topic's instructions and files
+    follow, so a learner reads them before recording.
+
+    title and instructions arrive already formatted by topic_manager
+    (format_string and format_text), so they are output unescaped.
+
+    Context variables required for this template:
+    * hastopics - Whether there is anything to show.
+    * topicselect - Whether to render the picker (two or more topics).
+    * topics - List of {id, title, instructions, hasinstructions, files: [{filename, url}], hasfiles}.
+
+    Example context (json):
+    {
+        "hastopics": true,
+        "topicselect": true,
+        "singletopicid": 0,
+        "topics": [
+            {"id": 3, "title": "Renewable energy", "instructions": "<p>Argue for or against.</p>",
+                "hasinstructions": true, "files": [], "hasfiles": false},
+            {"id": 4, "title": "City transport", "instructions": "", "hasinstructions": false,
+                "files": [{"filename": "brief.pdf", "url": "https://example.com/brief.pdf"}], "hasfiles": true}
+        ]
+    }
+}}
+{{#hastopics}}
+<div class="mod-presenterai-topics mb-3">
+    {{#topicselect}}
+    <div class="mb-2">
+        <label for="mod-presenterai-topic-{{uniqid}}" class="font-weight-bold d-block">{{#str}}topic_label, mod_presenterai{{/str}}</label>
+        <select id="mod-presenterai-topic-{{uniqid}}" class="custom-select mod-presenterai-topic-select" data-region="topic-select" required aria-required="true">
+            <option value="">{{#str}}topic_choose, mod_presenterai{{/str}}</option>
+            {{#topics}}
+            <option value="{{id}}">{{{title}}}</option>
+            {{/topics}}
+        </select>
+    </div>
+    {{/topicselect}}
+    {{#topics}}
+    <div class="mod-presenterai-topic mb-2" data-topicid="{{id}}">
+        <h4 class="h5 mb-1">{{{title}}}</h4>
+        {{#hasinstructions}}
+        <div class="mod-presenterai-topic-instructions">{{{instructions}}}</div>
+        {{/hasinstructions}}
+        {{#hasfiles}}
+        <ul class="mod-presenterai-topic-files mb-0">
+            {{#files}}
+            <li><a href="{{url}}">{{filename}}</a></li>
+            {{/files}}
+        </ul>
+        {{/hasfiles}}
+    </div>
+    {{/topics}}
+</div>
+{{/hastopics}}

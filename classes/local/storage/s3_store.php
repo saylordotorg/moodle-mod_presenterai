@@ -125,10 +125,18 @@ class s3_store implements store_interface {
     /**
      * Mint a key and return a presigned PUT the browser can upload to.
      *
+     * With a size, Content-Length is one of the signed headers, so S3 refuses
+     * a PUT of any other length. Without that the URL stays good for its whole
+     * lifetime after finalize has checked the object, and a learner could put a
+     * far larger object under the same key, which every later fetch_to_file()
+     * would then download. The browser sets Content-Length itself from the
+     * Blob, so nothing in the uploader changes and no CORS header is added.
+     *
      * @param media_ref $ref The media being uploaded. Its recordingid may be 0.
+     * @param int $sizebytes The exact size the browser will send, or 0 to sign host only.
      * @return array Upload instructions for the browser.
      */
-    public function begin_upload(media_ref $ref): array {
+    public function begin_upload(media_ref $ref, int $sizebytes = 0): array {
         if (!$ref->has_valid_kind()) {
             throw new \coding_exception('Unknown media kind: ' . $ref->kind);
         }
@@ -136,10 +144,11 @@ class s3_store implements store_interface {
             throw new \coding_exception('s3_store::begin_upload called while the backend is unconfigured');
         }
         $key = $this->make_key($ref);
+        $headers = $sizebytes > 0 ? ['content-length' => (string) $sizebytes] : [];
         return [
             'key' => $key,
             'method' => 'PUT',
-            'url' => $this->sign('PUT', $key, self::TTL_UPLOAD),
+            'url' => $this->sign('PUT', $key, self::TTL_UPLOAD, [], $headers),
             'expires' => self::TTL_UPLOAD,
         ];
     }
@@ -176,6 +185,20 @@ class s3_store implements store_interface {
         throw new \coding_exception(
             's3_store::accept_chunk is not implemented; check supports_direct_upload() before chunking'
         );
+    }
+
+    /**
+     * Throw away a chunked upload. Nothing to do on this backend.
+     *
+     * The browser PUTs straight to the bucket, so this server never holds a
+     * partial upload. A PUT that never finished leaves no object at all, and one
+     * that did finish is a whole object under a key the row still names, which
+     * the caller deletes through delete() like any other.
+     *
+     * @param string $uploadid The id returned by begin_upload. Never issued by this backend.
+     * @return void
+     */
+    public function abort_upload(string $uploadid): void {
     }
 
     /**
@@ -294,13 +317,24 @@ class s3_store implements store_interface {
      * (lib/setuplib.php:1479), which Moodle removes when the request ends, so a
      * failed scoring run leaves nothing behind.
      *
+     * With $maxbytes the object is measured with a HEAD first, so an oversized
+     * one costs a HEAD rather than a transfer, and CURLOPT_MAXFILESIZE and the
+     * size on disk afterwards hold the line if the object changes in between.
+     *
      * @param string $key The stored key.
      * @param string $ext Extension for the temporary file, without the dot.
-     * @return string|null Absolute path, or null if the object is gone.
+     * @param int $maxbytes Largest object accepted, or 0 for no limit.
+     * @return string|null Absolute path, or null if the object is gone or too large.
      */
-    public function fetch_to_file(string $key, string $ext): ?string {
+    public function fetch_to_file(string $key, string $ext, int $maxbytes = 0): ?string {
         if ($key === '' || !$this->is_configured()) {
             return null;
+        }
+        if ($maxbytes > 0) {
+            $size = $this->size($key);
+            if ($size === null || $size > $maxbytes) {
+                return null;
+            }
         }
         $safeext = preg_replace('/[^a-z0-9]/', '', strtolower($ext));
         if ($safeext === '') {
@@ -309,6 +343,9 @@ class s3_store implements store_interface {
         $path = make_request_directory() . '/media.' . $safeext;
 
         $curl = self::new_curl();
+        if ($maxbytes > 0) {
+            $curl->setopt(['CURLOPT_MAXFILESIZE' => $maxbytes]);
+        }
         $curl->download_one($this->sign('GET', $key, 900), null, [
             'filepath' => $path,
             'timeout' => 180,
@@ -320,7 +357,8 @@ class s3_store implements store_interface {
         // success. Without this check the transcriber would be handed a few
         // hundred bytes of XML and would report a learner who said nothing.
         $code = (int) ($curl->get_info()['http_code'] ?? 0);
-        if ($curl->get_errno() || $code !== 200 || !file_exists($path) || filesize($path) === 0) {
+        $toolarge = $maxbytes > 0 && file_exists($path) && filesize($path) > $maxbytes;
+        if ($curl->get_errno() || $code !== 200 || !file_exists($path) || filesize($path) === 0 || $toolarge) {
             if (file_exists($path)) {
                 unlink($path);
             }
@@ -590,9 +628,10 @@ class s3_store implements store_interface {
      * @param string $key The object key.
      * @param int $expires Requested lifetime in seconds.
      * @param array $extraquery Query parameters to merge in before the sort and the signature.
+     * @param array $headers Lower-case header name => value to sign beside host.
      * @return string
      */
-    private function sign(string $method, string $key, int $expires, array $extraquery = []): string {
+    private function sign(string $method, string $key, int $expires, array $extraquery = [], array $headers = []): string {
         $parts = $this->endpoint_parts();
         return self::presign_url([
             'scheme' => $parts['scheme'],
@@ -606,6 +645,7 @@ class s3_store implements store_interface {
             'expires' => self::clamp_ttl($expires),
             'timestamp' => time(),
             'extraquery' => $extraquery,
+            'headers' => $headers,
         ]);
     }
 
@@ -788,9 +828,13 @@ class s3_store implements store_interface {
      * 'uri' must already be a canonical per-segment-encoded path beginning with
      * '/', which encode_key_path() produces.
      *
+     * Optional 'headers' are signed beside host, which the request must then
+     * send with exactly those values. With none the URL is byte for byte what
+     * it was before the option existed, so the pinned AWS example still holds.
+     *
      * @param array $o host, region, service, accesskey, secretkey, method, uri,
      *                 expires (int), timestamp (int), optional extraquery (assoc),
-     *                 optional scheme.
+     *                 optional headers (assoc, lower-case names), optional scheme.
      * @return string
      */
     public static function presign_url(array $o): string {
@@ -808,12 +852,24 @@ class s3_store implements store_interface {
         $algorithm = 'AWS4-HMAC-SHA256';
         $scope = $datestamp . '/' . $region . '/' . $service . '/aws4_request';
 
+        // Canonical headers are sorted by lower-case name and each ends in a newline.
+        $headers = ['host' => $host];
+        foreach (($o['headers'] ?? []) as $name => $value) {
+            $headers[strtolower((string) $name)] = trim((string) $value);
+        }
+        ksort($headers);
+        $canonicalheaders = '';
+        foreach ($headers as $name => $value) {
+            $canonicalheaders .= $name . ':' . $value . "\n";
+        }
+        $signedheaders = implode(';', array_keys($headers));
+
         $query = array_merge([
             'X-Amz-Algorithm' => $algorithm,
             'X-Amz-Credential' => $o['accesskey'] . '/' . $scope,
             'X-Amz-Date' => $amzdate,
             'X-Amz-Expires' => (string) $expires,
-            'X-Amz-SignedHeaders' => 'host',
+            'X-Amz-SignedHeaders' => $signedheaders,
         ], $o['extraquery'] ?? []);
         ksort($query);
         $pairs = [];
@@ -822,8 +878,6 @@ class s3_store implements store_interface {
         }
         $canonicalquery = implode('&', $pairs);
 
-        $canonicalheaders = 'host:' . $host . "\n";
-        $signedheaders = 'host';
         $payloadhash = 'UNSIGNED-PAYLOAD';
         $canonicalrequest = $method . "\n" . $uri . "\n" . $canonicalquery . "\n"
             . $canonicalheaders . "\n" . $signedheaders . "\n" . $payloadhash;
