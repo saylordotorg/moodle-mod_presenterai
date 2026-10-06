@@ -1,0 +1,127 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/attempts
+
+    The learner's own attempts, newest first, including attempts whose media
+    is gone: those keep their row, their date and their status, and the
+    actions cell says in words that the recording is no longer available.
+
+    Every value comes from attempt_row::export, which reads the row and never
+    the site settings (design section 9.1). This template reads nothing else.
+
+    The recording state cell is never empty (design 11, rule 6). The Watch,
+    Download and Delete controls carry an aria-label naming the attempt's date,
+    so a screen reader user does not hear "Download, Download, Download"
+    (rule 3). The download-off note appears once, below the table, and the
+    table points at it with aria-describedby (rule 7).
+
+    Context variables required for this template:
+    * hasattempts - Whether there are any rows.
+    * showdownloadoffnote - Whether to render the download-off note.
+    * rows - List of attempt_row::export() results.
+
+    Example context (json):
+    {
+        "hasattempts": true,
+        "showdownloadoffnote": true,
+        "rows": [
+            {
+                "recid": 8,
+                "attempt": "2",
+                "recorded": "6/10/26, 14:00",
+                "length": "6:12",
+                "status": "Submitted",
+                "statekey": "attempt_deletes_on",
+                "state": "Deletes on 5/11/26",
+                "mediaavailable": true,
+                "canwatch": true,
+                "watcharia": "Watch the recording you made on 6/10/26, 14:00",
+                "candownload": false,
+                "downloadurl": "",
+                "downloadaria": "Download the recording you made on 6/10/26, 14:00",
+                "candelete": true,
+                "deletearia": "Delete the recording you made on 6/10/26, 14:00",
+                "gonenote": ""
+            },
+            {
+                "recid": 7,
+                "attempt": "1",
+                "recorded": "1/10/26, 09:30",
+                "length": "5:48",
+                "status": "Submitted",
+                "statekey": "attempt_gone_learner",
+                "state": "You deleted this recording on 2/10/26",
+                "mediaavailable": false,
+                "canwatch": false,
+                "watcharia": "Watch the recording you made on 1/10/26, 09:30",
+                "candownload": false,
+                "downloadurl": "",
+                "downloadaria": "Download the recording you made on 1/10/26, 09:30",
+                "candelete": false,
+                "deletearia": "Delete the recording you made on 1/10/26, 09:30",
+                "gonenote": "No longer available to watch"
+            }
+        ]
+    }
+}}
+<h3 class="mod-presenterai-attempts-heading mt-4">{{#str}}yourattempts, mod_presenterai{{/str}}</h3>
+{{^hasattempts}}
+<p class="mod-presenterai-noattempts">{{#str}}noattempts, mod_presenterai{{/str}}</p>
+{{/hasattempts}}
+{{#hasattempts}}
+<table class="generaltable mod-presenterai-attempts" data-region="attempts"{{#showdownloadoffnote}} aria-describedby="mod-presenterai-dlnote-{{uniqid}}"{{/showdownloadoffnote}}>
+    <thead>
+        <tr>
+            <th scope="col">{{#str}}col_attempt, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}col_recorded, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}col_length, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}col_status, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}col_recording, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}col_actions, mod_presenterai{{/str}}</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{#rows}}
+        <tr data-recid="{{recid}}" class="mod-presenterai-attempt{{^mediaavailable}} mod-presenterai-attempt-nomedia{{/mediaavailable}}">
+            <td>{{attempt}}</td>
+            <td>{{recorded}}</td>
+            <td>{{length}}</td>
+            <td>{{status}}</td>
+            <td data-region="state" data-statekey="{{statekey}}" tabindex="-1">{{state}}</td>
+            <td data-region="actions">
+                {{#canwatch}}
+                <button type="button" class="btn btn-link p-0 mr-2" data-action="watch" data-recid="{{recid}}" aria-label="{{watcharia}}">{{#str}}watch, mod_presenterai{{/str}}</button>
+                {{/canwatch}}
+                {{#candownload}}
+                <a class="mr-2" href="{{downloadurl}}" data-action="download" aria-label="{{downloadaria}}">{{#str}}download, mod_presenterai{{/str}}</a>
+                {{/candownload}}
+                {{#candelete}}
+                <button type="button" class="btn btn-link p-0 text-danger" data-action="delete" data-recid="{{recid}}" data-recorded="{{recorded}}" aria-label="{{deletearia}}">{{#str}}delete, mod_presenterai{{/str}}</button>
+                {{/candelete}}
+                {{#gonenote}}
+                <span class="mod-presenterai-gone-note">{{gonenote}}</span>
+                {{/gonenote}}
+            </td>
+        </tr>
+        {{/rows}}
+    </tbody>
+</table>
+{{#showdownloadoffnote}}
+<p id="mod-presenterai-dlnote-{{uniqid}}" class="mod-presenterai-dlnote small">{{#str}}download_off_note, mod_presenterai{{/str}}</p>
+{{/showdownloadoffnote}}
+{{/hasattempts}}
