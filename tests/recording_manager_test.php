@@ -1102,7 +1102,9 @@ final class recording_manager_test extends \advanced_testcase {
         $frames = $fs->get_file($this->context->id, 'mod_presenterai', 'frames', $done->id, '/', (string) $done->frameskey);
         $this->assertNotFalse($frames, 'The frame sheet was not committed.');
         $this->assertSame("\xFF\xD8\xFF frames", $frames->get_content());
-        $this->assertNotFalse($fs->get_file($this->context->id, 'mod_presenterai', 'deck', $done->id, '/', (string) $done->deckkey));
+        $this->assertNotFalse(
+            $fs->get_file($this->context->id, 'mod_presenterai', 'deck', $done->id, '/', (string) $done->deckkey)
+        );
         $this->assertNotFalse(
             $fs->get_file($this->context->id, 'mod_presenterai', 'recording', $done->id, '/', (string) $done->storagekey)
         );

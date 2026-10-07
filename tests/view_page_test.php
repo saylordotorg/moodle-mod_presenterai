@@ -330,8 +330,13 @@ final class view_page_test extends \advanced_testcase {
      * @param bool $optout Whether the opt out must render.
      * @return void
      */
-    public function test_visual_disclosure_and_optout(string $mode, int $videovision, int $allowoptout, bool $disclosure,
-            bool $optout): void {
+    public function test_visual_disclosure_and_optout(
+        string $mode,
+        int $videovision,
+        int $allowoptout,
+        bool $disclosure,
+        bool $optout
+    ): void {
         global $DB, $OUTPUT;
 
         $this->require_other_slices();
@@ -378,4 +383,3 @@ final class view_page_test extends \advanced_testcase {
         $this->assertSame(1, $this->export($instance, $course, $context, $student)['config']['warmstt']);
     }
 }
-

@@ -225,7 +225,7 @@ final class summary_gate_test extends \advanced_testcase {
         $this->assertNull(summary_gate::denylist_class('../en'));
         $this->assertSame('\\mod_presenterai\\local\\vision\\denylist\\en', summary_gate::denylist_class('en_us'));
 
-        // "shirt" would be a hard term in English, and there is no anchor either.
+        // The word shirt would be a hard term in English, and there is no anchor either.
         $this->assertTrue($this->one('Vous portiez une shirt sombre.', $this->context(false, 'fr'))['pass']);
     }
 

@@ -290,4 +290,3 @@ final class policy_test extends \advanced_testcase {
         $this->assertStringContainsString(get_string('privacy_visualnote', 'mod_presenterai', 1), $paragraph);
     }
 }
-

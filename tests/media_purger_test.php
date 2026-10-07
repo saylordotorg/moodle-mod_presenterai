@@ -391,4 +391,3 @@ final class media_purger_test extends \advanced_testcase {
         $this->assertTrue($DB->record_exists('presenterai_gatelog', ['recordingid' => $bobrec->id]));
     }
 }
-

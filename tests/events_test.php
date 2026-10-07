@@ -269,4 +269,3 @@ final class events_test extends \advanced_testcase {
         ]);
     }
 }
-

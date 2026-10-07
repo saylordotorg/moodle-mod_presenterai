@@ -392,7 +392,13 @@ final class attempt_row_test extends \advanced_testcase {
      * @param array|null $tips The tips list.
      * @return void
      */
-    private function ai_score(\stdClass $rec, string $status, ?string $summary, ?array $criteria = null, ?array $tips = null): void {
+    private function ai_score(
+        \stdClass $rec,
+        string $status,
+        ?string $summary,
+        ?array $criteria = null,
+        ?array $tips = null
+    ): void {
         global $DB;
 
         $criteria = $criteria ?? [

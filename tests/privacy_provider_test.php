@@ -495,4 +495,3 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
         $this->assertSame(0, $DB->count_records('presenterai_gatelog'));
     }
 }
-

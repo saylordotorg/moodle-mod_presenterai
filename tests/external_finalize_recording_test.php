@@ -290,4 +290,3 @@ final class external_finalize_recording_test extends \advanced_testcase {
         $this->assertSame(0, (int) $DB->get_field('presenterai_recording', 'visualoptout', ['id' => $recordingid]));
     }
 }
-

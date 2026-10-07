@@ -111,8 +111,10 @@ final class visual_pipeline {
         try {
             return self::evidence_unguarded($rec, $instance, $ctx, $scoringroute);
         } catch (\Throwable $e) {
-            debugging('mod_presenterai visual evidence failed for recording ' . (int) $rec->id . ': ' . get_class($e),
-                DEBUG_DEVELOPER);
+            debugging(
+                'mod_presenterai visual evidence failed for recording ' . (int) $rec->id . ': ' . get_class($e),
+                DEBUG_DEVELOPER
+            );
             return self::state(self::EVIDENCE_UNAVAILABLE);
         }
     }
@@ -126,7 +128,12 @@ final class visual_pipeline {
      * @param string $scoringroute The scoring route.
      * @return array As evidence().
      */
-    private static function evidence_unguarded(\stdClass $rec, \stdClass $instance, \context_module $ctx, string $scoringroute): array {
+    private static function evidence_unguarded(
+        \stdClass $rec,
+        \stdClass $instance,
+        \context_module $ctx,
+        string $scoringroute
+    ): array {
         if (!self::takes_frames($instance) || (string) ($rec->mode ?? 'video') === 'audio') {
             return self::state(self::EVIDENCE_NONE);
         }
@@ -154,14 +161,22 @@ final class visual_pipeline {
         try {
             $seen = video_vision::observe($rec, $instance, $ctx, $client, $called);
         } catch (\Throwable $e) {
-            debugging('mod_presenterai vision pass failed for recording ' . (int) $rec->id . ': ' . get_class($e),
-                DEBUG_DEVELOPER);
+            debugging(
+                'mod_presenterai vision pass failed for recording ' . (int) $rec->id . ': ' . get_class($e),
+                DEBUG_DEVELOPER
+            );
             $seen = null;
         } finally {
             if ($called) {
                 try {
-                    usage::record($client, usage::ACTION_VIDEO_VISION, (int) $instance->id, (int) $rec->id, $owner,
-                        ['imagecount' => 1]);
+                    usage::record(
+                        $client,
+                        usage::ACTION_VIDEO_VISION,
+                        (int) $instance->id,
+                        (int) $rec->id,
+                        $owner,
+                        ['imagecount' => 1]
+                    );
                 } catch (\Throwable $e) {
                     debugging('mod_presenterai could not record vision usage: ' . get_class($e), DEBUG_DEVELOPER);
                 }
@@ -382,7 +397,8 @@ final class visual_pipeline {
             if ($result['pass']) {
                 continue;
             }
-            self::log_rejection($rec, $ctx, $target, (int) $result['layer'], (string) $result['rule'], (string) $texts[$pos]['text']);
+            $text = (string) $texts[$pos]['text'];
+            self::log_rejection($rec, $ctx, $target, (int) $result['layer'], (string) $result['rule'], $text);
             if ($pos > 0) {
                 self::withhold($criteria[$visualidx[$pos - 1]]);
             }
@@ -411,8 +427,13 @@ final class visual_pipeline {
     private static function fail_closed(array $criteria, array $visualidx, array $texts, \stdClass $rec): array {
         foreach ($texts as $item) {
             if (trim((string) $item['text']) !== '') {
-                self::gatelog($rec, (string) $item['target'], summary_gate::LAYER_UNAVAILABLE, 'judge_unavailable',
-                    (string) $item['text']);
+                self::gatelog(
+                    $rec,
+                    (string) $item['target'],
+                    summary_gate::LAYER_UNAVAILABLE,
+                    'judge_unavailable',
+                    (string) $item['text']
+                );
             }
         }
         foreach ($visualidx as $i) {
@@ -448,8 +469,14 @@ final class visual_pipeline {
      * @param string $text The rejected text.
      * @return void
      */
-    private static function log_rejection(\stdClass $rec, \context_module $ctx, string $target, int $layer, string $rule,
-            string $text): void {
+    private static function log_rejection(
+        \stdClass $rec,
+        \context_module $ctx,
+        string $target,
+        int $layer,
+        string $rule,
+        string $text
+    ): void {
         visual_summary_rejected::create_from_recording($rec, $ctx, [
             'target' => $target,
             'layer' => $layer,

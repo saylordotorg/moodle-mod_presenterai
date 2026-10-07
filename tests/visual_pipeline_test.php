@@ -65,7 +65,11 @@ final class visual_pipeline_test extends \advanced_testcase {
         route_resolver::reset_test_doubles();
         $generator = $this->getDataGenerator();
         $course = $generator->create_course();
-        $this->learner = $generator->create_and_enrol($course, 'student', ['firstname' => 'Zebediah', 'lastname' => 'Quillfeather']);
+        $this->learner = $generator->create_and_enrol(
+            $course,
+            'student',
+            ['firstname' => 'Zebediah', 'lastname' => 'Quillfeather']
+        );
         $this->instance = $generator->create_module('presenterai', ['course' => $course->id, 'videovision' => 1]);
         $this->context = \context_module::instance($this->instance->cmid);
     }
@@ -441,8 +445,8 @@ final class visual_pipeline_test extends \advanced_testcase {
     public function test_finalise_without_evidence(): void {
         $rec = $this->recording();
         $criteria = $this->criteria('a', 'b');
-        foreach (['optedout' => 'optedout', 'unusable' => 'notassessed', 'unavailable' => 'notanalysed', 'none' => ''] as
-                $state => $status) {
+        $states = ['optedout' => 'optedout', 'unusable' => 'notassessed', 'unavailable' => 'notanalysed', 'none' => ''];
+        foreach ($states as $state => $status) {
             $result = visual_pipeline::finalise($criteria, 'x', ['state' => $state], $rec, $this->instance, $this->context, true);
             $this->assertSame($criteria, $result['criteria']);
             $this->assertNull($result['visualsummary']);
@@ -623,7 +627,8 @@ final class visual_pipeline_test extends \advanced_testcase {
 
         $sink = $this->redirectEvents();
         try {
-            visual_pipeline::finalise($criteria, 'Your hands stayed low.', $this->ok(), $rec, $this->instance, $this->context, true);
+            $summary = 'Your hands stayed low.';
+            visual_pipeline::finalise($criteria, $summary, $this->ok(), $rec, $this->instance, $this->context, true);
             $this->fail('A judge outage was treated as a verdict.');
         } catch (judge_unavailable_exception $e) {
             $this->assertSame('timeout', $e->reason);
@@ -649,8 +654,15 @@ final class visual_pipeline_test extends \advanced_testcase {
 
         $sink = $this->redirectEvents();
         // No judge client at all is an outage too.
-        $result = visual_pipeline::finalise($criteria, 'Your hands stayed low.', $this->ok(), $rec, $this->instance,
-            $this->context, false);
+        $result = visual_pipeline::finalise(
+            $criteria,
+            'Your hands stayed low.',
+            $this->ok(),
+            $rec,
+            $this->instance,
+            $this->context,
+            false
+        );
 
         $this->assertSame(visual_pipeline::STATUS_FALLBACK, $result['visualstatus']);
         $this->assertSame(get_string('visual_fallback_partial', 'mod_presenterai'), $result['visualsummary']);
@@ -681,8 +693,15 @@ final class visual_pipeline_test extends \advanced_testcase {
         $rec = $this->recording();
         $criteria = $this->criteria('Your hands stayed low, so gestures did not register.', 'You looked at the camera lens.');
 
-        $result = visual_pipeline::finalise($criteria, 'Your hands stayed low in most frames.', $this->ok(), $rec,
-            $this->instance, $this->context, true);
+        $result = visual_pipeline::finalise(
+            $criteria,
+            'Your hands stayed low in most frames.',
+            $this->ok(),
+            $rec,
+            $this->instance,
+            $this->context,
+            true
+        );
 
         $this->assertSame(visual_pipeline::STATUS_SUMMARY, $result['visualstatus']);
     }

@@ -198,4 +198,3 @@ final class external_start_upload_test extends \advanced_testcase {
         $this->assertStringNotContainsString($key, $result['url']);
     }
 }
-
