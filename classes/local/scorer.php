@@ -205,7 +205,8 @@ final class scorer {
             'level' => (string) ($instance->speakinglevel ?? ''),
             'ptype' => (string) ($instance->ptype ?? ''),
             'topictitle' => self::topic_title($rec),
-            'targetseconds' => (int) ($instance->maxseconds ?? 0),
+            'minseconds' => (int) ($instance->minseconds ?? 0),
+            'maxseconds' => (int) ($instance->maxseconds ?? 0),
             'durationseconds' => (int) ($rec->durationseconds ?? 0),
             'slides' => (string) $slides['text'],
             'visualblock' => $visualblock,
@@ -252,13 +253,13 @@ final class scorer {
         }
 
         $summary = isset($decoded['visual_summary']) && is_scalar($decoded['visual_summary'])
-            ? (string) $decoded['visual_summary']
+            ? self::model_text($decoded['visual_summary'])
             : '';
-        $overall = isset($decoded['overall']) && is_scalar($decoded['overall']) ? trim((string) $decoded['overall']) : '';
+        $overall = isset($decoded['overall']) && is_scalar($decoded['overall']) ? self::model_text($decoded['overall']) : '';
         $tips = [];
         foreach ((array) ($decoded['tips'] ?? []) as $tip) {
-            if (is_scalar($tip) && trim((string) $tip) !== '') {
-                $tips[] = trim((string) $tip);
+            if (is_scalar($tip) && self::model_text($tip) !== '') {
+                $tips[] = self::model_text($tip);
             }
         }
         // The pipeline gates every learner facing string while the prompt
@@ -338,13 +339,28 @@ final class scorer {
                 'name' => (string) $def['name'],
                 'score' => max(0, min($max, $score)),
                 'max_score' => $max,
-                'feedback' => is_scalar($entry['feedback'] ?? null) ? trim((string) $entry['feedback']) : '',
+                'feedback' => is_scalar($entry['feedback'] ?? null) ? self::model_text($entry['feedback']) : '',
                 'assessed' => $assessed,
                 'visual' => $visual,
                 'counts' => !empty($def['counts']),
             ];
         }
         return array_values($out);
+    }
+
+    /**
+     * A learner facing string from the model, trimmed, with escaped quotes undone.
+     *
+     * Now and then the model escapes a quote twice inside its JSON, so after
+     * decoding the text still reads \"Slide 1,\" and the learner sees the
+     * backslashes. A learner facing comment has no use for a backslash before a
+     * quote, so this takes them out.
+     *
+     * @param mixed $value A scalar from the decoded response.
+     * @return string
+     */
+    public static function model_text($value): string {
+        return trim(str_replace(['\\"', "\\'"], ['"', "'"], (string) $value));
     }
 
     /**

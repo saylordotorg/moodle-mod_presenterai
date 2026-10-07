@@ -49,6 +49,26 @@ class stt_client implements stt_interface {
      */
     public const OPENAI_MAX_BYTES = 26214400;
 
+    /**
+     * @var array MIME type => the extension the upload is named with.
+     * OpenAI works out the format from the uploaded file's name, not from its
+     * MIME type, and answers 400 "Unrecognized file format" to a name with no
+     * extension. Stored media has none: fs_store keeps it in Moodle's file
+     * pool under its content hash.
+     */
+    public const UPLOAD_EXTENSIONS = [
+        'video/webm' => 'webm',
+        'audio/webm' => 'webm',
+        'video/mp4' => 'mp4',
+        'audio/mp4' => 'm4a',
+        'audio/x-m4a' => 'm4a',
+        'audio/ogg' => 'ogg',
+        'audio/wav' => 'wav',
+        'audio/x-wav' => 'wav',
+        'audio/mpeg' => 'mp3',
+        'audio/flac' => 'flac',
+    ];
+
     /** @var string The endpoint. */
     private string $endpoint;
 
@@ -120,7 +140,11 @@ class stt_client implements stt_interface {
             $headers[] = 'Authorization: Bearer ' . $this->apikey;
         }
         $body = [
-            'file' => new \CURLFile($filepath, $mime !== '' ? $mime : 'application/octet-stream', basename($filepath)),
+            'file' => new \CURLFile(
+                $filepath,
+                $mime !== '' ? $mime : 'application/octet-stream',
+                self::upload_name($filepath, $mime)
+            ),
             'model' => $this->model,
         ];
         $response = http_client::post($this->endpoint, $headers, $body, ['timeout' => self::TIMEOUT]);
@@ -132,6 +156,29 @@ class stt_client implements stt_interface {
             throw ai_exception::for_reason(ai_exception::BAD_RESPONSE, 'The transcription came back empty');
         }
         return ['text' => $text, 'model' => $this->model];
+    }
+
+    /**
+     * The file name to send the upload under.
+     *
+     * The local name when it already ends in the extension for this MIME
+     * type, otherwise the local name with that extension added. A MIME type
+     * with no known extension leaves the name as it is.
+     *
+     * @param string $filepath The local file.
+     * @param string $mime Its MIME type.
+     * @return string
+     */
+    public static function upload_name(string $filepath, string $mime): string {
+        $name = basename($filepath);
+        $ext = self::UPLOAD_EXTENSIONS[strtolower(trim($mime))] ?? '';
+        if ($ext === '') {
+            return $name;
+        }
+        if (strtolower((string) pathinfo($name, PATHINFO_EXTENSION)) === $ext) {
+            return $name;
+        }
+        return $name . '.' . $ext;
     }
 
     /**

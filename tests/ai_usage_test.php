@@ -108,7 +108,11 @@ final class ai_usage_test extends \advanced_testcase {
      * @return void
      */
     public function test_estimates(): void {
-        $this->assertSame(1000 * 300 + 100 * 1500, usage::estimate('claude-sonnet-5-5', 1000, 100));
+        $this->assertSame(1000 * 200 + 100 * 1000, usage::estimate('claude-sonnet-5-5', 1000, 100));
+        $this->assertSame(1000 * 200 + 100 * 1000, usage::estimate('claude-sonnet-5', 1000, 100));
+        // Opus 5.5 is cheaper than Opus 5, so its own row has to win over the family prefix.
+        $this->assertSame(1000 * 400 + 100 * 2000, usage::estimate('claude-opus-5-5', 1000, 100));
+        $this->assertSame(1000 * 500 + 100 * 2500, usage::estimate('claude-opus-5', 1000, 100));
         $this->assertSame(1000 * 100 + 100 * 500, usage::estimate('claude-haiku-4-5-20251001', 1000, 100));
         $this->assertSame(1000 * 15 + 100 * 60, usage::estimate('gpt-4o-mini-2024-07-18', 1000, 100));
         $this->assertSame(1000 * 30 + 100 * 250, usage::estimate('gemini-2.5-flash', 1000, 100));

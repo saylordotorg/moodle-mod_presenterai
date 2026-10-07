@@ -68,8 +68,47 @@ final class ai_stt_client_test extends \advanced_testcase {
         $this->assertInstanceOf(\CURLFile::class, $request['body']['file']);
         $this->assertSame(self::SAMPLE, $request['body']['file']->getFilename());
         $this->assertSame('video/webm', $request['body']['file']->getMimeType());
+        $this->assertSame('sample.webm', $request['body']['file']->getPostFilename());
         $this->assertSame('whisper-1', $request['body']['model']);
         $this->assertSame('openai', $client->route());
+    }
+
+    /**
+     * Stored media has no extension, and OpenAI reads the format from the
+     * upload's name, so the name sent carries one taken from the MIME type.
+     *
+     * @return void
+     */
+    public function test_upload_named_with_extension(): void {
+        $this->resetAfterTest();
+        http_client::set_test_handler(fn() => ['status' => 200, 'body' => '{"text":"hello"}']);
+        // Shaped like a file in Moodle's pool: a content hash, no extension.
+        $pooled = make_request_directory() . '/1554d093d4cfb2b3a43da291760ba3c5c7a0623e';
+        copy(self::SAMPLE, $pooled);
+        $client = new stt_client(stt_client::OPENAI_ENDPOINT, 'sk-stt-key', '');
+
+        $client->transcribe($pooled, 'video/webm');
+
+        $file = http_client::last_requests()[0]['body']['file'];
+        $this->assertSame($pooled, $file->getFilename());
+        $this->assertSame('1554d093d4cfb2b3a43da291760ba3c5c7a0623e.webm', $file->getPostFilename());
+    }
+
+    /**
+     * The name keeps a matching extension, gains a missing one, and is left
+     * alone for a MIME type with no known extension.
+     *
+     * @return void
+     */
+    public function test_upload_name(): void {
+        $this->assertSame('sample.webm', stt_client::upload_name('/x/sample.webm', 'video/webm'));
+        $this->assertSame('SAMPLE.WEBM', stt_client::upload_name('/x/SAMPLE.WEBM', 'audio/webm'));
+        $this->assertSame('abc123.webm', stt_client::upload_name('/x/abc123', 'video/webm'));
+        $this->assertSame('abc123.m4a', stt_client::upload_name('/x/abc123', 'audio/mp4'));
+        $this->assertSame('abc123.ogg', stt_client::upload_name('/x/abc123', 'Audio/Ogg'));
+        $this->assertSame('seg001.wav', stt_client::upload_name('/tmp/seg001.wav', 'audio/wav'));
+        $this->assertSame('abc123', stt_client::upload_name('/x/abc123', 'application/octet-stream'));
+        $this->assertSame('abc123', stt_client::upload_name('/x/abc123', ''));
     }
 
     /**

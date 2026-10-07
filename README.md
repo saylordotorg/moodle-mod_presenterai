@@ -2,12 +2,7 @@
 
 An activity module in which a learner records a video or audio presentation in the browser, optionally presents a PDF slide deck while speaking, and receives a transcript, a rubric score and written per criterion feedback.
 
-> **Status: in development. Not released. Do not install this on a production site.**
->
-> There is no tagged release, no `install.xml` you should trust to be stable, and no upgrade path between commits. The plan in [`docs/IMPLEMENTATION-PLAN.md`](docs/IMPLEMENTATION-PLAN.md) describes what is being built and in what order. This README describes the plugin as it is intended to work at version 1.0, so that a Moodle administrator can decide early whether it is worth watching. Where something is not built yet, this file says so.
-
->
-> **Built so far (phase 1, on branch `phase1-complete`):** recording in the browser with optional PDF slides, chunked upload to Moodle file storage or a direct upload to an S3 compatible bucket, synced playback, learner download and delete governed by capabilities, the deletion date shown against every attempt, topics with an optional PDF brief, a storage check page that measures the upload chunk size, the hourly cleanup task, `cli/apply_retention.php`, and backup and restore of the activity and its topics. **Phase 2 (on branch `phase2-complete`)** adds teacher scoring against a rubric, the gradebook, outcomes, completion rules, the submissions report, learner score display, messages, the privacy provider, course reset and learner work in course backups; see the section below. **Phase 3 (on branch `phase3-complete`)** adds transcription, AI scoring, slide design feedback and body language feedback behind the visual feedback gate; see "What's new in 0.4.0" below for the last changes before the first release.
+> **Status: first release, v0.4.0 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, the migrator from SOLA's Soapbox feature isn't built yet, and it's English only for now. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
 
 ## What's new in 0.4.0
 
@@ -68,11 +63,11 @@ Two things an administrator should know before choosing zero. On Moodle file sto
 
 Model written observations about a learner's body language expire on their own clock, which defaults to 30 days and applies even when media retention is off.
 
-## Grading, completion and privacy (phase 2)
+## Grading, completion and privacy
 
-Phase 2 has no AI. Every score is entered by a teacher.
+A teacher can score any attempt by hand, and can override the AI's score on any criterion.
 
-- **Manual teacher scoring.** The Submissions page (`report.php`, reached from the activity's settings menu) lists every learner with the status, length and scores of their latest attempt, filtered by group in separate groups mode. From it a teacher opens one attempt on the grading page (`grade.php`), watches it with the slides synced, reads the transcript, and scores each criterion of the rubric, with a live total. A criterion can be left unassessed, and it then drops out of the denominator. Until rubrics can be edited, the rubric is the activity's own, then the nearest one up the context tree, then a built-in five criterion speaking rubric. The visual evidence note is shown only to roles with `mod/presenterai:viewvisualevidence`.
+- **Manual teacher scoring.** The Submissions page (`report.php`, reached from the activity's settings menu) lists every learner with the status, length and scores of their latest attempt, filtered by group in separate groups mode. From it a teacher opens one attempt on the grading page (`grade.php`), watches it with the slides synced, reads the transcript, and scores each criterion of the rubric, with a live total. A criterion can be left unassessed, and it then drops out of the denominator. The rubric is the activity's own, then the nearest one up the context tree, then a built-in five criterion speaking rubric. The visual evidence note is shown only to roles with `mod/presenterai:viewvisualevidence`.
 - **Grading method.** When a learner has several scored attempts, the activity's grading method decides what reaches the gradebook: highest, average, first or latest. An attempt still counts after its recording is deleted, because the score is kept. Points and scales both work, a grade of None creates no grade item, and a gradebook override is never overwritten.
 - **Outcomes.** If outcomes are enabled on the site, the teacher sets each one by hand on the grading page. Nothing is derived automatically.
 - **Completion.** Besides viewing, an activity can require a number of submitted recordings, or an overall score of at least a percentage. The score rule reads the activity's own aggregate, so it works with no grade item, and a gradebook override doesn't change it.
@@ -136,11 +131,11 @@ Where the media leaves your site: to your chosen storage backend, to your chosen
 
 PresenterAI replaces "Soapbox", a feature inside `local_ai_course_assistant` (the SOLA course assistant plugin). Soapbox is deprecated as of SOLA v7.5.2, its code is removed in v8.0, and its database tables are dropped later, per course, only once a migration has been verified for that course.
 
-This plugin ships a migrator that imports existing Soapbox activities, topics, recordings, transcripts, scores and feedback, including attempts whose video has already been deleted. It is dry run by default, idempotent, reversible, and it writes nothing to the SOLA tables. It is metadata only for sites that keep their recordings in the same S3 bucket. PresenterAI has no runtime dependency on SOLA: it does not call its code and does not require it to be installed.
+A migrator is planned for the next release. It will import existing Soapbox activities, topics, recordings, transcripts, scores and feedback, including attempts whose video has already been deleted. It will be dry run by default, idempotent and reversible, and it won't write anything to the SOLA tables. It will be metadata only for sites that keep their recordings in the same S3 bucket. PresenterAI has no runtime dependency on SOLA: it does not call its code and does not require it to be installed.
 
 ## Installation
 
-Not yet. There is no release. When there is, the usual two routes will work: unpack into `mod/presenterai` and visit the notifications page, or install the ZIP through Site administration.
+Download `mod_presenterai.zip` from the [latest release](https://github.com/saylordotorg/moodle-mod_presenterai/releases/latest), then either unzip it into `mod/presenterai` and visit Site administration > Notifications, or install the ZIP through Site administration > Plugins > Install plugins. Then set up transcription and an AI back end under Site administration > Plugins > Activity modules > PresenterAI; the settings page lists anything still missing.
 
 ## Contributing
 
