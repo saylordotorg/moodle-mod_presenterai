@@ -416,12 +416,23 @@ final class score_manager {
         if ((int) $rec->presenteraiid !== (int) $instance->id) {
             throw new \invalid_parameter_exception('The recording does not belong to this activity.');
         }
-        $score = self::current_score((int) $rec->id);
-        if ($score === null || self::is_released($score)) {
-            return null;
+        // Two graders, or one attempt's Release beside Release all, must not
+        // both pass the check and send the learner two messages.
+        $lock = \core\lock\lock_config::get_lock_factory('mod_presenterai_release')
+            ->get_lock('rec' . (int) $rec->id, 10);
+        if (!$lock) {
+            throw new \moodle_exception('error:uploadbusy', 'mod_presenterai');
         }
-        $DB->set_field('presenterai_score', 'released', 1, ['id' => (int) $score->id]);
-        $score->released = 1;
+        try {
+            $score = self::current_score((int) $rec->id);
+            if ($score === null || self::is_released($score)) {
+                return null;
+            }
+            $DB->set_field('presenterai_score', 'released', 1, ['id' => (int) $score->id]);
+            $score->released = 1;
+        } finally {
+            $lock->release();
+        }
 
         \mod_presenterai\event\feedback_released::create_from_score($rec, $score, $ctx)->trigger();
         gradebook::update_grades($instance, (int) $rec->userid);
