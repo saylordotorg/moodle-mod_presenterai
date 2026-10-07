@@ -131,7 +131,9 @@ class grade_form extends \moodleform {
             }
         }
 
-        $this->add_action_buttons(true, get_string('grade_save', 'mod_presenterai'));
+        // D28: saving a teacher's score releases a held attempt, and the button says so.
+        $label = !empty($this->_customdata['saveandrelease']) ? 'grade_saveandrelease' : 'grade_save';
+        $this->add_action_buttons(true, get_string($label, 'mod_presenterai'));
     }
 
     /**

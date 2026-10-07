@@ -217,6 +217,7 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
             if ($item->get_name() === 'presenterai_score') {
                 $this->assertArrayHasKey('legacymeanscore', $item->get_privacy_fields());
                 $this->assertArrayHasKey('legacymeta', $item->get_privacy_fields());
+                $this->assertArrayHasKey('released', $item->get_privacy_fields());
             }
         }
     }
@@ -468,6 +469,31 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
         $this->assertCount(1, $data->rejectedfeedback);
         $this->assertSame('You wore a dark shirt.', $data->rejectedfeedback[0]->rejectedtext);
         $this->assertSame('clothing', $data->rejectedfeedback[0]->rule);
+    }
+
+    /**
+     * A score held for review (D28) is exported, marked as not yet released, as mod_assign exports
+     * a grade that isn't released yet.
+     *
+     * @return void
+     */
+    public function test_export_held_score(): void {
+        global $DB;
+
+        $DB->set_field('presenterai_score', 'released', 0, ['recordingid' => $this->alicefs->id, 'origin' => 'ai']);
+
+        $this->export_context_data_for_user((int) $this->alice->id, $this->context, 'mod_presenterai');
+        $data = writer::with_context($this->context)->get_data($this->attempt_path($this->alicefs));
+
+        $ai = array_values(array_filter($data->scores, fn($score) => $score->origin === 'ai'))[0];
+        $this->assertSame(get_string('no'), $ai->released);
+        $this->assertSame(get_string('privacy:export:heldnote', 'mod_presenterai'), $ai->held_note);
+        $this->assertNotEmpty($ai->feedback, 'Held feedback was left out of the export.');
+        $teacher = array_values(array_filter($data->scores, fn($score) => $score->origin === 'teacher'));
+        foreach ($teacher as $row) {
+            $this->assertSame(get_string('yes'), $row->released);
+            $this->assertNull($row->held_note);
+        }
     }
 
     /**

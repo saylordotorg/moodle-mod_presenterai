@@ -32,6 +32,12 @@ use mod_presenterai\local\score_manager;
  * The AI % and spend columns read rows that phase 3 writes. In phase 2 they
  * are empty and $0.00, which is accurate rather than missing.
  *
+ * Attempts whose AI score is held for review (D28) read "Awaiting review",
+ * in the status column for the latest attempt and on each attempt's grade
+ * link, and the page offers to release every held attempt the viewer may
+ * grade at once. The overall column counts released scores only, as the
+ * gradebook does.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -60,6 +66,9 @@ final class report_page implements \renderable, \templatable {
 
     /** @var string The rendered group selector, or ''. */
     private string $groupselector;
+
+    /** @var array Recording id => true, for attempts held for review (D28). */
+    private array $held = [];
 
     /**
      * Build the report.
@@ -98,6 +107,9 @@ final class report_page implements \renderable, \templatable {
      */
     public function export_for_template(\renderer_base $output): array {
         $rows = $this->rows();
+        $held = has_capability('mod/presenterai:grade', $this->context, $this->viewerid)
+            ? count($this->releasable_ids())
+            : 0;
 
         return [
             'cmid' => (int) $this->cm->id,
@@ -105,7 +117,41 @@ final class report_page implements \renderable, \templatable {
             'groupselector' => $this->groupselector,
             'hasrows' => !empty($rows),
             'rows' => $rows,
+            'hasheld' => $held > 0,
+            'heldtext' => $held > 0 ? get_string('report_heldcount', 'mod_presenterai', $held) : '',
+            'releaseallurl' => (new \moodle_url('/mod/presenterai/report.php', [
+                'id' => (int) $this->cm->id,
+                'action' => 'releaseall',
+            ]))->out(false),
         ];
+    }
+
+    /**
+     * The held attempts (D28) of the learners this viewer may see, which are the ones they may release.
+     *
+     * Group mode is applied through access::visible_learner_ids(), with the
+     * page's active group, so a teacher in separate groups can't release
+     * another group's feedback.
+     *
+     * @return int[] Recording ids.
+     */
+    public function releasable_ids(): array {
+        global $DB;
+
+        $held = score_manager::held_recording_ids((int) $this->instance->id);
+        if (empty($held)) {
+            return [];
+        }
+        $visible = array_flip(array_map('intval', access::visible_learner_ids($this->cm, $this->context, $this->groupid)));
+        $out = [];
+        foreach (array_chunk($held, grader::IN_CHUNK) as $chunk) {
+            foreach ($DB->get_records_list('presenterai_recording', 'id', $chunk, 'id ASC', 'id, userid') as $rec) {
+                if (isset($visible[(int) $rec->userid])) {
+                    $out[] = (int) $rec->id;
+                }
+            }
+        }
+        return $out;
     }
 
     /**
@@ -151,6 +197,7 @@ final class report_page implements \renderable, \templatable {
         $aggregates = grader::aggregate_for_users($this->instance, array_keys($users));
         $spend = $this->spend(array_keys($users));
         $cangrade = has_capability('mod/presenterai:grade', $this->context, $this->viewerid);
+        $this->held = array_flip(score_manager::held_recording_ids((int) $this->instance->id));
 
         $out = [];
         foreach ($users as $userid => $user) {
@@ -205,10 +252,13 @@ final class report_page implements \renderable, \templatable {
         if ($cangrade) {
             foreach ($finished as $rec) {
                 $n = (int) $rec->attemptnumber;
+                $inreview = isset($this->held[(int) $rec->id]);
+                $a = (object) ['name' => $fullname, 'n' => $n];
                 $attemptlinks[] = [
-                    'label' => get_string('report_attemptn', 'mod_presenterai', $n),
+                    'label' => get_string($inreview ? 'report_attemptn_review' : 'report_attemptn', 'mod_presenterai', $n),
                     'url' => $this->grade_url($rec),
-                    'aria' => get_string('report_attempt_aria', 'mod_presenterai', (object) ['name' => $fullname, 'n' => $n]),
+                    'aria' => get_string($inreview ? 'report_attempt_aria_review' : 'report_attempt_aria', 'mod_presenterai', $a),
+                    'inreview' => $inreview,
                 ];
             }
         }
@@ -219,7 +269,11 @@ final class report_page implements \renderable, \templatable {
             'userid' => (int) $user->id,
             'fullname' => $fullname,
             'hasattempt' => $latest !== null,
-            'status' => $latest ? attempt_row::status_label($latest) : get_string('report_noattempt', 'mod_presenterai'),
+            'status' => $latest
+                ? (isset($this->held[$latestid])
+                    ? get_string('status_awaitingreview', 'mod_presenterai')
+                    : attempt_row::status_label($latest))
+                : get_string('report_noattempt', 'mod_presenterai'),
             'attempts' => (string) count($finished),
             'latestattempt' => $latestfinished ? (string) (int) $latestfinished->attemptnumber : '-',
             'length' => $latest ? attempt_row::duration((int) $latest->durationseconds) : '-',

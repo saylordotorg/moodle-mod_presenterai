@@ -40,6 +40,11 @@ use mod_presenterai\local\score_manager;
  * instead of a button that would fail (design 8.5). grade.php checks the same
  * rule again before it queues anything.
  *
+ * An attempt whose AI score is held for review (D28) says so above the form,
+ * with a Release button that hands the AI score and feedback to the learner
+ * as they are. Saving the form instead releases the teacher's own score; its
+ * button reads "Save and release" for a held attempt, so the grader knows.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -125,6 +130,7 @@ final class grade_page implements \renderable, \templatable {
         $showvisual = access::may_view_visual_evidence($this->context, $this->viewerid);
         $visual = $showvisual ? self::visual_note($rec->visualevidence ?? null) : '';
         $rescore = self::rescore_state($rec, $this->context, $this->viewerid);
+        $inreview = self::in_review($rec);
 
         return [
             'rootid' => self::ROOT_ID,
@@ -134,7 +140,9 @@ final class grade_page implements \renderable, \templatable {
             'attemptlabel' => get_string('grade_attemptlabel', 'mod_presenterai', (int) $rec->attemptnumber),
             'recorded' => $recorded,
             'length' => attempt_row::duration((int) ($rec->durationseconds ?? 0)),
-            'status' => attempt_row::status_label($rec),
+            'status' => $inreview ? get_string('status_awaitingreview', 'mod_presenterai') : attempt_row::status_label($rec),
+            'inreview' => $inreview,
+            'canrelease' => $inreview && access::may_grade($rec, $this->context, $this->viewerid),
             'mediaavailable' => attempt_row::has_media($rec),
             'watcharia' => get_string('grade_watch_aria', 'mod_presenterai', (object) [
                 'name' => $learnername,
@@ -177,6 +185,17 @@ final class grade_page implements \renderable, \templatable {
             return self::RESCORE_NOMEDIA;
         }
         return self::RESCORE_AVAILABLE;
+    }
+
+    /**
+     * Whether this attempt's current score is held for a teacher's review (D28).
+     *
+     * @param \stdClass $rec The presenterai_recording row.
+     * @return bool
+     */
+    public static function in_review(\stdClass $rec): bool {
+        $score = score_manager::current_score((int) $rec->id);
+        return $score !== null && !score_manager::is_released($score);
     }
 
     /**

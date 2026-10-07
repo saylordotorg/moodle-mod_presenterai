@@ -402,6 +402,11 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $mform->addHelpButton('allowvisualoptout', 'allowvisualoptout', 'mod_presenterai');
         $mform->hideIf('allowvisualoptout', 'videovision', 'notchecked');
         $mform->hideIf('allowvisualoptout', 'mode', 'eq', 'audio');
+
+        // D28: hold AI scores and feedback until a teacher releases them.
+        $mform->addElement('advcheckbox', 'reviewbeforerelease', get_string('reviewbeforerelease', 'mod_presenterai'));
+        $mform->setDefault('reviewbeforerelease', 0);
+        $mform->addHelpButton('reviewbeforerelease', 'reviewbeforerelease', 'mod_presenterai');
     }
 
     /**

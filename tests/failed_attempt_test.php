@@ -149,7 +149,7 @@ final class failed_attempt_test extends \advanced_testcase {
         $this->assertCount(1, $row['attemptlinks']);
         $this->assertStringContainsString('recordingid=' . $rec->id, $row['attemptlinks'][0]['url']);
 
-        // grade.php's own check lets the teacher open it.
+        // The check grade.php makes lets the teacher open it.
         $this->assertSame((int) $rec->id, (int) access::require_gradable_recording(
             $this->cm,
             $this->context,

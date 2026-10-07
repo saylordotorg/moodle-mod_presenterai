@@ -114,6 +114,14 @@ function presenterai_update_instance($data, $mform = null) {
     $instance = $DB->get_record('presenterai', ['id' => $data->instance], '*', MUST_EXIST);
     $instance->cmidnumber = $data->cmidnumber ?? '';
     presenterai_grade_item_update($instance);
+
+    // D28: with review switched off nobody is going to release what's held,
+    // so it all goes to the learners now, with the grade, completion and the
+    // message each would have had.
+    if (!empty($existing->reviewbeforerelease) && empty($instance->reviewbeforerelease)) {
+        \mod_presenterai\local\score_manager::release_all($instance, \context_module::instance($data->coursemodule));
+    }
+
     presenterai_update_grades($instance, 0, false);
 
     // Core resets stored completion only when the completion settings change.

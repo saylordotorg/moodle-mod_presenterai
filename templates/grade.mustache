@@ -36,6 +36,9 @@
     is true. When rescorenomedia is true a sentence says why there's no
     button instead.
 
+    An attempt held for review (D28, inreview) gets a note above the form,
+    and when canrelease is true a Release POST form, also with the sesskey.
+
     Context variables required for this template:
     * rootid - The root element id, given to mod_presenterai/grading.
     * cmid - The course module id.
@@ -45,6 +48,8 @@
     * recorded - When the attempt was recorded.
     * length - Its length, m:ss.
     * status - Its status label.
+    * inreview - Whether its AI score and feedback are held for review.
+    * canrelease - Whether to offer the Release button.
     * mediaavailable - Whether the recording's media still exists.
     * watcharia - The accessible name of the player.
     * hastranscript - Whether there is a transcript.
@@ -71,7 +76,9 @@
         "attemptlabel": "Attempt 2",
         "recorded": "6/10/26, 14:00",
         "length": "6:12",
-        "status": "Submitted",
+        "status": "Awaiting review",
+        "inreview": true,
+        "canrelease": true,
         "mediaavailable": true,
         "watcharia": "Recording by Ada Lovelace, made on 6/10/26, 14:00",
         "hastranscript": true,
@@ -127,6 +134,20 @@
             {{/showvisual}}
         </div>
         <div class="mod-presenterai-grade-scoring">
+            {{#inreview}}
+            <div class="mod-presenterai-grade-review alert alert-info mb-3" data-region="review">
+                <p class="mb-2">{{#str}}grade_inreview_note, mod_presenterai{{/str}}</p>
+                {{#canrelease}}
+                <form class="mod-presenterai-grade-release" action="{{rescoreurl}}" method="post">
+                    <input type="hidden" name="id" value="{{cmid}}">
+                    <input type="hidden" name="recordingid" value="{{recordingid}}">
+                    <input type="hidden" name="action" value="release">
+                    <input type="hidden" name="sesskey" value="{{sesskey}}">
+                    <button type="submit" class="btn btn-primary">{{#str}}grade_release, mod_presenterai{{/str}}</button>
+                </form>
+                {{/canrelease}}
+            </div>
+            {{/inreview}}
             {{#canrescore}}
             <form class="mod-presenterai-grade-rescore mb-3" action="{{rescoreurl}}" method="post">
                 <input type="hidden" name="id" value="{{cmid}}">

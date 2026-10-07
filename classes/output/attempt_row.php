@@ -195,6 +195,12 @@ final class attempt_row {
         $candelete = $hasmedia && access::may_delete($rec, $ctx, $userid);
 
         $score = $scorehidden ? null : score_manager::current_score((int) $rec->id);
+        // D28: a score held for the teacher's review shows nothing of itself,
+        // not the number, not the feedback and not the body language section.
+        $inreview = $score !== null && !score_manager::is_released($score);
+        if ($inreview) {
+            $score = null;
+        }
         $feedback = $score ? self::feedback($score) : null;
 
         return [
@@ -204,7 +210,9 @@ final class attempt_row {
             'attempt' => $neveruploaded ? '-' : (string) (int) $rec->attemptnumber,
             'recorded' => $recorded,
             'length' => self::duration((int) ($rec->durationseconds ?? 0)),
-            'status' => self::status_label($rec),
+            'status' => $inreview ? get_string('status_awaitingreview', 'mod_presenterai') : self::status_label($rec),
+            'inreview' => $inreview,
+            'reviewnote' => $inreview ? get_string('feedback_inreview', 'mod_presenterai') : '',
             'statekey' => $state['key'],
             'state' => self::text($state),
             'mediaavailable' => $hasmedia,

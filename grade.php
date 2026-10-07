@@ -29,6 +29,11 @@
  * sesskey, and it's refused unless grade_page::rescore_state() offers it, so
  * an attempt a teacher has scored is never handed back to the model.
  *
+ * action=release hands a held AI score and its feedback to the learner as
+ * they are (D28), also a POST with the sesskey. Saving the form on a held
+ * attempt releases the teacher's own score instead. Both need only
+ * mod/presenterai:grade: a grader who can save a score can release one.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -76,8 +81,21 @@ if ($action === 'rescore') {
     redirect($url, get_string('rescore_queued', 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
+if ($action === 'release') {
+    if (!data_submitted()) {
+        throw new moodle_exception('invalidrequest');
+    }
+    require_sesskey();
+    $released = score_manager::release($rec, $instance, $context);
+    if ($released === null) {
+        redirect($url, get_string('release_nothing', 'mod_presenterai'), null, \core\output\notification::NOTIFY_INFO);
+    }
+    redirect($url, get_string('release_done', 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
+
 $rubric = rubric_manager::resolve($instance, $context);
 $current = score_manager::current_score((int) $rec->id);
+$heldbefore = $current !== null && !score_manager::is_released($current);
 $outcomes = grading_outcomes::for_user($course, $instance, (int) $rec->userid);
 
 $form = new grade_form($url, [
@@ -85,6 +103,7 @@ $form = new grade_form($url, [
     'recordingid' => (int) $rec->id,
     'criteria' => $rubric['criteria'],
     'outcomes' => $outcomes,
+    'saveandrelease' => $heldbefore,
 ]);
 $form->set_prefill($current);
 
@@ -102,7 +121,8 @@ if ($form->is_cancelled()) {
     );
     grading_outcomes::save($course, $instance, (int) $rec->userid, $form->to_outcomes($data));
 
-    redirect($url, get_string('grade_saved', 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
+    $message = $heldbefore ? 'grade_saved_released' : 'grade_saved';
+    redirect($url, get_string($message, 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
 $learner = $DB->get_record('user', ['id' => $rec->userid], '*', MUST_EXIST);

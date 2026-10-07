@@ -97,6 +97,7 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         // apply anyway, and saying so here keeps a later NOT NULL change honest.
         $data->visualscored = (int) ($data->visualscored ?? 0);
         $data->allowvisualoptout = (int) ($data->allowvisualoptout ?? 0);
+        $data->reviewbeforerelease = (int) ($data->reviewbeforerelease ?? 0);
 
         // The rubric rows are restored after this one, so the reference is
         // remembered and set in after_execute(), once the mapping exists. A
@@ -210,6 +211,9 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         $data->recordingid = $recordingid;
         $data->userid = $userid;
         $data->visualstatus = (string) ($data->visualstatus ?? '');
+        // A backup from before D28 has no flag, and every score in it had been
+        // shown. A held score stays held: restoring doesn't review it.
+        $data->released = (int) ($data->released ?? 1) === 0 ? 0 : 1;
         $data->graderid = !empty($data->graderid) ? ($this->get_mappingid('user', $data->graderid) ?: 0) : 0;
         $data->rubricid = $this->restored_rubricid((int) ($data->rubricid ?? 0)) ?? 0;
 

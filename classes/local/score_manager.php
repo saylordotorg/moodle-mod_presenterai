@@ -38,6 +38,15 @@ namespace mod_presenterai\local;
  * Each stored criterion carries 'visual' and 'counts' (D23). Both are derived
  * here from the resolved rubric, never from a request or a model's output.
  *
+ * An activity with reviewbeforerelease on holds AI scores (D28). The row is
+ * written with released = 0, and until a teacher releases it the learner
+ * sees neither the score nor the feedback, the gradebook and completion leave
+ * it out (grader::aggregate_for_users() reads released scores only), and no
+ * message is sent. release() and release_all() flip the flag, which is the
+ * one edit a score row ever gets, and then do what saving did not: the event,
+ * the grade, completion and the message. A teacher's own score is always
+ * released, so saving one on a held attempt is a release by the teacher.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -54,6 +63,21 @@ final class score_manager {
 
     /** @var string[] visualstatus values that carry a visualsummary (visual_pipeline STATUS_SUMMARY, STATUS_FALLBACK). */
     private const SUMMARY_STATUSES = ['summary', 'fallback'];
+
+    /**
+     * Whether the learner may see a score: a teacher's always, an AI one once released (D28).
+     *
+     * A row without the flag (read before the upgrade added it) counts as released.
+     *
+     * @param \stdClass $score A presenterai_score row.
+     * @return bool
+     */
+    public static function is_released(\stdClass $score): bool {
+        if ((string) ($score->origin ?? '') === self::ORIGIN_TEACHER) {
+            return true;
+        }
+        return !isset($score->released) || (int) $score->released === 1;
+    }
 
     /**
      * Whether a teacher has scored this attempt.
@@ -209,6 +233,10 @@ final class score_manager {
         }
         $entries = self::apply_rubric_flags(self::validate_criteria($criteria), $instance, $ctx);
         $sums = grader::sums($entries);
+        // D28: a teacher's score is released when it's saved, so saving one
+        // over a held AI score is the teacher releasing the attempt.
+        $previous = self::current_score((int) $rec->id);
+        $washeld = $previous !== null && !self::is_released($previous);
 
         $now = time();
         $transaction = $DB->start_delegated_transaction();
@@ -224,6 +252,7 @@ final class score_manager {
             'scoreprovenance' => 'exact',
             'feedback' => $feedback,
             'tips' => null,
+            'released' => 1,
             'graderid' => $graderid,
             'timecreated' => $now,
         ]);
@@ -239,6 +268,9 @@ final class score_manager {
         $rec = $DB->get_record('presenterai_recording', ['id' => $rec->id], '*', MUST_EXIST);
 
         \mod_presenterai\event\recording_scored::create_from_score($rec, $score, $ctx)->trigger();
+        if ($washeld) {
+            \mod_presenterai\event\feedback_released::create_from_score($rec, $score, $ctx)->trigger();
+        }
 
         // The grade and completion go first, so a message that fails to send
         // can never leave the gradebook behind the score.
@@ -262,6 +294,12 @@ final class score_manager {
      * (plan section 6). Otherwise the recording points at the new row and is
      * marked scored, the event fires, the grade is pushed, completion is
      * updated and the learner is told, in that order, as for a teacher.
+     *
+     * On an activity with reviewbeforerelease on (D28) the row is held:
+     * released = 0, so the grade and completion are recalculated without it
+     * (which takes a rescored attempt back out of the gradebook until it's
+     * released again, as mod_assign does for a grade moved out of released)
+     * and the learner isn't told. release() does the rest later.
      *
      * The caller (scorer) has already applied the allowlist and the rubric's
      * maxima and flags; this cleans the shape again and trusts nothing else.
@@ -304,6 +342,8 @@ final class score_manager {
             $visualsummary = null;
         }
 
+        $hold = !empty($instance->reviewbeforerelease);
+
         $now = time();
         $transaction = $DB->start_delegated_transaction();
         $scoreid = (int) $DB->insert_record('presenterai_score', (object) [
@@ -320,6 +360,7 @@ final class score_manager {
             'tips' => json_encode($tips),
             'visualsummary' => $visualsummary,
             'visualstatus' => $visualstatus,
+            'released' => $hold ? 0 : 1,
             'graderid' => 0,
             'timecreated' => $now,
         ]);
@@ -347,9 +388,103 @@ final class score_manager {
 
         gradebook::update_grades($instance, (int) $rec->userid);
         self::update_completion($instance, $ctx, (int) $rec->userid);
+        if (!$hold) {
+            notifier::recording_scored($rec, $instance, $ctx, $score);
+        }
+
+        return $score;
+    }
+
+    /**
+     * Release one attempt's held score to its learner (D28).
+     *
+     * Does nothing when the attempt has no score or its current score is
+     * already released. Otherwise the flag is set, feedback_released fires,
+     * the grade is pushed, completion is updated and the learner is told, in
+     * that order, as save_ai_score() would have done without the hold.
+     *
+     * The caller checks the capability and that the attempt may be graded.
+     *
+     * @param \stdClass $rec The presenterai_recording row.
+     * @param \stdClass $instance The presenterai row it belongs to.
+     * @param \context_module $ctx The activity's module context.
+     * @return \stdClass|null The score released, or null when there was nothing to release.
+     */
+    public static function release(\stdClass $rec, \stdClass $instance, \context_module $ctx): ?\stdClass {
+        global $DB;
+
+        if ((int) $rec->presenteraiid !== (int) $instance->id) {
+            throw new \invalid_parameter_exception('The recording does not belong to this activity.');
+        }
+        $score = self::current_score((int) $rec->id);
+        if ($score === null || self::is_released($score)) {
+            return null;
+        }
+        $DB->set_field('presenterai_score', 'released', 1, ['id' => (int) $score->id]);
+        $score->released = 1;
+
+        \mod_presenterai\event\feedback_released::create_from_score($rec, $score, $ctx)->trigger();
+        gradebook::update_grades($instance, (int) $rec->userid);
+        self::update_completion($instance, $ctx, (int) $rec->userid);
         notifier::recording_scored($rec, $instance, $ctx, $score);
 
         return $score;
+    }
+
+    /**
+     * Release every held attempt in an activity (D28).
+     *
+     * Used by the grading page's bulk action and when a teacher turns the
+     * activity's review setting off, so nothing stays hidden from a learner
+     * once nobody is going to review it.
+     *
+     * @param \stdClass $instance The presenterai row.
+     * @param \context_module $ctx The activity's module context.
+     * @param int[]|null $only Release only these recording ids, when given (the ones the viewer may grade).
+     * @return int How many attempts were released.
+     */
+    public static function release_all(\stdClass $instance, \context_module $ctx, ?array $only = null): int {
+        global $DB;
+
+        $ids = self::held_recording_ids((int) $instance->id);
+        if ($only !== null) {
+            $ids = array_values(array_intersect($ids, array_map('intval', $only)));
+        }
+        $released = 0;
+        foreach (array_chunk($ids, grader::IN_CHUNK) as $chunk) {
+            foreach ($DB->get_records_list('presenterai_recording', 'id', $chunk, 'id ASC') as $rec) {
+                if (self::release($rec, $instance, $ctx) !== null) {
+                    $released++;
+                }
+            }
+        }
+        return $released;
+    }
+
+    /**
+     * The attempts in an activity whose current score is held for review (D28).
+     *
+     * @param int $presenteraiid The activity instance id.
+     * @return int[] Recording ids, ascending.
+     */
+    public static function held_recording_ids(int $presenteraiid): array {
+        global $DB;
+
+        $candidates = $DB->get_fieldset_sql(
+            "SELECT DISTINCT s.recordingid
+               FROM {presenterai_score} s
+               JOIN {presenterai_recording} r ON r.id = s.recordingid
+              WHERE r.presenteraiid = :presenteraiid AND s.origin = :origin AND s.released = 0",
+            ['presenteraiid' => $presenteraiid, 'origin' => self::ORIGIN_AI]
+        );
+        $held = [];
+        foreach (self::current_scores($candidates) as $recid => $score) {
+            if (!self::is_released($score)) {
+                $held[] = (int) $recid;
+            }
+        }
+        sort($held);
+        return $held;
     }
 
     /**

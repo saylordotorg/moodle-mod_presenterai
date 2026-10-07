@@ -125,6 +125,10 @@ final class instance_manager {
             }
         }
 
+        if (property_exists($data, 'reviewbeforerelease')) {
+            $data->reviewbeforerelease = empty($data->reviewbeforerelease) ? 0 : 1;
+        }
+
         // The presentation type and speaking level steer the scoring prompt.
         // An unknown value falls back rather than reaching the prompt.
         if (property_exists($data, 'ptype')) {

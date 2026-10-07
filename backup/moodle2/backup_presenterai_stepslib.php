@@ -63,7 +63,8 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         $presenterai = new backup_nested_element('presenterai', ['id'], [
             'name', 'intro', 'introformat', 'ptype', 'mode', 'minseconds', 'maxseconds',
             'maxattempts', 'storedattempts', 'rubricid', 'speakinglevel', 'slidesenabled',
-            'slidevision', 'videovision', 'visualscored', 'allowvisualoptout', 'retentiondays', 'grade', 'gradingmethod',
+            'slidevision', 'videovision', 'visualscored', 'allowvisualoptout', 'reviewbeforerelease', 'retentiondays', 'grade',
+            'gradingmethod',
             'completionsubmit', 'completionminscore', 'legacyassignid', 'timecreated', 'timemodified',
         ]);
 
@@ -96,7 +97,8 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         $scores = new backup_nested_element('scores');
         $score = new backup_nested_element('score', ['id'], [
             'userid', 'rubricid', 'origin', 'scores', 'rawsum', 'rawmax', 'overallpct', 'scoreprovenance',
-            'feedback', 'tips', 'visualsummary', 'visualstatus', 'legacymeanscore', 'legacymeta', 'graderid', 'timecreated',
+            'feedback', 'tips', 'visualsummary', 'visualstatus', 'released', 'legacymeanscore', 'legacymeta', 'graderid',
+            'timecreated',
         ]);
 
         $presenterai->add_child($topics);

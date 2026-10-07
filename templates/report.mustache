@@ -28,20 +28,30 @@
     learner and the attempt, so a screen reader user doesn't hear a column of
     "Attempt 1" links with nothing to tell them apart.
 
+    When attempts are held for review (D28) and the viewer may grade, a
+    notice above the table says how many and links to the release all
+    confirmation; each held attempt's link says it's awaiting review.
+
     Context variables required for this template:
     * cmid - The course module id.
+    * hasheld - Whether any attempt the viewer may grade is awaiting review.
+    * heldtext - How many, as a sentence.
+    * releaseallurl - The release all confirmation page.
     * graded - Whether the activity has a grade.
     * groupselector - The group menu, HTML, or empty.
     * hasrows - Whether there are any learners to show.
     * rows - List of rows: userid, fullname, hasattempt, status, attempts,
       latestattempt, length, aipct, teacherpct, finalpct, spend, gradeurl and
-      attemptlinks (label, url, aria).
+      attemptlinks (label, url, aria, inreview).
 
     Example context (json):
     {
         "cmid": 12,
         "graded": true,
         "groupselector": "",
+        "hasheld": true,
+        "heldtext": "1 attempt is awaiting your review.",
+        "releaseallurl": "https://example.com/mod/presenterai/report.php?id=12&action=releaseall",
         "hasrows": true,
         "rows": [
             {
@@ -59,9 +69,10 @@
                 "gradeurl": "https://example.com/mod/presenterai/grade.php?id=12&recordingid=8",
                 "attemptlinks": [
                     {"label": "Attempt 1", "url": "https://example.com/mod/presenterai/grade.php?id=12&recordingid=7",
-                        "aria": "Grade attempt 1 by Ada Lovelace"},
-                    {"label": "Attempt 2", "url": "https://example.com/mod/presenterai/grade.php?id=12&recordingid=8",
-                        "aria": "Grade attempt 2 by Ada Lovelace"}
+                        "aria": "Grade attempt 1 by Ada Lovelace", "inreview": false},
+                    {"label": "Attempt 2 (awaiting review)",
+                        "url": "https://example.com/mod/presenterai/grade.php?id=12&recordingid=8",
+                        "aria": "Review attempt 2 by Ada Lovelace, awaiting review", "inreview": true}
                 ]
             },
             {
@@ -86,6 +97,12 @@
     {{#groupselector}}
     <div class="mod-presenterai-report-groups mb-3">{{{groupselector}}}</div>
     {{/groupselector}}
+    {{#hasheld}}
+    <div class="mod-presenterai-report-held alert alert-info d-flex flex-wrap align-items-center" data-region="held">
+        <p class="mb-0 mr-3">{{heldtext}}</p>
+        <a class="btn btn-secondary" href="{{releaseallurl}}">{{#str}}releaseall, mod_presenterai{{/str}}</a>
+    </div>
+    {{/hasheld}}
     {{^hasrows}}
     <p class="mod-presenterai-nolearners">{{#str}}report_nolearners, mod_presenterai{{/str}}</p>
     {{/hasrows}}
@@ -121,7 +138,7 @@
                     <td>{{spend}}</td>
                     <td class="mod-presenterai-report-actions">
                         {{#attemptlinks}}
-                        <a href="{{url}}" aria-label="{{aria}}">{{label}}</a>
+                        <a href="{{url}}" aria-label="{{aria}}"{{#inreview}} class="mod-presenterai-inreview"{{/inreview}}>{{label}}</a>
                         {{/attemptlinks}}
                     </td>
                 </tr>

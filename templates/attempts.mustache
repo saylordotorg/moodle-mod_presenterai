@@ -37,6 +37,10 @@
     says what it scored out of its maximum, or that it wasn't assessed, and a
     criterion that doesn't count toward the score says so in words (D23).
 
+    An attempt whose AI feedback is held for a teacher's review (D28) has
+    inreview set: its status reads Awaiting review, the Score cell carries
+    reviewnote instead of a number, and there's no Feedback row at all.
+
     The body language section shows the gated summary or the sentence for why
     there isn't one (design 6, 9.6). It is rendered only when it has text, so
     the learner never sees an empty visual panel, and it never shows the raw
@@ -46,7 +50,7 @@
     * hasattempts - Whether there are any rows.
     * showdownloadoffnote - Whether to render the download-off note.
     * rows - List of attempt_row::export() results, including:
-      hasscore, score, hasfeedback, feedbackaria and
+      inreview, reviewnote, hasscore, score, hasfeedback, feedbackaria and
       feedback (criteria: list of name (HTML from format_string), scoretext,
       feedback and notcounted; overall: HTML; hastips and tips; hasvisual,
       visualstatus, visualheading, visualnote and visualtext).
@@ -73,6 +77,8 @@
                 "candelete": true,
                 "deletearia": "Delete the recording you made on 6/10/26, 14:00",
                 "gonenote": "",
+                "inreview": false,
+                "reviewnote": "",
                 "hasscore": true,
                 "score": "80.00%",
                 "hasfeedback": true,
@@ -100,7 +106,7 @@
                 "attempt": "1",
                 "recorded": "1/10/26, 09:30",
                 "length": "5:48",
-                "status": "Submitted",
+                "status": "Awaiting review",
                 "statekey": "attempt_gone_learner",
                 "state": "You deleted this recording on 2/10/26",
                 "mediaavailable": false,
@@ -112,6 +118,8 @@
                 "candelete": false,
                 "deletearia": "Delete the recording you made on 1/10/26, 09:30",
                 "gonenote": "No longer available to watch",
+                "inreview": true,
+                "reviewnote": "Your feedback is being reviewed by your teacher.",
                 "hasscore": false,
                 "score": "",
                 "hasfeedback": false,
@@ -146,7 +154,7 @@
             <td>{{recorded}}</td>
             <td>{{length}}</td>
             <td>{{status}}</td>
-            <td data-region="score">{{score}}</td>
+            <td data-region="score">{{#inreview}}<span class="mod-presenterai-inreview">{{reviewnote}}</span>{{/inreview}}{{^inreview}}{{score}}{{/inreview}}</td>
             <td data-region="state" data-statekey="{{statekey}}" tabindex="-1">{{state}}</td>
             <td data-region="actions">
                 {{#canwatch}}

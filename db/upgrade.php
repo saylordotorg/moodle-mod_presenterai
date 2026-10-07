@@ -175,5 +175,33 @@ function xmldb_presenterai_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026100702, 'presenterai');
     }
 
+    if ($oldversion < 2026100703) {
+        // D28: an activity can hold AI feedback for a teacher to release.
+        $table = new xmldb_table('presenterai');
+        $field = new xmldb_field(
+            'reviewbeforerelease',
+            XMLDB_TYPE_INTEGER,
+            '1',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            '0',
+            'allowvisualoptout'
+        );
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Every score that exists already was shown when it was written, so
+        // the default of 1 is the truth for each of them.
+        $table = new xmldb_table('presenterai_score');
+        $field = new xmldb_field('released', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1', 'visualstatus');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026100703, 'presenterai');
+    }
+
     return true;
 }

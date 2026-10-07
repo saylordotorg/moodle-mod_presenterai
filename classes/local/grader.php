@@ -242,7 +242,7 @@ final class grader {
      * Every recording row of each learner is read, whatever its storagekey and
      * status (D8): an attempt whose media expired still has its score, and a
      * score is what counts. Each row's current score (score_manager) supplies
-     * its sums.
+     * its sums, when it has been released to the learner (D28).
      *
      * @param \stdClass $instance The presenterai row.
      * @param int[] $userids The learners.
@@ -281,7 +281,9 @@ final class grader {
         $byuser = [];
         foreach ($recs as $rec) {
             $score = $scores[(int) $rec->id] ?? null;
-            if (!$score) {
+            // A score held for a teacher's review (D28) isn't the learner's
+            // number yet, for the gradebook or for completion.
+            if (!$score || !score_manager::is_released($score)) {
                 continue;
             }
             $byuser[(int) $rec->userid][] = [

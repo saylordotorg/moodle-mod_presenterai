@@ -118,7 +118,7 @@ final class grade_page_test extends \advanced_testcase {
 
         $this->assertSame([
             'rootid', 'cmid', 'recordingid', 'learnername', 'attemptlabel', 'recorded', 'length', 'status',
-            'mediaavailable', 'watcharia', 'hastranscript', 'transcript', 'transcriptempty', 'showvisual',
+            'inreview', 'canrelease', 'mediaavailable', 'watcharia', 'hastranscript', 'transcript', 'transcriptempty', 'showvisual',
             'hasvisual', 'visualevidence', 'visualempty', 'canrescore', 'rescorenomedia', 'rescoreurl', 'sesskey',
             'form', 'reporturl', 'total',
         ], array_keys($data));
@@ -130,6 +130,8 @@ final class grade_page_test extends \advanced_testcase {
         $this->assertSame(get_string('grade_attemptlabel', 'mod_presenterai', 2), $data['attemptlabel']);
         $this->assertSame('6:12', $data['length']);
         $this->assertSame(get_string('status_uploaded', 'mod_presenterai'), $data['status']);
+        $this->assertFalse($data['inreview']);
+        $this->assertFalse($data['canrelease']);
         $this->assertTrue($data['mediaavailable']);
         $this->assertStringContainsString('Ada Lovelace', $data['watcharia']);
         $this->assertTrue($data['hastranscript']);

@@ -701,6 +701,7 @@ final class backup_restore_test extends \advanced_testcase {
             'videovision' => 1,
             'visualscored' => 1,
             'allowvisualoptout' => 1,
+            'reviewbeforerelease' => 1,
         ]);
         $DB->set_field('presenterai_recording', 'visualoptout', 1, ['id' => $fsrec->id]);
         $DB->set_field('presenterai_recording', 'visualevidence', '{"note":"Hands below the desk."}', ['id' => $fsrec->id]);
@@ -711,6 +712,7 @@ final class backup_restore_test extends \advanced_testcase {
             'visualsummary' => 'Your hands stayed in view.',
             'visualstatus' => 'summary',
             'tips' => json_encode(['Pause between points.']),
+            'released' => 0,
         ]);
         $DB->insert_record('presenterai_gatelog', (object) [
             'recordingid' => $fsrec->id,
@@ -726,6 +728,7 @@ final class backup_restore_test extends \advanced_testcase {
         $restored = $DB->get_record('presenterai', ['course' => $newcourseid], '*', MUST_EXIST);
         $this->assertSame(1, (int) $restored->visualscored);
         $this->assertSame(1, (int) $restored->allowvisualoptout);
+        $this->assertSame(1, (int) $restored->reviewbeforerelease, 'D28: the review setting was lost.');
         $newfs = $DB->get_record_select(
             'presenterai_recording',
             'presenteraiid = ? AND userid = ? AND backend = ?',
@@ -740,8 +743,10 @@ final class backup_restore_test extends \advanced_testcase {
         $this->assertSame('Your hands stayed in view.', $ai->visualsummary);
         $this->assertSame('summary', $ai->visualstatus);
         $this->assertSame(['Pause between points.'], json_decode($ai->tips, true));
+        $this->assertSame(0, (int) $ai->released, 'D28: a held score came back released.');
         $teacher = $DB->get_record('presenterai_score', ['recordingid' => $newfs->id, 'origin' => 'teacher'], '*', MUST_EXIST);
         $this->assertSame('', $teacher->visualstatus);
+        $this->assertSame(1, (int) $teacher->released);
 
         $this->assertSame(1, $DB->count_records('presenterai_gatelog'), 'The gate log was copied by the restore.');
         $this->assertFalse($DB->record_exists('presenterai_gatelog', ['recordingid' => $newfs->id]));

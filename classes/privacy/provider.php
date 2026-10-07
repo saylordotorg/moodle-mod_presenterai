@@ -25,6 +25,7 @@ use core_privacy\local\request\transform;
 use core_privacy\local\request\userlist;
 use core_privacy\local\request\writer;
 use mod_presenterai\local\media_purger;
+use mod_presenterai\local\score_manager;
 use mod_presenterai\local\storage\store_factory;
 
 /**
@@ -42,6 +43,12 @@ use mod_presenterai\local\storage\store_factory;
  * learner facing visualsummary goes with each score, and the strings the
  * visual gate withheld (presenterai_gatelog) go with their attempt while the
  * seven day log still has them.
+ *
+ * A score held for a teacher's review (D28) is exported too, marked as not
+ * yet released. It's personal data the site holds about the learner whether
+ * or not it has been shown, which is also how mod_assign treats a grade in a
+ * marking workflow state other than released: its provider exports the grade
+ * and the workflow state alike.
  *
  * Deletion goes through media_purger, so stored objects are deleted through
  * the store BEFORE the rows that name them, on both backends. SOLA's provider
@@ -87,7 +94,7 @@ class provider implements
 
         $scorefields = [
             'userid', 'origin', 'scores', 'rawsum', 'rawmax', 'overallpct', 'feedback', 'tips', 'visualsummary', 'visualstatus',
-            'graderid', 'legacymeanscore', 'legacymeta', 'timecreated',
+            'released', 'graderid', 'legacymeanscore', 'legacymeta', 'timecreated',
         ];
         $collection->add_database_table(
             'presenterai_score',
@@ -415,6 +422,10 @@ class provider implements
                 'tips' => $score->tips,
                 'visualsummary' => $score->visualsummary ?? null,
                 'visualstatus' => (string) ($score->visualstatus ?? ''),
+                'released' => transform::yesno(score_manager::is_released($score)),
+                'held_note' => score_manager::is_released($score)
+                    ? null
+                    : get_string('privacy:export:heldnote', 'mod_presenterai'),
                 'legacymeanscore' => $legacy ? (int) $score->legacymeanscore : null,
                 'legacymeta' => $legacymeta,
                 'timecreated' => transform::datetime($score->timecreated),
