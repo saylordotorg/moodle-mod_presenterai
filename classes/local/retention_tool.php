@@ -173,6 +173,9 @@ final class retention_tool {
             $DB->update_record('presenterai_recording', (object) [
                 'id' => (int) $id,
                 'expiresat' => (int) $expiresat,
+                // A new date is a new promise, so it gets its own advance
+                // message (deletion_warning), even if the old date had one.
+                'deletewarnedat' => 0,
                 'timemodified' => $now,
             ]);
         }

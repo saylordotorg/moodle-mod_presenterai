@@ -883,4 +883,110 @@ final class recording_manager_test extends \advanced_testcase {
         $CFG->maxbytes = 1048576;
         $this->assertSame(1048576, recording_manager::max_media_bytes($course));
     }
+
+    /**
+     * A configured S3 backend whose endpoint answers nothing, so every delete fails.
+     *
+     * @return void
+     */
+    private function unreachable_s3(): void {
+        set_config('s3key', 'AKIAIOSFODNN7EXAMPLE', 'mod_presenterai');
+        set_config('s3secret', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'mod_presenterai');
+        set_config('s3bucket', 'presenterai-test', 'mod_presenterai');
+        set_config('s3region', 'us-east-1', 'mod_presenterai');
+        set_config('s3endpoint', 'http://127.0.0.1:1', 'mod_presenterai');
+        set_config('s3pathstyle', 1, 'mod_presenterai');
+    }
+
+    /**
+     * A recording row with the given backend and keys, straight to the table.
+     *
+     * @param int $presenteraiid Activity id.
+     * @param string $backend 'fs' or 's3'.
+     * @param array $fields Key columns and other overrides.
+     * @return \stdClass
+     */
+    private function row_with(int $presenteraiid, string $backend, array $fields): \stdClass {
+        return $this->getDataGenerator()->get_plugin_generator('mod_presenterai')->create_recording($fields + [
+            'presenteraiid' => $presenteraiid,
+            'userid' => $this->user->id,
+            'backend' => $backend,
+        ]);
+    }
+
+    /**
+     * The guard answers yes only for another S3 row naming the same key, in any key column.
+     *
+     * @return void
+     */
+    public function test_key_in_use_elsewhere(): void {
+        $shared = 'presenterai/1/2/shared.webm';
+        $a = $this->row_with((int) $this->instance->id, 's3', ['storagekey' => $shared]);
+        $b = $this->row_with((int) $this->instance->id, 's3', ['deckkey' => $shared]);
+        $lonely = $this->row_with((int) $this->instance->id, 's3', ['storagekey' => 'presenterai/1/2/lonely.webm']);
+
+        $this->assertTrue(recording_manager::key_in_use_elsewhere('s3', $shared, (int) $a->id));
+        $this->assertTrue(recording_manager::key_in_use_elsewhere('s3', $shared, (int) $b->id));
+        $this->assertFalse(recording_manager::key_in_use_elsewhere('s3', (string) $lonely->storagekey, (int) $lonely->id));
+        $this->assertFalse(recording_manager::key_in_use_outside('s3', $shared, [(int) $a->id, (int) $b->id]));
+        $this->assertTrue(recording_manager::key_in_use_outside('s3', $shared, [(int) $a->id]));
+
+        // An fs key is resolved per row, so even an identical filename is never shared bytes.
+        $fsa = $this->row_with((int) $this->instance->id, 'fs', ['storagekey' => 'same.webm']);
+        $this->row_with((int) $this->instance->id, 'fs', ['storagekey' => 'same.webm']);
+        $this->assertFalse(recording_manager::key_in_use_elsewhere('fs', 'same.webm', (int) $fsa->id));
+
+        // A row on the other backend naming the same string is not the same object.
+        $this->row_with((int) $this->instance->id, 'fs', ['storagekey' => 'presenterai/1/2/lonely.webm']);
+        $this->assertFalse(recording_manager::key_in_use_elsewhere('s3', (string) $lonely->storagekey, (int) $lonely->id));
+    }
+
+    /**
+     * drop_media leaves a shared S3 object for the other row, and this row still records that its media went.
+     *
+     * The bucket is unreachable, so a delete that was attempted would fail and
+     * drop_media would return false with nothing written. True proves the
+     * delete was skipped.
+     *
+     * @return void
+     */
+    public function test_drop_media_skips_a_shared_s3_key(): void {
+        $this->unreachable_s3();
+        $shared = 'presenterai/' . $this->course->id . '/' . $this->user->id . '/shared.webm';
+        $original = $this->row_with((int) $this->instance->id, 's3', ['storagekey' => $shared]);
+        $copy = $this->row_with((int) $this->instance->id, 's3', ['storagekey' => $shared]);
+
+        $this->assertTrue(recording_manager::drop_media($original, 'learner'));
+
+        $row = $this->reload((int) $original->id);
+        $this->assertNull($row->storagekey);
+        $this->assertSame('learner', $row->mediagonereason);
+        $this->assertGreaterThan(0, (int) $row->mediadeletedat);
+        $this->assertSame($shared, $this->reload((int) $copy->id)->storagekey, 'The other row lost media it still has.');
+    }
+
+    /**
+     * Deleting an activity skips objects a row of another activity still names, and queues the rest.
+     *
+     * @return void
+     */
+    public function test_delete_all_media_for_instance_skips_shared_keys(): void {
+        $this->unreachable_s3();
+        $other = $this->getDataGenerator()->create_module('presenterai', ['course' => $this->course->id]);
+        $shared = 'presenterai/1/2/shared.webm';
+        $own = 'presenterai/1/2/own.webm';
+        $this->row_with((int) $this->instance->id, 's3', ['storagekey' => $shared]);
+        $this->row_with((int) $this->instance->id, 's3', ['storagekey' => $own]);
+        $this->row_with((int) $other->id, 's3', ['storagekey' => $shared]);
+
+        recording_manager::delete_all_media_for_instance((int) $this->instance->id);
+
+        $keys = [];
+        foreach (\core\task\manager::get_adhoc_tasks(\mod_presenterai\task\delete_orphaned_media::class) as $task) {
+            $keys = array_merge($keys, (array) $task->get_custom_data()->keys);
+        }
+        // The unreachable bucket refuses the one delete that was attempted, so
+        // it is queued; the shared key was never attempted.
+        $this->assertSame([$own], $keys);
+    }
 }
