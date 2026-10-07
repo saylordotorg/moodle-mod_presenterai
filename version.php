@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'mod_presenterai';
-$plugin->version   = 2026100701;
+$plugin->version   = 2026100702;
 $plugin->release   = '0.4.0-dev';
 $plugin->maturity  = MATURITY_ALPHA;
 

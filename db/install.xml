@@ -147,7 +147,7 @@
         <FIELD NAME="feedback" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="tips" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="visualsummary" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="D21: the gated learner facing body language summary, or the deterministic fallback."/>
-        <FIELD NAME="visualstatus" TYPE="char" LENGTH="16" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="Which visual section the learner sees: empty, summary, fallback, notassessed, notanalysed or optedout."/>
+        <FIELD NAME="visualstatus" TYPE="char" LENGTH="16" NOTNULL="false" SEQUENCE="false" COMMENT="Which visual section the learner sees: null or empty for none, summary, fallback, notassessed, notanalysed or optedout."/>
         <FIELD NAME="legacymeanscore" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="legacymeta" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="graderid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>

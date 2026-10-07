@@ -120,7 +120,7 @@ function xmldb_presenterai_upgrade($oldversion) {
         $table = new xmldb_table('presenterai_score');
         $fields = [
             new xmldb_field('visualsummary', XMLDB_TYPE_TEXT, null, null, null, null, null, 'tips'),
-            new xmldb_field('visualstatus', XMLDB_TYPE_CHAR, '16', null, XMLDB_NOTNULL, null, '', 'visualsummary'),
+            new xmldb_field('visualstatus', XMLDB_TYPE_CHAR, '16', null, null, null, null, 'visualsummary'),
         ];
         foreach ($fields as $field) {
             if (!$dbman->field_exists($table, $field)) {
@@ -158,6 +158,21 @@ function xmldb_presenterai_upgrade($oldversion) {
         }
 
         upgrade_mod_savepoint(true, 2026100701, 'presenterai');
+    }
+
+    if ($oldversion < 2026100702) {
+        // The score table's visualstatus was CHAR NOT NULL with an empty
+        // default, which XMLDB refuses to install (it debugs, and a CLI
+        // install treats that as a failure). It is nullable now; readers
+        // treat null as the empty status.
+        $table = new xmldb_table('presenterai_score');
+        $field = new xmldb_field('visualstatus', XMLDB_TYPE_CHAR, '16', null, null, null, null, 'visualsummary');
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->change_field_default($table, $field);
+            $dbman->change_field_notnull($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026100702, 'presenterai');
     }
 
     return true;
