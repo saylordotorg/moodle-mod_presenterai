@@ -109,12 +109,15 @@ class recording_deleted extends \core\event\base {
     }
 
     /**
-     * Recordings are not restored in phase 1, so the object id cannot be mapped.
+     * The recording, which a restore with user data maps to its new id.
+     *
+     * Recordings travel in a backup that includes user data from phase 2 on,
+     * and the restore step records each one under 'presenterai_recording'.
      *
      * @return array
      */
     public static function get_objectid_mapping() {
-        return ['db' => 'presenterai_recording', 'restore' => \core\event\base::NOT_MAPPED];
+        return ['db' => 'presenterai_recording', 'restore' => 'presenterai_recording'];
     }
 
     /**
