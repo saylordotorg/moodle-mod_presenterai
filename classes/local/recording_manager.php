@@ -846,7 +846,7 @@ final class recording_manager {
      * @return bool
      */
     public static function frames_wanted(\stdClass $rec, \stdClass $instance): bool {
-        // takes_frames() also says no on the core AI route (D26), so a frame
+        // The core AI route (D26) makes takes_frames() say no, so a frame
         // sheet is refused there at start_upload, before a byte is sent.
         return \mod_presenterai\local\vision\visual_pipeline::takes_frames($instance)
             && (string) ($rec->mode ?? 'video') === 'video';

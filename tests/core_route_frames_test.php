@@ -198,17 +198,27 @@ final class core_route_frames_test extends \advanced_testcase {
     }
 
     /**
-     * Frames that arrived before the site moved to core are deleted at finalize, and the audio track is kept.
+     * Frames that arrived before the site moved to core are deleted at finalize, and the attempt still counts.
      *
      * @return void
      */
     public function test_finalize_discards_frames_after_a_move_to_core(): void {
         $this->route('auto', true);
         $rec = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->learner->id)['recording'];
-        foreach ([media_ref::KIND_FRAMES => ['jpg', "\xFF\xD8\xFF frames"], media_ref::KIND_RECORDING => ['webm', 'video']]
-                as $kind => [$ext, $bytes]) {
-            $target = recording_manager::start_upload($rec, $this->instance, $this->course, $this->context, $kind, $ext,
-                strlen($bytes));
+        $uploads = [
+            media_ref::KIND_FRAMES => ['jpg', "\xFF\xD8\xFF frames"],
+            media_ref::KIND_RECORDING => ['webm', 'video'],
+        ];
+        foreach ($uploads as $kind => [$ext, $bytes]) {
+            $target = recording_manager::start_upload(
+                $rec,
+                $this->instance,
+                $this->course,
+                $this->context,
+                $kind,
+                $ext,
+                strlen($bytes)
+            );
             $stream = fopen('php://memory', 'r+b');
             fwrite($stream, $bytes);
             rewind($stream);
@@ -221,8 +231,9 @@ final class core_route_frames_test extends \advanced_testcase {
 
         $this->assertSame('uploaded', $done->status);
         $this->assertEmpty($done->frameskey, 'Frames nothing will analyze were kept.');
-        $this->assertEmpty(get_file_storage()->get_area_files($this->context->id, 'mod_presenterai', 'frames', $done->id, 'id',
-            false));
+        $this->assertEmpty(
+            get_file_storage()->get_area_files($this->context->id, 'mod_presenterai', 'frames', $done->id, 'id', false)
+        );
     }
 
     /**
