@@ -111,6 +111,20 @@ final class instance_manager {
             $data->videovision = empty($data->videovision) ? 0 : 1;
         }
 
+        // The grade itself is left as given: core's modgrade element has
+        // already turned the form's type, points and scale into one value.
+        if (property_exists($data, 'gradingmethod')) {
+            $data->gradingmethod = in_array($data->gradingmethod, grader::GRADING_METHODS, true)
+                ? $data->gradingmethod
+                : grader::DEFAULT_GRADING_METHOD;
+        }
+        if (property_exists($data, 'completionsubmit')) {
+            $data->completionsubmit = max(0, (int) $data->completionsubmit);
+        }
+        if (property_exists($data, 'completionminscore')) {
+            $data->completionminscore = self::clamp((int) $data->completionminscore, 0, 100);
+        }
+
         $data->retentiondays = self::resolve_retention($data, $existing);
         // The form's two retention fields are not columns. Removed so nothing
         // downstream mistakes them for the stored value.

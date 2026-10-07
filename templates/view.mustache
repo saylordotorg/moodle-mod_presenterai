@@ -35,6 +35,8 @@
     * callout - Context for mod_presenterai/policy_callout.
     * privacy - The privacy paragraph, HTML.
     * canrecord - Whether the user may record at all.
+    * showsubmissions - Whether to show the link to the submissions report.
+    * submissionsurl - The submissions report URL.
     * blocked - Why recording is not offered right now, or empty.
     * recorder - Context for mod_presenterai/recorder, or null.
     * config - Recorder settings for the data attributes, or null.
@@ -62,6 +64,8 @@
         },
         "privacy": "Your recording is uploaded to Example storage so it can be transcribed and scored.",
         "canrecord": true,
+        "showsubmissions": true,
+        "submissionsurl": "https://example.com/mod/presenterai/report.php?id=12",
         "blocked": "",
         "recorder": {
             "isaudio": false,
@@ -100,7 +104,17 @@
                     "downloadaria": "Download the recording you made on 6/10/26, 14:00",
                     "candelete": true,
                     "deletearia": "Delete the recording you made on 6/10/26, 14:00",
-                    "gonenote": ""
+                    "gonenote": "",
+                    "hasscore": true,
+                    "score": "80.00%",
+                    "hasfeedback": true,
+                    "feedbackaria": "Feedback on the attempt you made on 6/10/26, 14:00",
+                    "feedback": {
+                        "criteria": [
+                            {"name": "Content", "scoretext": "4 out of 5", "feedback": "Clear thesis."}
+                        ],
+                        "overall": "A well organized talk."
+                    }
                 }
             ]
         }
@@ -122,6 +136,9 @@
     {{> mod_presenterai/recorder }}
     {{/recorder}}
     {{/canrecord}}
+    {{#showsubmissions}}
+    <p class="mod-presenterai-submissions-link mt-4"><a href="{{submissionsurl}}">{{#str}}viewsubmissions, mod_presenterai{{/str}}</a></p>
+    {{/showsubmissions}}
     {{#attempts}}
     {{> mod_presenterai/attempts }}
     {{/attempts}}

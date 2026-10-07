@@ -188,6 +188,33 @@ final class retention_tool_test extends \advanced_testcase {
     }
 
     /**
+     * A rewritten date clears the record of the old date's advance message, so the new date gets its own.
+     *
+     * @return void
+     */
+    public function test_apply_resets_the_advance_message(): void {
+        global $DB;
+
+        $warned = $this->recording($this->instance->id, [
+            'expiresat' => self::NOW + 2 * DAYSECS,
+            'deletewarnedat' => self::NOW - HOURSECS,
+        ]);
+        $untouched = $this->recording($this->instance->id, [
+            'expiresat' => self::NOW + 30 * DAYSECS,
+            'deletewarnedat' => self::NOW - HOURSECS,
+        ]);
+
+        $plan = retention_tool::plan(['from' => 'now', 'now' => self::NOW]);
+        $this->assertArrayHasKey((int) $warned->id, $plan['changes']);
+        $this->assertArrayNotHasKey((int) $untouched->id, $plan['changes'], 'The date the activity already gives was rewritten.');
+        retention_tool::apply($plan);
+
+        $this->assertSame(0, (int) $DB->get_field('presenterai_recording', 'deletewarnedat', ['id' => $warned->id]));
+        $kept = (int) $DB->get_field('presenterai_recording', 'deletewarnedat', ['id' => $untouched->id]);
+        $this->assertSame(self::NOW - HOURSECS, $kept);
+    }
+
+    /**
      * More than the threshold newly eligible within a day is refused without --force.
      *
      * @return void

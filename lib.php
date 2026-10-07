@@ -17,10 +17,7 @@
 /**
  * Module API for mod_presenterai.
  *
- * Phase 0 skeleton: instance lifecycle and feature declaration only. The grade
- * functions arrive in phase 2 and are deliberately absent rather than stubbed,
- * because presenterai_grade_item_update() existing but doing nothing is worse
- * than it not existing: core calls it and believes it.
+ * The module API, with grade, completion and reset logic living in classes/local.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -51,12 +48,10 @@ function presenterai_supports($feature) {
             // The learner produces something and is assessed on it.
             return MOD_PURPOSE_ASSESSMENT;
 
-        // Phase 2. Declared false rather than omitted so the intent is visible:
-        // these are coming, and the grade functions land with them.
         case FEATURE_GRADE_HAS_GRADE:
         case FEATURE_GRADE_OUTCOMES:
         case FEATURE_COMPLETION_HAS_RULES:
-            return false;
+            return true;
 
         // Deliberately false in v1. Our rubric carries per-criterion prompt text
         // the model reads, which core's grading form definitions cannot hold.
@@ -89,6 +84,8 @@ function presenterai_add_instance($data, $mform = null) {
         \context_module::instance($data->coursemodule)
     );
 
+    presenterai_grade_item_update($data);
+
     return $data->id;
 }
 
@@ -114,6 +111,16 @@ function presenterai_update_instance($data, $mform = null) {
         \context_module::instance($data->coursemodule)
     );
 
+    $instance = $DB->get_record('presenterai', ['id' => $data->instance], '*', MUST_EXIST);
+    $instance->cmidnumber = $data->cmidnumber ?? '';
+    presenterai_grade_item_update($instance);
+    presenterai_update_grades($instance, 0, false);
+
+    // Core resets stored completion only when the completion settings change.
+    if ((string) $existing->gradingmethod !== (string) $instance->gradingmethod) {
+        \mod_presenterai\local\completion_rules::refresh_minscore_state($instance, (int) $data->coursemodule);
+    }
+
     return true;
 }
 
@@ -137,6 +144,8 @@ function presenterai_delete_instance($id) {
         return true;
     }
 
+    presenterai_grade_item_delete($instance);
+
     // Before any row goes: fs_store finds a file through the row that names it.
     // Best effort per row, and it never throws.
     \mod_presenterai\local\recording_manager::delete_all_media_for_instance((int) $instance->id);
@@ -153,6 +162,13 @@ function presenterai_delete_instance($id) {
     }
 
     $DB->delete_records('presenterai_recording', ['presenteraiid' => $id]);
+
+    // Spend rows are kept so cost totals still add up, but without the learner.
+    // Once the course module is gone the privacy provider can't reach them, so
+    // leaving a userid here would strand personal data. Course reset does the same.
+    $DB->set_field('presenterai_aiusage', 'userid', 0, ['presenteraiid' => $id]);
+    $DB->set_field('presenterai_aiusage', 'recordingid', 0, ['presenteraiid' => $id]);
+
     \mod_presenterai\local\topic_manager::delete_all((int) $id);
     $DB->delete_records('presenterai', ['id' => $id]);
 
@@ -284,4 +300,154 @@ function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $ar
     }
 
     send_stored_file($file, 0, 0, $forcedownload, $options);
+}
+
+/**
+ * Create or update the activity's grade item.
+ *
+ * @param stdClass $presenterai The instance row, with cmidnumber when known.
+ * @param mixed $grades Null, 'reset', or grade objects to push with the item.
+ * @return int A GRADE_UPDATE_* constant.
+ */
+function presenterai_grade_item_update($presenterai, $grades = null) {
+    return \mod_presenterai\local\gradebook::grade_item_update($presenterai, $grades);
+}
+
+/**
+ * Push grades for one learner, or for everyone, to the gradebook.
+ *
+ * @param stdClass $presenterai The instance row.
+ * @param int $userid One learner, or 0 for all.
+ * @param bool $nullifnone Push a null grade for a learner who has nothing to count.
+ * @return void
+ */
+function presenterai_update_grades($presenterai, $userid = 0, $nullifnone = true) {
+    \mod_presenterai\local\gradebook::update_grades($presenterai, (int) $userid, (bool) $nullifnone);
+}
+
+/**
+ * The grades this activity would push, keyed by user id.
+ *
+ * @param stdClass $presenterai The instance row.
+ * @param int $userid One learner, or 0 for all.
+ * @return array Grade objects keyed by user id.
+ */
+function presenterai_get_user_grades($presenterai, $userid = 0) {
+    return \mod_presenterai\local\gradebook::get_user_grades($presenterai, (int) $userid);
+}
+
+/**
+ * Delete the activity's grade item.
+ *
+ * @param stdClass $presenterai The instance row.
+ * @return int A GRADE_UPDATE_* constant.
+ */
+function presenterai_grade_item_delete($presenterai) {
+    return \mod_presenterai\local\gradebook::grade_item_delete($presenterai);
+}
+
+/**
+ * Whether one activity grades with a scale.
+ *
+ * @param int $presenteraiid The instance id.
+ * @param int $scaleid The scale id.
+ * @return bool
+ */
+function presenterai_scale_used($presenteraiid, $scaleid) {
+    return \mod_presenterai\local\gradebook::scale_used((int) $presenteraiid, (int) $scaleid);
+}
+
+/**
+ * Whether any activity of this module grades with a scale.
+ *
+ * @param int $scaleid The scale id.
+ * @return bool
+ */
+function presenterai_scale_used_anywhere($scaleid) {
+    return \mod_presenterai\local\gradebook::scale_used_anywhere((int) $scaleid);
+}
+
+/**
+ * Cached course module information, carrying the custom completion rules.
+ *
+ * @param stdClass $coursemodule The course module row.
+ * @return cached_cm_info|null
+ */
+function presenterai_get_coursemodule_info($coursemodule) {
+    return \mod_presenterai\local\completion_rules::coursemodule_info($coursemodule);
+}
+
+/**
+ * Descriptions of the active custom completion rules.
+ *
+ * @param cm_info|stdClass $cm The course module.
+ * @return array Rule descriptions.
+ */
+function mod_presenterai_get_completion_active_rule_descriptions($cm) {
+    return \mod_presenterai\local\completion_rules::active_rule_descriptions($cm);
+}
+
+/**
+ * Add the submissions report to the activity's settings navigation.
+ *
+ * @param settings_navigation $settings The settings navigation.
+ * @param navigation_node $presenterainode The activity's node.
+ * @return void
+ */
+function presenterai_extend_settings_navigation(settings_navigation $settings, navigation_node $presenterainode) {
+    $cm = $settings->get_page()->cm;
+    if (!$cm) {
+        return;
+    }
+    $context = context_module::instance($cm->id);
+    if (has_capability('mod/presenterai:viewallattempts', $context)) {
+        $presenterainode->add(
+            get_string('submissions', 'mod_presenterai'),
+            new moodle_url('/mod/presenterai/report.php', ['id' => $cm->id]),
+            navigation_node::TYPE_SETTING,
+            null,
+            'mod_presenterai_submissions'
+        );
+    }
+}
+
+/**
+ * Add this module's elements to the course reset form.
+ *
+ * @param MoodleQuickForm $mform The reset form.
+ * @return void
+ */
+function presenterai_reset_course_form_definition(&$mform) {
+    \mod_presenterai\local\course_reset::form_definition($mform);
+}
+
+/**
+ * Default values for this module's course reset form elements.
+ *
+ * @param stdClass $course The course being reset.
+ * @return array Element name => default value.
+ */
+function presenterai_reset_course_form_defaults($course) {
+    return \mod_presenterai\local\course_reset::form_defaults();
+}
+
+/**
+ * Delete learner work when a course is reset, if the form asked for it.
+ *
+ * @param stdClass $data The reset form data, carrying courseid.
+ * @return array Status rows for the reset report.
+ */
+function presenterai_reset_userdata($data) {
+    return \mod_presenterai\local\course_reset::reset_userdata($data);
+}
+
+/**
+ * Reset every PresenterAI grade in a course.
+ *
+ * @param int $courseid The course id.
+ * @param string $type Unused; this module has one grade item type.
+ * @return void
+ */
+function presenterai_reset_gradebook($courseid, $type = '') {
+    \mod_presenterai\local\course_reset::reset_gradebook((int) $courseid);
 }

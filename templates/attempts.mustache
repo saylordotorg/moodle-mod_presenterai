@@ -30,10 +30,19 @@
     (rule 3). The download-off note appears once, below the table, and the
     table points at it with aria-describedby (rule 7).
 
+    The Score cell shows the attempt's current score, or is empty when the
+    attempt has none yet. A row with a score is followed by a row holding a
+    Feedback disclosure, whose summary carries an aria-label naming the
+    attempt's date for the same reason as the Watch control. Each criterion
+    says what it scored out of its maximum, or that it wasn't assessed.
+
     Context variables required for this template:
     * hasattempts - Whether there are any rows.
     * showdownloadoffnote - Whether to render the download-off note.
-    * rows - List of attempt_row::export() results.
+    * rows - List of attempt_row::export() results, including:
+      hasscore, score, hasfeedback, feedbackaria and
+      feedback (criteria: list of name (HTML from format_string), scoretext and
+      feedback; overall: HTML).
 
     Example context (json):
     {
@@ -56,7 +65,18 @@
                 "downloadaria": "Download the recording you made on 6/10/26, 14:00",
                 "candelete": true,
                 "deletearia": "Delete the recording you made on 6/10/26, 14:00",
-                "gonenote": ""
+                "gonenote": "",
+                "hasscore": true,
+                "score": "80.00%",
+                "hasfeedback": true,
+                "feedbackaria": "Feedback on the attempt you made on 6/10/26, 14:00",
+                "feedback": {
+                    "criteria": [
+                        {"name": "Content", "scoretext": "4 out of 5", "feedback": "Your thesis was clear from the start."},
+                        {"name": "Delivery", "scoretext": "Not assessed", "feedback": ""}
+                    ],
+                    "overall": "A well organized talk.<br>Slow down in the conclusion."
+                }
             },
             {
                 "recid": 7,
@@ -74,7 +94,12 @@
                 "downloadaria": "Download the recording you made on 1/10/26, 09:30",
                 "candelete": false,
                 "deletearia": "Delete the recording you made on 1/10/26, 09:30",
-                "gonenote": "No longer available to watch"
+                "gonenote": "No longer available to watch",
+                "hasscore": false,
+                "score": "",
+                "hasfeedback": false,
+                "feedbackaria": "Feedback on the attempt you made on 1/10/26, 09:30",
+                "feedback": {"criteria": [], "overall": ""}
             }
         ]
     }
@@ -91,6 +116,7 @@
             <th scope="col">{{#str}}col_recorded, mod_presenterai{{/str}}</th>
             <th scope="col">{{#str}}col_length, mod_presenterai{{/str}}</th>
             <th scope="col">{{#str}}col_status, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}col_score, mod_presenterai{{/str}}</th>
             <th scope="col">{{#str}}col_recording, mod_presenterai{{/str}}</th>
             <th scope="col">{{#str}}col_actions, mod_presenterai{{/str}}</th>
         </tr>
@@ -102,6 +128,7 @@
             <td>{{recorded}}</td>
             <td>{{length}}</td>
             <td>{{status}}</td>
+            <td data-region="score">{{score}}</td>
             <td data-region="state" data-statekey="{{statekey}}" tabindex="-1">{{state}}</td>
             <td data-region="actions">
                 {{#canwatch}}
@@ -118,6 +145,25 @@
                 {{/gonenote}}
             </td>
         </tr>
+        {{#hasfeedback}}
+        <tr class="mod-presenterai-feedback-row" data-feedbackfor="{{recid}}">
+            <td colspan="7">
+                <details class="mod-presenterai-feedback">
+                    <summary aria-label="{{feedbackaria}}">{{#str}}feedback_toggle, mod_presenterai{{/str}}</summary>
+                    {{#feedback}}
+                    <ul class="mod-presenterai-feedback-criteria list-unstyled mt-2">
+                        {{#criteria}}
+                        <li class="mb-2"><strong>{{{name}}}</strong>: {{scoretext}}{{#feedback}}<br>{{feedback}}{{/feedback}}</li>
+                        {{/criteria}}
+                    </ul>
+                    {{#overall}}
+                    <p class="mod-presenterai-feedback-overall">{{{overall}}}</p>
+                    {{/overall}}
+                    {{/feedback}}
+                </details>
+            </td>
+        </tr>
+        {{/hasfeedback}}
         {{/rows}}
     </tbody>
 </table>

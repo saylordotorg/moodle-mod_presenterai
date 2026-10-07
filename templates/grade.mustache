@@ -1,0 +1,125 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/grade
+
+    The grading screen for one attempt: who and which attempt, when it was
+    recorded, its length and status, the recording, the transcript, the
+    visual evidence note for staff who may read it, a live total and the
+    scoring form.
+
+    The player region is empty at load. mod_presenterai/grading opens the
+    shared player into it, reading the recording id and the player's
+    accessible name from the root's data attributes. Its polite live region
+    exists at page load so the loading message is spoken. The total region is
+    also polite, so a grader using a screen reader hears the total change as
+    they score; it's a preview, and the server computes the stored total.
+
+    The visual evidence section renders only when showvisual is true. Its
+    note is escaped text, labeled staff only.
+
+    Context variables required for this template:
+    * rootid - The root element id, given to mod_presenterai/grading.
+    * cmid - The course module id.
+    * recordingid - The recording id.
+    * learnername - The learner's full name.
+    * attemptlabel - For example "Attempt 2".
+    * recorded - When the attempt was recorded.
+    * length - Its length, m:ss.
+    * status - Its status label.
+    * mediaavailable - Whether the recording's media still exists.
+    * watcharia - The accessible name of the player.
+    * hastranscript - Whether there is a transcript.
+    * transcript - The transcript, escaped, with line breaks as HTML.
+    * transcriptempty - The placeholder when there is no transcript.
+    * showvisual - Whether the viewer may read the visual evidence note.
+    * hasvisual - Whether there is a note.
+    * visualevidence - The note, escaped, with line breaks as HTML.
+    * visualempty - The placeholder when there is no note.
+    * form - The rendered scoring form, HTML.
+    * reporturl - The submissions report URL.
+    * total - {label}: the total before any score is chosen.
+
+    Example context (json):
+    {
+        "rootid": "mod-presenterai-grade",
+        "cmid": 12,
+        "recordingid": 8,
+        "learnername": "Ada Lovelace",
+        "attemptlabel": "Attempt 2",
+        "recorded": "6/10/26, 14:00",
+        "length": "6:12",
+        "status": "Submitted",
+        "mediaavailable": true,
+        "watcharia": "Recording by Ada Lovelace, made on 6/10/26, 14:00",
+        "hastranscript": true,
+        "transcript": "Good afternoon.<br>Today I will argue for wind power.",
+        "transcriptempty": "There is no transcript for this attempt.",
+        "showvisual": true,
+        "hasvisual": false,
+        "visualevidence": "",
+        "visualempty": "There is no visual evidence note for this attempt.",
+        "form": "<form action=\"#\" method=\"post\"><p>The scoring form.</p></form>",
+        "reporturl": "https://example.com/mod/presenterai/report.php?id=12",
+        "total": {"label": "Total: no scores chosen yet"}
+    }
+}}
+<div id="{{rootid}}" class="mod-presenterai-grade" data-recordingid="{{recordingid}}" data-cmid="{{cmid}}" data-watcharia="{{watcharia}}">
+    <h2 class="mod-presenterai-grade-heading">{{learnername}}: {{attemptlabel}}</h2>
+    <dl class="mod-presenterai-grade-meta row">
+        <dt class="col-sm-3">{{#str}}col_recorded, mod_presenterai{{/str}}</dt>
+        <dd class="col-sm-9">{{recorded}}</dd>
+        <dt class="col-sm-3">{{#str}}col_length, mod_presenterai{{/str}}</dt>
+        <dd class="col-sm-9">{{length}}</dd>
+        <dt class="col-sm-3">{{#str}}col_status, mod_presenterai{{/str}}</dt>
+        <dd class="col-sm-9">{{status}}</dd>
+    </dl>
+    <div class="mod-presenterai-grade-columns">
+        <div class="mod-presenterai-grade-evidence">
+            <div class="mod-presenterai-player" data-region="player" tabindex="-1"></div>
+            <div class="accesshide" aria-live="polite" data-region="live"></div>
+            <section class="mod-presenterai-grade-transcript mt-3">
+                <h3>{{#str}}grade_transcript, mod_presenterai{{/str}}</h3>
+                {{#hastranscript}}
+                <div class="mod-presenterai-transcript-text">{{{transcript}}}</div>
+                {{/hastranscript}}
+                {{^hastranscript}}
+                <p class="mod-presenterai-placeholder">{{transcriptempty}}</p>
+                {{/hastranscript}}
+            </section>
+            {{#showvisual}}
+            <section class="mod-presenterai-grade-visual mt-3">
+                <h3>{{#str}}grade_visualevidence, mod_presenterai{{/str}}</h3>
+                <p class="small">{{#str}}grade_staffonly, mod_presenterai{{/str}}</p>
+                {{#hasvisual}}
+                <div class="mod-presenterai-visual-text">{{{visualevidence}}}</div>
+                {{/hasvisual}}
+                {{^hasvisual}}
+                <p class="mod-presenterai-placeholder">{{visualempty}}</p>
+                {{/hasvisual}}
+            </section>
+            {{/showvisual}}
+        </div>
+        <div class="mod-presenterai-grade-scoring">
+            {{#total}}
+            <div class="mod-presenterai-grade-total alert alert-secondary" data-region="total" aria-live="polite">{{label}}</div>
+            {{/total}}
+            {{{form}}}
+        </div>
+    </div>
+    <p class="mt-3"><a href="{{reporturl}}">{{#str}}viewsubmissions, mod_presenterai{{/str}}</a></p>
+</div>

@@ -16,12 +16,13 @@
 
 namespace mod_presenterai\task;
 
+use mod_presenterai\local\deletion_warning;
 use mod_presenterai\local\recording_manager;
 use mod_presenterai\local\storage\fs_store;
 use mod_presenterai\local\storage\store_factory;
 
 /**
- * Hourly housekeeping for recordings: abandoned uploads, retention, pruning.
+ * Hourly housekeeping for recordings: abandoned uploads, deletion warnings, retention, pruning.
  *
  * A port of local_ai_course_assistant\task\soapbox_cleanup with the three
  * defects that file carried fixed, because each one deletes the wrong thing or
@@ -62,13 +63,19 @@ class cleanup extends \core\task\scheduled_task {
     }
 
     /**
-     * Run the three steps in order.
+     * Run the steps in order.
+     *
+     * The advance warnings go before retention. The two never pick the same
+     * row (a warning needs a date still ahead, retention a date passed), and
+     * this order means a run that fails partway through has sent the messages
+     * before it deleted anything.
      *
      * @return void
      */
     public function execute() {
         $now = time();
         $this->sweep_abandoned($now);
+        $this->warn_upcoming_deletions($now);
         $this->apply_retention($now);
         $this->prune_stored_attempts();
     }
@@ -135,7 +142,21 @@ class cleanup extends \core\task\scheduled_task {
     }
 
     /**
-     * Step 2: delete media whose deletion date has passed.
+     * Step 2: tell learners whose recording is about to reach its deletion date.
+     *
+     * deletion_warning decides what is due (design 7.1, deletewarndays) and
+     * records each send on the row, so a learner is told once per date.
+     *
+     * @param int $now The run's notion of now.
+     * @return void
+     */
+    protected function warn_upcoming_deletions(int $now): void {
+        $sent = deletion_warning::send_due($now);
+        mtrace("PresenterAI cleanup: {$sent} advance deletion messages sent.");
+    }
+
+    /**
+     * Step 3: delete media whose deletion date has passed.
      *
      * expiresat 0 means never and is excluded by the query. The hard floor in
      * design 8.7a is applied on top: a recording finished in the last day is
@@ -184,7 +205,7 @@ class cleanup extends \core\task\scheduled_task {
     }
 
     /**
-     * Step 3: keep only the newest N recordings' media per learner where an activity asks for it.
+     * Step 4: keep only the newest N recordings' media per learner where an activity asks for it.
      *
      * Only rows that still have media are counted, so a learner who deleted
      * their newest recording's media keeps the next one. The attempt rows, the

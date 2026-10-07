@@ -281,4 +281,51 @@ final class instance_manager_test extends \advanced_testcase {
         set_config('retentiondays', -3, 'mod_presenterai');
         $this->assertSame(0, instance_manager::effective_retention_days(-1));
     }
+
+    /**
+     * An unknown grading method becomes highest; a known one is kept.
+     *
+     * @return void
+     */
+    public function test_gradingmethod(): void {
+        $this->resetAfterTest();
+
+        foreach (['highest', 'latest', 'average', 'first'] as $method) {
+            $this->assertSame($method, instance_manager::normalise((object) ['gradingmethod' => $method], null)->gradingmethod);
+        }
+        $this->assertSame('highest', instance_manager::normalise((object) ['gradingmethod' => 'best'], null)->gradingmethod);
+        $this->assertSame('highest', instance_manager::normalise((object) ['gradingmethod' => null], null)->gradingmethod);
+    }
+
+    /**
+     * The completion numbers are bounded: submissions at 0 or more, the score at 0 to 100.
+     *
+     * @return void
+     */
+    public function test_completion_values(): void {
+        $this->resetAfterTest();
+
+        $this->assertSame(0, instance_manager::normalise((object) ['completionsubmit' => -4], null)->completionsubmit);
+        $this->assertSame(3, instance_manager::normalise((object) ['completionsubmit' => '3'], null)->completionsubmit);
+        $this->assertSame(0, instance_manager::normalise((object) ['completionminscore' => -1], null)->completionminscore);
+        $this->assertSame(100, instance_manager::normalise((object) ['completionminscore' => 250], null)->completionminscore);
+        $this->assertSame(65, instance_manager::normalise((object) ['completionminscore' => 65], null)->completionminscore);
+    }
+
+    /**
+     * Grade and completion fields that weren't sent aren't added, and the grade passes through untouched.
+     *
+     * @return void
+     */
+    public function test_grade_fields_only_when_present(): void {
+        $this->resetAfterTest();
+
+        $data = instance_manager::normalise((object) ['mode' => 'video'], null);
+        $this->assertFalse(property_exists($data, 'gradingmethod'));
+        $this->assertFalse(property_exists($data, 'completionsubmit'));
+        $this->assertFalse(property_exists($data, 'completionminscore'));
+
+        $this->assertSame(-7, instance_manager::normalise((object) ['grade' => -7], null)->grade);
+        $this->assertSame(250, instance_manager::normalise((object) ['grade' => 250], null)->grade);
+    }
 }

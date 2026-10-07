@@ -596,6 +596,9 @@ final class recording_manager {
      * @param int $durationseconds The recorded length the browser reports.
      * @param string $timeline The slide-advance timeline as JSON, or empty.
      * @param string|null $token The page's token from begin(), or null for a server-side caller.
+     * @param bool|null $transitioned Set to true only when this call moved the row out of
+     *                                uploading, so the caller fires the submitted event once
+     *                                even when two requests finalize the same row at once.
      * @return \stdClass The updated row.
      */
     public static function finalize(
@@ -606,8 +609,10 @@ final class recording_manager {
         int $topicid,
         int $durationseconds,
         string $timeline,
-        ?string $token = null
+        ?string $token = null,
+        ?bool &$transitioned = null
     ): \stdClass {
+        $transitioned = false;
         if (self::finalized_already($rec)) {
             return $rec;
         }
@@ -615,8 +620,18 @@ final class recording_manager {
         return self::with_attempt_lock(
             (int) $instance->id,
             (int) $rec->userid,
-            function () use ($rec, $instance, $course, $ctx, $topicid, $durationseconds, $timeline, $token): \stdClass {
-                return self::finalize_locked($rec, $instance, $course, $ctx, $topicid, $durationseconds, $timeline, $token);
+            function () use ($rec, $instance, $course, $ctx, $topicid, $durationseconds, $timeline, $token, &$transitioned) {
+                return self::finalize_locked(
+                    $rec,
+                    $instance,
+                    $course,
+                    $ctx,
+                    $topicid,
+                    $durationseconds,
+                    $timeline,
+                    $token,
+                    $transitioned
+                );
             }
         );
     }
@@ -632,6 +647,7 @@ final class recording_manager {
      * @param int $durationseconds The recorded length the browser reports.
      * @param string $timeline The slide-advance timeline as JSON, or empty.
      * @param string|null $token The page's token, or null for a server-side caller.
+     * @param bool|null $transitioned Set to true when this call made the row uploaded.
      * @return \stdClass The updated row.
      */
     private static function finalize_locked(
@@ -642,7 +658,8 @@ final class recording_manager {
         int $topicid,
         int $durationseconds,
         string $timeline,
-        ?string $token
+        ?string $token,
+        ?bool &$transitioned
     ): \stdClass {
         global $DB;
 
@@ -735,6 +752,7 @@ final class recording_manager {
             'clienttoken' => null,
             'timemodified' => $now,
         ]);
+        $transitioned = true;
 
         // Phase 3: queue \mod_presenterai\task\score_recording here.
 
@@ -828,6 +846,11 @@ final class recording_manager {
      * Status is never changed (D8). The score, the feedback and the transcript
      * survive, and so does the attempt's place in the grade and the cap.
      *
+     * An S3 key that another recording row also names is not deleted from the
+     * bucket, but this row's columns are still cleared and the reason still
+     * recorded: this attempt no longer has the media, the other one does. That
+     * is the shared-key guard, key_in_use_elsewhere().
+     *
      * @param \stdClass $rec The recording row, carrying at least id, backend and the key columns.
      * @param string $reason One of GONE_REASONS.
      * @return bool True when the media is gone and the row says so.
@@ -840,12 +863,19 @@ final class recording_manager {
         }
 
         $store = store_factory::for_recording($rec);
-        if (!empty($rec->storagekey) && !$store->delete((string) $rec->storagekey)) {
+        $backend = (string) $rec->backend;
+        $recid = (int) $rec->id;
+        // A key another row also names is left in the bucket: this row stops
+        // claiming it, the other row keeps its media. See key_in_use_elsewhere().
+        $storagekey = (string) ($rec->storagekey ?? '');
+        $shared = $storagekey !== '' && self::key_in_use_elsewhere($backend, $storagekey, $recid);
+        if ($storagekey !== '' && !$shared && !$store->delete($storagekey)) {
             return false;
         }
         foreach (['deckkey', 'frameskey'] as $column) {
-            if (!empty($rec->$column)) {
-                $store->delete((string) $rec->$column);
+            $key = (string) ($rec->$column ?? '');
+            if ($key !== '' && !self::key_in_use_elsewhere($backend, $key, $recid)) {
+                $store->delete($key);
             }
         }
         if (!empty($rec->uploadid)) {
@@ -886,6 +916,10 @@ final class recording_manager {
      * is no longer configured, is handed to the delete_orphaned_media task,
      * which keeps trying after the rows are gone (design 8.6, point 5).
      *
+     * An S3 object that a recording of another activity also names, which is
+     * what a same-site restore or a course copy leaves behind, is kept for that
+     * other recording and is not queued either.
+     *
      * @param int $presenteraiid The activity instance id.
      * @return void
      */
@@ -904,8 +938,11 @@ final class recording_manager {
         foreach ($rs as $rec) {
             $keys = [];
             foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
-                if (!empty($rec->$column)) {
-                    $keys[] = (string) $rec->$column;
+                $key = (string) ($rec->$column ?? '');
+                // Every row of this activity is about to go, so only a row of
+                // another activity (a restored copy) can still need the object.
+                if ($key !== '' && !self::key_in_use_outside_instance((string) $rec->backend, $key, $presenteraiid)) {
+                    $keys[] = $key;
                 }
             }
             try {
@@ -936,6 +973,94 @@ final class recording_manager {
         if (!empty($orphans[store_factory::BACKEND_S3])) {
             \mod_presenterai\task\delete_orphaned_media::queue(store_factory::BACKEND_S3, $orphans[store_factory::BACKEND_S3]);
         }
+    }
+
+    /**
+     * Whether another recording row still names this stored object.
+     *
+     * The shared-key guard. A same-site restore or a course copy with user data
+     * keeps each S3 row's keys, because the bytes cannot travel in the backup
+     * and the bucket already holds them. Two rows then name one object, and
+     * deleting it for one of them (retention, pruning, a learner's delete, a
+     * privacy request, a course reset) would silently destroy the media the
+     * other row still promises its learner. So every path that deletes an
+     * object asks this first, and leaves a shared object alone.
+     *
+     * Only S3 can share. An fs key is a filename resolved through the row's own
+     * context and itemid (D9), and a restore re-keys every fs file it copies,
+     * so two fs rows never name the same bytes.
+     *
+     * @param string $backend The row's backend.
+     * @param string $key The stored key.
+     * @param int $excludingrecordingid The row asking, which is not "another" row.
+     * @return bool True when some other row with the same backend names $key.
+     */
+    public static function key_in_use_elsewhere(string $backend, string $key, int $excludingrecordingid): bool {
+        return self::key_named_by_other_rows($backend, $key, 'id <> :excluding', ['excluding' => $excludingrecordingid]);
+    }
+
+    /**
+     * Whether a row outside a set of recordings still names this stored object.
+     *
+     * For a caller deleting a batch of rows at once, where a row inside the
+     * batch does not count as keeping the object alive, because it is about to
+     * go as well.
+     *
+     * @param string $backend The rows' backend.
+     * @param string $key The stored key.
+     * @param int[] $excludingids Ids of the recordings being deleted together.
+     * @return bool
+     */
+    public static function key_in_use_outside(string $backend, string $key, array $excludingids): bool {
+        global $DB;
+
+        $excludingids = array_values(array_unique(array_map('intval', $excludingids)));
+        if (empty($excludingids)) {
+            return self::key_named_by_other_rows($backend, $key, '1 = 1', []);
+        }
+        [$notin, $params] = $DB->get_in_or_equal($excludingids, SQL_PARAMS_NAMED, 'exid', false);
+
+        return self::key_named_by_other_rows($backend, $key, "id {$notin}", $params);
+    }
+
+    /**
+     * Whether a row of some other activity still names this stored object.
+     *
+     * @param string $backend The row's backend.
+     * @param string $key The stored key.
+     * @param int $presenteraiid The activity whose rows are all being deleted.
+     * @return bool
+     */
+    private static function key_in_use_outside_instance(string $backend, string $key, int $presenteraiid): bool {
+        return self::key_named_by_other_rows(
+            $backend,
+            $key,
+            'presenteraiid <> :excludinginstance',
+            ['excludinginstance' => $presenteraiid]
+        );
+    }
+
+    /**
+     * The one query behind the shared-key guard.
+     *
+     * @param string $backend The backend; anything but S3 answers false.
+     * @param string $key The stored key.
+     * @param string $exclusion SQL naming which rows do not count.
+     * @param array $params Its named parameters.
+     * @return bool
+     */
+    private static function key_named_by_other_rows(string $backend, string $key, string $exclusion, array $params): bool {
+        global $DB;
+
+        if ($backend !== store_factory::BACKEND_S3 || $key === '') {
+            return false;
+        }
+
+        return $DB->record_exists_select(
+            'presenterai_recording',
+            "backend = :sharedbackend AND (storagekey = :sk1 OR deckkey = :sk2 OR frameskey = :sk3) AND {$exclusion}",
+            ['sharedbackend' => $backend, 'sk1' => $key, 'sk2' => $key, 'sk3' => $key] + $params
+        );
     }
 
     /**
@@ -1011,8 +1136,9 @@ final class recording_manager {
         global $DB;
 
         foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
-            if (!empty($rec->$column)) {
-                $store->delete((string) $rec->$column);
+            $key = (string) ($rec->$column ?? '');
+            if ($key !== '' && !self::key_in_use_elsewhere((string) $rec->backend, $key, (int) $rec->id)) {
+                $store->delete($key);
             }
         }
         if (!empty($rec->uploadid)) {

@@ -17,6 +17,7 @@
 namespace mod_presenterai\output;
 
 use mod_presenterai\local\access;
+use mod_presenterai\local\score_manager;
 use mod_presenterai\local\storage\store_factory;
 
 /**
@@ -164,6 +165,9 @@ final class attempt_row {
      * @param int $now The time to compare expiresat against.
      * @param bool $cleanupenabled Whether the cleanup task is enabled.
      * @param bool $s3lifecycle Whether a bucket lifecycle rule is declared for S3.
+     * @param bool $scorehidden Whether the gradebook hides the grade from the viewer
+     *                          (gradebook::hidden_from()), which leaves the score
+     *                          and feedback out of the row.
      * @return array
      */
     public static function export(
@@ -172,7 +176,8 @@ final class attempt_row {
         int $userid,
         int $now,
         bool $cleanupenabled,
-        bool $s3lifecycle = false
+        bool $s3lifecycle = false,
+        bool $scorehidden = false
     ): array {
         $state = self::state($rec, $now, $cleanupenabled, $s3lifecycle);
         $hasmedia = self::has_media($rec);
@@ -186,6 +191,9 @@ final class attempt_row {
         $canwatch = $hasmedia && access::may_view($rec, $ctx, $userid);
         $candownload = $hasmedia && access::may_download($rec, $ctx, $userid);
         $candelete = $hasmedia && access::may_delete($rec, $ctx, $userid);
+
+        $score = $scorehidden ? null : score_manager::current_score((int) $rec->id);
+        $feedback = $score ? self::feedback($score) : null;
 
         return [
             'recid' => (int) $rec->id,
@@ -212,6 +220,47 @@ final class attempt_row {
             // A row that never uploaded has no recording to be "no longer"
             // available, and its state cell already says so.
             'gonenote' => (!$hasmedia && !$neveruploaded) ? get_string('attempt_gone_note', 'mod_presenterai') : '',
+            // The current score: the latest teacher row, else the latest AI
+            // row (plan section 2.3). A score that assessed nothing has no
+            // percentage and shows an empty cell rather than 0%.
+            'hasscore' => $score !== null && $score->overallpct !== null,
+            'score' => ($score !== null && $score->overallpct !== null) ? format_float((float) $score->overallpct, 2) . '%' : '',
+            'hasfeedback' => $feedback !== null,
+            'feedback' => $feedback ?? ['criteria' => [], 'overall' => ''],
+            'feedbackaria' => get_string('feedback_toggle_aria', 'mod_presenterai', $recorded),
+        ];
+    }
+
+    /**
+     * The per criterion and overall feedback of a score, ready for the template.
+     *
+     * Every criterion is listed, including those not assessed, so the learner
+     * can see which parts of the rubric their score covers.
+     *
+     * @param \stdClass $score A presenterai_score row.
+     * @return array ['criteria' => list of ['name', 'scoretext', 'feedback'], 'overall' => HTML]
+     */
+    private static function feedback(\stdClass $score): array {
+        $criteria = [];
+        foreach (score_manager::decode_criteria($score) as $criterion) {
+            $assessed = !empty($criterion['assessed']) && $criterion['score'] !== null;
+            $criteria[] = [
+                'name' => format_string((string) $criterion['name']),
+                'scoretext' => $assessed
+                    ? get_string('feedback_criterion_score', 'mod_presenterai', (object) [
+                        'score' => (int) $criterion['score'],
+                        'max' => (int) $criterion['max_score'],
+                    ])
+                    : get_string('feedback_notassessed', 'mod_presenterai'),
+                'feedback' => trim((string) ($criterion['feedback'] ?? '')),
+            ];
+        }
+
+        $overall = trim((string) ($score->feedback ?? ''));
+
+        return [
+            'criteria' => $criteria,
+            'overall' => $overall !== '' ? nl2br(s($overall)) : '',
         ];
     }
 

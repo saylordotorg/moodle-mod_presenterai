@@ -249,4 +249,110 @@ final class attempt_row_test extends \advanced_testcase {
         $this->assertFalse(attempt_row::has_media($this->row(['status' => 'uploading'])));
         $this->assertFalse(attempt_row::has_media($this->row(['status' => 'abandoned'])));
     }
+
+    /**
+     * The learner's row shows the current score and its feedback, teacher row first.
+     *
+     * @return void
+     */
+    public function test_export_score_and_feedback(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $learner = $generator->create_and_enrol($course, 'student');
+        $instance = $generator->create_module('presenterai', ['course' => $course->id]);
+        $context = \context_module::instance($instance->cmid);
+        $rec = $generator->get_plugin_generator('mod_presenterai')->create_recording([
+            'presenteraiid' => $instance->id,
+            'userid' => $learner->id,
+            'storagekey' => 'a.webm',
+        ]);
+        $this->setUser($learner);
+
+        $export = attempt_row::export($rec, $context, (int) $learner->id, time(), true);
+        $this->assertFalse($export['hasscore']);
+        $this->assertSame('', $export['score']);
+        $this->assertFalse($export['hasfeedback']);
+
+        $now = time();
+        $DB->insert_record('presenterai_score', (object) [
+            'recordingid' => $rec->id, 'userid' => $learner->id, 'rubricid' => 0, 'origin' => 'ai',
+            'scores' => json_encode([
+                ['name' => 'Content', 'score' => 5, 'max_score' => 5, 'feedback' => 'AI', 'assessed' => true],
+            ]),
+            'rawsum' => 5, 'rawmax' => 5, 'overallpct' => 100.00, 'feedback' => 'AI overall', 'graderid' => 0,
+            'timecreated' => $now,
+        ]);
+        $DB->insert_record('presenterai_score', (object) [
+            'recordingid' => $rec->id, 'userid' => $learner->id, 'rubricid' => 0, 'origin' => 'teacher',
+            'scores' => json_encode([
+                ['name' => 'Content', 'score' => 3, 'max_score' => 5, 'feedback' => 'Clear <thesis>.', 'assessed' => true],
+                ['name' => 'Delivery', 'score' => null, 'max_score' => 5, 'feedback' => '', 'assessed' => false],
+            ]),
+            'rawsum' => 3, 'rawmax' => 5, 'overallpct' => 60.00, 'feedback' => "Good.\nSlow down.", 'graderid' => 2,
+            'timecreated' => $now - 60,
+        ]);
+
+        $export = attempt_row::export($rec, $context, (int) $learner->id, time(), true);
+        $this->assertTrue($export['hasscore']);
+        $this->assertSame(format_float(60, 2) . '%', $export['score'], 'The teacher row is the current score.');
+        $this->assertTrue($export['hasfeedback']);
+        $this->assertSame([
+            [
+                'name' => 'Content',
+                'scoretext' => get_string('feedback_criterion_score', 'mod_presenterai', (object) ['score' => 3, 'max' => 5]),
+                'feedback' => 'Clear <thesis>.',
+            ],
+            [
+                'name' => 'Delivery',
+                'scoretext' => get_string('feedback_notassessed', 'mod_presenterai'),
+                'feedback' => '',
+            ],
+        ], $export['feedback']['criteria']);
+        $this->assertSame('Good.<br />' . "\n" . 'Slow down.', $export['feedback']['overall']);
+        $this->assertStringContainsString($export['recorded'], $export['feedbackaria']);
+
+        // The template escapes criterion feedback, which is plain text.
+        global $PAGE;
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/attempts', [
+            'hasattempts' => true,
+            'showdownloadoffnote' => false,
+            'rows' => [$export],
+        ]);
+        $this->assertStringContainsString('Clear &lt;thesis&gt;.', $html);
+        $this->assertStringContainsString(format_float(60, 2) . '%', $html);
+    }
+
+    /**
+     * A score that assessed nothing has no percentage, and the cell is empty rather than 0%.
+     *
+     * @return void
+     */
+    public function test_export_score_with_nothing_assessed(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $learner = $generator->create_and_enrol($course, 'student');
+        $instance = $generator->create_module('presenterai', ['course' => $course->id]);
+        $context = \context_module::instance($instance->cmid);
+        $rec = $generator->get_plugin_generator('mod_presenterai')->create_recording([
+            'presenteraiid' => $instance->id,
+            'userid' => $learner->id,
+        ]);
+        $DB->insert_record('presenterai_score', (object) [
+            'recordingid' => $rec->id, 'userid' => $learner->id, 'rubricid' => 0, 'origin' => 'teacher',
+            'scores' => '[]', 'rawsum' => 0, 'rawmax' => 0, 'overallpct' => null, 'feedback' => null, 'graderid' => 2,
+            'timecreated' => time(),
+        ]);
+
+        $export = attempt_row::export($rec, $context, (int) $learner->id, time(), true);
+        $this->assertFalse($export['hasscore']);
+        $this->assertSame('', $export['score']);
+        $this->assertTrue($export['hasfeedback']);
+        $this->assertSame('', $export['feedback']['overall']);
+    }
 }

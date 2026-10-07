@@ -85,5 +85,16 @@ function xmldb_presenterai_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026100601, 'presenterai');
     }
 
+    if ($oldversion < 2026100602) {
+        // The advance deletion message is sent once per deletion date.
+        $table = new xmldb_table('presenterai_recording');
+        $field = new xmldb_field('deletewarnedat', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'mediagonereason');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026100602, 'presenterai');
+    }
+
     return true;
 }
