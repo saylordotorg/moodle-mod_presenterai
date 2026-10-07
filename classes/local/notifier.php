@@ -44,15 +44,17 @@ final class notifier {
             return false;
         }
 
-        $activity = format_string((string) $instance->name, true, ['context' => $ctx]);
+        // The plain-text parts get the name unescaped, so '&' doesn't arrive as '&amp;'.
+        $activity = format_string((string) $instance->name, true, ['context' => $ctx, 'escape' => false]);
         $url = new \moodle_url('/mod/presenterai/view.php', ['id' => $ctx->instanceid]);
         $a = (object) [
             'activity' => $activity,
             'attempt' => (int) $rec->attemptnumber,
             'url' => $url->out(false),
         ];
-        // The HTML body puts the link in an attribute, so it gets the escaped form.
+        // The HTML body puts the link in an attribute, so it gets the escaped forms.
         $ahtml = clone $a;
+        $ahtml->activity = format_string((string) $instance->name, true, ['context' => $ctx]);
         $ahtml->url = $url->out(true);
 
         $message = new \core\message\message();

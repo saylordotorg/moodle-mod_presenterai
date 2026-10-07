@@ -155,8 +155,8 @@ final class score_manager {
      * The caller checks capabilities and that the attempt may be graded; this
      * checks the numbers and that the attempt belongs to the instance, and
      * trusts nothing else it's given. After the row and the recording are
-     * written together, the event fires, the learner is told, the grade is
-     * pushed and completion is updated.
+     * written together, the event fires, the grade is pushed, completion is
+     * updated and then the learner is told.
      *
      * @param \stdClass $rec The presenterai_recording row being scored.
      * @param \stdClass $instance The presenterai row it belongs to.
@@ -215,12 +215,14 @@ final class score_manager {
 
         \mod_presenterai\event\recording_scored::create_from_score($rec, $score, $ctx)->trigger();
 
+        // The grade and completion go first, so a message that fails to send
+        // can never leave the gradebook behind the score.
+        gradebook::update_grades($instance, (int) $rec->userid);
+        self::update_completion($instance, $ctx, (int) $rec->userid);
+
         if ($graderid !== (int) $rec->userid) {
             notifier::recording_scored($rec, $instance, $ctx, $score);
         }
-
-        gradebook::update_grades($instance, (int) $rec->userid);
-        self::update_completion($instance, $ctx, (int) $rec->userid);
 
         return $score;
     }

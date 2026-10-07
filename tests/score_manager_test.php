@@ -188,6 +188,38 @@ final class score_manager_test extends \advanced_testcase {
     }
 
     /**
+     * An activity name with '&' reads as '&' in the plain-text parts and stays escaped in the HTML body.
+     *
+     * @return void
+     */
+    public function test_message_escapes_name_only_in_html(): void {
+        global $DB;
+
+        $this->preventResetByRollback();
+        $DB->set_field('presenterai', 'name', 'Q&A pitch', ['id' => $this->instance->id]);
+        $this->instance->name = 'Q&A pitch';
+        $rec = $this->recording();
+        $messages = $this->redirectMessages();
+
+        score_manager::save_teacher_score(
+            $rec,
+            $this->instance,
+            $this->ctx,
+            (int) $this->teacher->id,
+            0,
+            self::criteria(),
+            ''
+        );
+
+        $sent = $messages->get_messages();
+        $this->assertCount(1, $sent);
+        $this->assertStringContainsString('Q&A pitch', $sent[0]->subject);
+        $this->assertStringContainsString('Q&A pitch', $sent[0]->fullmessage);
+        $this->assertStringNotContainsString('&amp;', $sent[0]->fullmessage);
+        $this->assertStringContainsString('Q&amp;A pitch', $sent[0]->fullmessagehtml);
+    }
+
+    /**
      * Nobody is told about a score they entered on their own attempt, and a suspended learner isn't messaged.
      *
      * @return void

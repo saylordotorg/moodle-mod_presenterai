@@ -41,7 +41,8 @@
     * showdownloadoffnote - Whether to render the download-off note.
     * rows - List of attempt_row::export() results, including:
       hasscore, score, hasfeedback, feedbackaria and
-      feedback (criteria: list of name, scoretext and feedback; overall: HTML).
+      feedback (criteria: list of name (HTML from format_string), scoretext and
+      feedback; overall: HTML).
 
     Example context (json):
     {
@@ -152,7 +153,7 @@
                     {{#feedback}}
                     <ul class="mod-presenterai-feedback-criteria list-unstyled mt-2">
                         {{#criteria}}
-                        <li class="mb-2"><strong>{{name}}</strong>: {{scoretext}}{{#feedback}}<br>{{feedback}}{{/feedback}}</li>
+                        <li class="mb-2"><strong>{{{name}}}</strong>: {{scoretext}}{{#feedback}}<br>{{feedback}}{{/feedback}}</li>
                         {{/criteria}}
                     </ul>
                     {{#overall}}

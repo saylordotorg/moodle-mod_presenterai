@@ -177,6 +177,44 @@ final class template_a11y_test extends \advanced_testcase {
     }
 
     /**
+     * A criterion name with '&', read back from a real score row, is escaped once in the learner's feedback.
+     *
+     * @return void
+     */
+    public function test_feedback_criterion_name_escaped_once(): void {
+        global $PAGE;
+
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $learner = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $instance = $this->getDataGenerator()->create_module('presenterai', ['course' => $course->id]);
+        $ctx = \context_module::instance($instance->cmid);
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $rec = $generator->create_recording(['presenteraiid' => $instance->id, 'userid' => $learner->id,
+            'storagekey' => 'a.webm', 'status' => 'scored']);
+        $generator->create_score([
+            'recordingid' => $rec->id,
+            'scores' => json_encode([
+                ['name' => 'Delivery & Fluency', 'score' => 4, 'max_score' => 5, 'feedback' => 'Fish & chips', 'assessed' => true],
+            ]),
+            'rawsum' => 4,
+            'rawmax' => 5,
+            'overallpct' => 80,
+        ]);
+
+        $row = \mod_presenterai\output\attempt_row::export($rec, $ctx, (int) $learner->id, time(), false);
+        $PAGE->set_context($ctx);
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/attempts', [
+            'hasattempts' => true,
+            'showdownloadoffnote' => false,
+            'rows' => [$row],
+        ]);
+        $this->assertStringContainsString('Delivery &amp; Fluency', $html);
+        $this->assertStringContainsString('Fish &amp; chips', $html);
+        $this->assertStringNotContainsString('&amp;amp;', $html);
+    }
+
+    /**
      * The callout is a heading and a paragraph, with no note or alert role (rules 4 and 5).
      *
      * @return void

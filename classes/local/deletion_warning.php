@@ -125,7 +125,8 @@ final class deletion_warning {
 
         $ctx = \context_module::instance((int) $cm->id);
         $url = new \moodle_url('/mod/presenterai/view.php', ['id' => $cm->id]);
-        $activity = format_string($instance->name, true, ['context' => $ctx]);
+        // The plain-text parts get the name unescaped, so '&' doesn't arrive as '&amp;'.
+        $activity = format_string($instance->name, true, ['context' => $ctx, 'escape' => false]);
 
         $a = (object) [
             'activity' => $activity,
@@ -148,7 +149,9 @@ final class deletion_warning {
         $message->fullmessage = get_string('message_deletionwarning_body', 'mod_presenterai', $a) . "\n\n"
             . $downloadtext . "\n\n" . $url->out(false);
         $message->fullmessageformat = FORMAT_PLAIN;
-        $message->fullmessagehtml = get_string('message_deletionwarning_bodyhtml', 'mod_presenterai', $a)
+        $ahtml = clone $a;
+        $ahtml->activity = format_string($instance->name, true, ['context' => $ctx]);
+        $message->fullmessagehtml = get_string('message_deletionwarning_bodyhtml', 'mod_presenterai', $ahtml)
             . \html_writer::tag('p', s($downloadtext));
         $message->smallmessage = get_string('message_deletionwarning_small', 'mod_presenterai', $a);
         $message->contexturl = $url->out(false);

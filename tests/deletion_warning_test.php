@@ -117,6 +117,27 @@ final class deletion_warning_test extends \advanced_testcase {
     }
 
     /**
+     * An activity name with '&' reads as '&' in the plain-text parts and stays escaped in the HTML body.
+     *
+     * @return void
+     */
+    public function test_name_escaped_only_in_html(): void {
+        global $DB;
+
+        $DB->set_field('presenterai', 'name', 'Q&A pitch', ['id' => $this->instance->id]);
+        $now = time();
+        $this->recording($now + 2 * DAYSECS);
+
+        $sink = $this->redirectMessages();
+        $this->assertSame(1, deletion_warning::send_due($now));
+        $messages = $sink->get_messages();
+        $this->assertCount(1, $messages);
+        $this->assertStringContainsString('Q&A pitch', $messages[0]->subject);
+        $this->assertStringNotContainsString('&amp;', $messages[0]->fullmessage);
+        $this->assertStringContainsString('Q&amp;A pitch', $messages[0]->fullmessagehtml);
+    }
+
+    /**
      * Nothing is sent before the window, without a date, without media, while uploading, or with the setting at 0.
      *
      * @return void
