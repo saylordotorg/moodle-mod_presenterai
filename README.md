@@ -7,7 +7,15 @@ An activity module in which a learner records a video or audio presentation in t
 > There is no tagged release, no `install.xml` you should trust to be stable, and no upgrade path between commits. The plan in [`docs/IMPLEMENTATION-PLAN.md`](docs/IMPLEMENTATION-PLAN.md) describes what is being built and in what order. This README describes the plugin as it is intended to work at version 1.0, so that a Moodle administrator can decide early whether it is worth watching. Where something is not built yet, this file says so.
 
 >
-> **Built so far (phase 1, on branch `phase1-complete`):** recording in the browser with optional PDF slides, chunked upload to Moodle file storage or a direct upload to an S3 compatible bucket, synced playback, learner download and delete governed by capabilities, the deletion date shown against every attempt, topics with an optional PDF brief, a storage check page that measures the upload chunk size, the hourly cleanup task, `cli/apply_retention.php`, and backup and restore of the activity and its topics. **Phase 2 (on branch `phase2-complete`)** adds teacher scoring against a rubric, the gradebook, outcomes, completion rules, the submissions report, learner score display, messages, the privacy provider, course reset and learner work in course backups; see the section below. **Not built yet:** transcription, scoring and every other AI feature (phase 3).
+> **Built so far (phase 1, on branch `phase1-complete`):** recording in the browser with optional PDF slides, chunked upload to Moodle file storage or a direct upload to an S3 compatible bucket, synced playback, learner download and delete governed by capabilities, the deletion date shown against every attempt, topics with an optional PDF brief, a storage check page that measures the upload chunk size, the hourly cleanup task, `cli/apply_retention.php`, and backup and restore of the activity and its topics. **Phase 2 (on branch `phase2-complete`)** adds teacher scoring against a rubric, the gradebook, outcomes, completion rules, the submissions report, learner score display, messages, the privacy provider, course reset and learner work in course backups; see the section below. **Phase 3 (on branch `phase3-complete`)** adds transcription, AI scoring, slide design feedback and body language feedback behind the visual feedback gate; see "What's new in 0.4.0" below for the last changes before the first release.
+
+## What's new in 0.4.0
+
+- **Teacher review before release** (new, off by default). An activity can hold the AI's score and feedback until a teacher has checked them. See "Teacher review before release" below. DECISIONS.md D28.
+- **Long videos transcribe.** OpenAI's transcription service takes files of up to 25 MB, and a long video used to fail as too large. The browser now records a second, audio only track beside every video recording, at about 32 kbps (roughly 100 minutes fits under 25 MB), and transcription uses that. For older recordings, or a browser that couldn't record both, an optional path to ffmpeg lets the server take the audio out of the video, and cut a very long recording into parts that each fit.
+- **Moodle core AI keeps learner content in core** (DECISIONS.md D26). When scoring runs on core AI, slide design feedback, body language feedback and the feedback judge are off, even if the site also holds a vendor key. Transcription is the one thing still sent out, because core AI can't take audio.
+- **Failed attempts** (DECISIONS.md D27, confirmed rather than changed). When AI scoring fails for good, the attempt doesn't use up one of the learner's attempts, and a teacher can still grade it by hand or rescore it from the grading page.
+- **Automated code review.** Pull requests get the same Claude code review SOLA uses, and `@claude` in a comment asks for help.
 
 ## Demo video
 
@@ -38,6 +46,7 @@ An activity module in which a learner records a video or audio presentation in t
 - Ghostscript, for rendering PDF slide decks. This is core's existing `$CFG->pathtogs` setting, which `mod_assign`'s annotate PDF feature already depends on. Without it, slide decks are unavailable and everything else works.
 - A modern browser with `MediaRecorder` support, for recording.
 - For AI features, at least one of: Moodle's core AI subsystem configured with a provider, or an API key for Claude, OpenAI or Gemini, plus a Whisper compatible speech to text endpoint. See the AI section below, which explains why those are not interchangeable.
+- Optional: ffmpeg on the server (the "Path to ffmpeg" setting). Without it everything works; with it, older or unusual video recordings that are over OpenAI's 25 MB transcription limit can still be transcribed. See "Transcribing long recordings" below.
 
 ## Storage
 
@@ -72,13 +81,42 @@ Phase 2 has no AI. Every score is entered by a teacher.
 - **Course reset.** An option on the reset form deletes every recording, its media and its scores in the course, and resets grades. Topics, rubrics and settings stay. AI spend rows are kept without the learner's name so totals still add up.
 - **Backup of learner work.** A backup with user data carries attempts, scores and the activity's rubrics. On Moodle file storage the media bytes travel with it. On S3 only the object keys travel, and only a restore on the same site keeps them; elsewhere the attempts arrive without media. When two attempts name the same S3 object after a same-site restore, the object is deleted only when the last attempt naming it goes.
 
+## Teacher review before release
+
+Off by default, and switched on per activity with "Review AI feedback before learners see it" under the AI feedback heading. Sites with no teacher in the loop, Saylor among them, leave it off.
+
+When it's on, the AI still scores each recording, but the score and all of its feedback, including the body language summary and the tips, are held. Until a teacher releases the attempt:
+
+- the learner sees "Awaiting review" and the sentence "Your feedback is being reviewed by your teacher." in place of their score and feedback;
+- nothing goes to the gradebook, completion that needs a grade, a passing grade or a minimum score waits, and the learner isn't sent a message.
+
+On the Submissions page each held attempt is marked "awaiting review", with a count above the table and a "Release all awaiting review" button that asks for confirmation and releases every held attempt of the learners you can see in the current group. On an attempt's grading page you can release the AI's score and feedback as they are with "Release to learner", or change them in the usual form, whose button reads "Save and release": a teacher's own grade is always released when it's saved. Releasing pushes the grade, updates completion, sends the learner their message and logs a "Feedback released" event.
+
+Rescoring an attempt puts it back in review, and takes its grade out of the gradebook until it's released again, as `mod_assign` does with marking workflow. Turning the setting off releases everything that's held straight away. Releasing needs the existing `mod/presenterai:grade` capability; there's no separate one, because a grader can already release by saving their own grade. A held score is included in a privacy export, marked as not yet released.
+
+## Transcribing long recordings
+
+OpenAI's transcription endpoint accepts files of up to 25 MB. To stay under it, the recorder runs a second, audio only recorder on the same microphone during every video recording, at about 32 kbps (Opus where the browser supports it), and uploads it beside the video. Transcription then uses, in order:
+
+1. the separate audio track, when the attempt has one;
+2. the recording itself, for an audio only activity, which is small already and isn't recorded twice;
+3. for a video with no audio track (recorded before 0.4.0, or by a browser that couldn't run two recorders): the audio taken out of the video by ffmpeg, when an administrator has set "Path to ffmpeg";
+4. the video itself, when it's under 25 MB;
+5. otherwise the attempt fails as too large, which the settings page warns about in advance.
+
+When the file chosen is still over 25 MB (a very long recording) and ffmpeg is available, it's cut into parts that each fit, transcribed in order and joined. Without ffmpeg the attempt fails as too large rather than being sent. A self hosted transcription endpoint has no such limit, so files go to it whole.
+
+The audio track is stored, deleted, pruned, exported, backed up and restored with the video, on both storage backends. It's never offered for playback or download.
+
 ## AI back ends
 
 You can point the scoring step at Moodle core's AI subsystem, or at Claude, OpenAI or Gemini configured directly in the plugin.
 
 **Read this part before choosing core AI.** Moodle core's AI subsystem, on every version from 4.5 through the current development branch, provides text actions only. It cannot transcribe audio and it cannot accept an image. That is not a configuration gap, there is no action class that takes a file or an image, and a plugin cannot add one without patching core.
 
-So: choosing Moodle core AI chooses the back end for **rubric scoring and written feedback**. Transcription always goes to a Whisper compatible speech to text endpoint you configure in this plugin, and body language feedback always goes to a vision capable model you configure in this plugin. If you configure core AI and nothing else, the activity has no way to produce a transcript, so it has no way to produce a score, and it will tell you that on the settings page rather than failing when a learner submits.
+So: choosing Moodle core AI chooses the back end for **rubric scoring and written feedback**, and it also keeps everything else inside core. On the core route there's no body language feedback, no slide design feedback and no second model checking the feedback, even when a Claude, OpenAI or Gemini key is also set: learners are scored on what they said and on the text of their slides (DECISIONS.md D26). The settings page lists what's off. Transcription is the one exception: it always goes to a Whisper compatible speech to text endpoint you configure in this plugin, because core can't take audio. If you configure core AI and nothing else, the activity has no way to produce a transcript, so it has no way to produce a score, and it will tell you that on the settings page rather than failing when a learner submits.
+
+On the other routes, body language and slide design feedback use a vision capable model you configure in this plugin.
 
 Other things worth knowing:
 
@@ -90,7 +128,7 @@ Every AI call is logged with the route, provider, model, token counts, image cou
 
 ## Privacy
 
-The plugin stores, per attempt: the media (until deleted), the slide deck, the still frame sheet on video attempts, the transcript, the per criterion scores and feedback, and the model's observation about body language. All of it is covered by the privacy API: exported on a subject access request, deleted on an erasure request, and removed with the course or the activity. Deleting a learner's data purges the storage objects before the database rows, in that order, so a deleted row never leaves an orphaned object.
+The plugin stores, per attempt: the media (until deleted), the separate audio track on video attempts, the slide deck, the still frame sheet on video attempts, the transcript, the per criterion scores and feedback, and the model's observation about body language. All of it is covered by the privacy API: exported on a subject access request, deleted on an erasure request, and removed with the course or the activity. Deleting a learner's data purges the storage objects before the database rows, in that order, so a deleted row never leaves an orphaned object.
 
 Where the media leaves your site: to your chosen storage backend, to your chosen speech to text endpoint, and to your chosen AI provider. Nothing is sent to Saylor.
 
@@ -106,7 +144,7 @@ Not yet. There is no release. When there is, the usual two routes will work: unp
 
 ## Contributing
 
-Issues and pull requests are welcome. CI runs `moodle-plugin-ci` (PHPUnit, Behat, phpcs, phpdoc, grunt) against Moodle 4.5 and main on PHP 8.1 through 8.3, and a pull request that does not pass it will not be merged. New behaviour needs a test; the test suite is the acceptance gate for every phase in the implementation plan, not a formality after it.
+Issues and pull requests are welcome. CI runs `moodle-plugin-ci` (PHPUnit, Behat, phpcs, phpdoc, grunt) against Moodle 4.5 and main on PHP 8.1 through 8.3, and a pull request that does not pass it will not be merged. Every pull request that changes code also gets an automated Claude code review, and mentioning `@claude` in a comment asks Claude about the change; both need the repository's `ANTHROPIC_API_KEY` secret. New behavior needs a test; the test suite is the acceptance gate for every phase in the implementation plan, not a formality after it.
 
 ## Licence
 
