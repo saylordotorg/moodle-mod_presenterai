@@ -20,6 +20,7 @@ use core_external\external_api;
 use core_external\external_function_parameters;
 use core_external\external_single_structure;
 use core_external\external_value;
+use mod_presenterai\local\attempt_events;
 use mod_presenterai\local\recording_manager;
 
 /**
@@ -29,6 +30,9 @@ use mod_presenterai\local\recording_manager;
  * the row already exists and is updated (D16). No key is accepted: the store
  * is asked about the key the row holds, and the store's answer, not the
  * browser's, is the size recorded.
+ *
+ * The submitted event and the completion update follow only the call that
+ * moves the attempt out of uploading, so a retried finalize never repeats them.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -77,13 +81,14 @@ class finalize_recording extends external_api {
             'slidetimeline' => $slidetimeline,
         ]);
 
-        [$rec, $instance, $course, , $context] = recording_manager::load((int) $params['recordingid']);
+        [$rec, $instance, $course, $cm, $context] = recording_manager::load((int) $params['recordingid']);
         self::validate_context($context);
         require_capability('mod/presenterai:submit', $context);
         if ((int) $rec->userid !== (int) $USER->id) {
             throw new \moodle_exception('error:recordingnotfound', 'mod_presenterai');
         }
 
+        $wasuploading = ((string) $rec->status === recording_manager::STATUS_UPLOADING);
         $rec = recording_manager::finalize(
             $rec,
             $instance,
@@ -94,6 +99,10 @@ class finalize_recording extends external_api {
             (string) $params['slidetimeline'],
             (string) $params['attempttoken']
         );
+
+        if ($wasuploading && (string) $rec->status !== recording_manager::STATUS_UPLOADING) {
+            attempt_events::submitted($rec, $course, $cm, $context);
+        }
 
         return [
             'recordingid' => (int) $rec->id,

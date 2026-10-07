@@ -187,4 +187,56 @@ final class external_finalize_recording_test extends \advanced_testcase {
         $this->expectException(\required_capability_exception::class);
         finalize_recording::execute($recordingid, $this->token);
     }
+
+    /**
+     * A refused finalize fires no submitted event; the one that succeeds fires exactly one.
+     *
+     * @return void
+     */
+    public function test_submitted_event_only_on_success(): void {
+        $gen = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $first = $gen->create_topic(['presenteraiid' => $this->instance->id, 'title' => 'First']);
+        $gen->create_topic(['presenteraiid' => $this->instance->id, 'title' => 'Second']);
+        $recordingid = $this->uploaded_attempt(str_repeat('spoken words ', 50));
+        $sink = $this->redirectEvents();
+
+        try {
+            finalize_recording::execute($recordingid, $this->token, 0, 30, '');
+            $this->fail('A recording with no topic was accepted on an activity with several.');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:topicrequired', $e->errorcode);
+        }
+        finalize_recording::execute($recordingid, $this->token, (int) $first->id, 30, '');
+        finalize_recording::execute($recordingid, $this->token, (int) $first->id, 30, '');
+
+        $submitted = array_filter($sink->get_events(), function ($event): bool {
+            return $event instanceof \mod_presenterai\event\recording_submitted;
+        });
+        $this->assertCount(1, $submitted);
+    }
+
+    /**
+     * Finalizing updates the learner's stored completion for completionsubmit.
+     *
+     * @return void
+     */
+    public function test_finalize_updates_completion(): void {
+        global $DB;
+
+        $DB->set_field('course', 'enablecompletion', 1, ['id' => $this->course->id]);
+        $this->instance = $this->getDataGenerator()->create_module('presenterai', [
+            'course' => $this->course->id,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+            'completionsubmit' => 1,
+        ]);
+        $course = get_course($this->course->id);
+        $cm = get_fast_modinfo($course)->get_cm($this->instance->cmid);
+        $completion = new \completion_info($course);
+        $this->assertEquals(COMPLETION_INCOMPLETE, $completion->get_data($cm, false, $this->alice->id)->completionstate);
+
+        $recordingid = $this->uploaded_attempt(str_repeat('spoken words ', 50));
+        finalize_recording::execute($recordingid, $this->token, 0, 30, '');
+
+        $this->assertEquals(COMPLETION_COMPLETE, $completion->get_data($cm, false, $this->alice->id)->completionstate);
+    }
 }
