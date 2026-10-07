@@ -241,8 +241,15 @@ jobs:
             # would block every future fix to the reviewer. Detect that case
             # specifically and pass with a notice; anything else is a real
             # "we cannot tell whether the review ran", which must fail.
+            #
+            # grep reads the whole list rather than quitting at the first match
+            # (no -q). Under set -o pipefail, grep -q exiting early sends gh a
+            # SIGPIPE on its next page, the pipeline then reports failure, and
+            # the expected skip was failed as unexpected. That happened on this
+            # repository's PR #3, where the workflow sorts near the top of a
+            # 160 file list. SOLA's copy has the same line.
             if gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename' 2>/dev/null \
-                 | grep -qx '.github/workflows/claude-code-review.yml'; then
+                 | grep -x '.github/workflows/claude-code-review.yml' >/dev/null; then
               echo "::notice::No execution log because this PR edits the review workflow itself," \
                    "so the action skipped with a workflow-validation error. That is expected and" \
                    "documented. The review, and this gate, take effect on the next PR after merge." \
