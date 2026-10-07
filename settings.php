@@ -218,8 +218,10 @@ if ($ADMIN->fulltree) {
     ));
 
     // AI services. DECISIONS.md D6 and plan section 5: the route chooses the
-    // back end for scoring only; transcription and body language always use
-    // the plugin's own keys below, which is what the route's description says.
+    // back end for scoring. Transcription always uses the plugin's own keys
+    // below. Body language, slide design and the judge use them too, except
+    // when scoring runs on core AI, where they're off (D26). The route's
+    // description says both.
 
     $settings->add(new admin_setting_heading(
         'mod_presenterai/aiheading',
@@ -338,8 +340,8 @@ if ($ADMIN->fulltree) {
     ));
 
     // Each vendor's fields are hidden when the route names a different one.
-    // Under auto and core every keyed vendor can still be used (core never
-    // serves vision or transcription), so nothing is hidden for those.
+    // Under auto every keyed vendor can still be used. Under core (D26) only
+    // the OpenAI key is, for transcription, so the rest are hidden there.
     $vendorfields = [
         'claude' => ['claudeapikey', 'claudemodel', 'claudejudgemodel'],
         'openai' => ['openaiapikey', 'openaimodel', 'openaijudgemodel'],
@@ -349,7 +351,11 @@ if ($ADMIN->fulltree) {
     foreach ($vendorfields as $vendor => $fields) {
         $othervendors = array_diff(array_keys($vendorfields), [$vendor]);
         foreach ($fields as $field) {
-            $settings->hide_if('mod_presenterai/' . $field, 'mod_presenterai/airoute', 'in', implode('|', $othervendors));
+            $hideunder = $othervendors;
+            if ($field !== 'openaiapikey') {
+                $hideunder[] = 'core';
+            }
+            $settings->hide_if('mod_presenterai/' . $field, 'mod_presenterai/airoute', 'in', implode('|', $hideunder));
         }
     }
 

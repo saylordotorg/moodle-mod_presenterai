@@ -136,23 +136,58 @@ final class ai_route_resolver_test extends \advanced_testcase {
     }
 
     /**
-     * Vision, slide vision and the judge never use core, even when core is
-     * the chosen route; they use a keyed vendor if one exists.
+     * Vision, slide vision and the judge never use core, and never fall back
+     * to a vendor key when scoring runs on core (D26).
      *
      * @return void
      */
     public function test_vision_never_core(): void {
+        $purposes = [route_resolver::PURPOSE_VISION, route_resolver::PURPOSE_SLIDE_VISION, route_resolver::PURPOSE_JUDGE];
         self::core_on();
-        foreach ([route_resolver::PURPOSE_VISION, route_resolver::PURPOSE_SLIDE_VISION, route_resolver::PURPOSE_JUDGE] as $p) {
+        foreach ($purposes as $p) {
             $this->assertNull(route_resolver::client_for($p), $p);
         }
         set_config('airoute', 'core', 'mod_presenterai');
-        $this->assertNull(route_resolver::client_for(route_resolver::PURPOSE_VISION));
-
+        set_config('claudeapikey', 'c', 'mod_presenterai');
         set_config('openaiapikey', 'o', 'mod_presenterai');
+        set_config('geminiapikey', 'g', 'mod_presenterai');
+        set_config('compatibleendpoint', 'https://llm.example.com/v1', 'mod_presenterai');
+        set_config('compatiblemodel', 'big', 'mod_presenterai');
         $this->assertSame('core', self::scoring());
-        $this->assertSame('openai', route_resolver::client_for(route_resolver::PURPOSE_VISION)->route());
-        $this->assertSame('openai', route_resolver::client_for(route_resolver::PURPOSE_SLIDE_VISION)->route());
+        $this->assertTrue(route_resolver::scoring_on_core());
+        foreach ($purposes as $p) {
+            $this->assertNull(route_resolver::client_for($p), $p . ' fell back to a vendor key under core.');
+        }
+
+        // Core chosen but unavailable: scoring is off, and still nothing falls back.
+        core_ai_client::set_test_processor(null);
+        $this->assertSame('', self::scoring());
+        foreach ($purposes as $p) {
+            $this->assertNull(route_resolver::client_for($p), $p);
+        }
+    }
+
+    /**
+     * Under auto, a site whose scoring settles on core gets no keyed vision
+     * either, even when a judge only model would build (D26).
+     *
+     * @return void
+     */
+    public function test_auto_settling_on_core_blocks_vision(): void {
+        self::core_on();
+        // A compatible endpoint with a judge model but no scoring model: the
+        // judge would build, scoring falls through to core.
+        set_config('compatibleendpoint', 'https://llm.example.com/v1', 'mod_presenterai');
+        set_config('compatiblejudgemodel', 'small', 'mod_presenterai');
+        $this->assertSame('core', self::scoring());
+        $this->assertNull(route_resolver::client_for(route_resolver::PURPOSE_JUDGE));
+
+        // With a keyed scoring route, auto serves the other purposes as before.
+        set_config('compatiblemodel', 'big', 'mod_presenterai');
+        $this->assertSame('compatible', self::scoring());
+        $this->assertFalse(route_resolver::scoring_on_core());
+        $this->assertSame('compatible', route_resolver::client_for(route_resolver::PURPOSE_JUDGE)->route());
+        $this->assertSame('compatible', route_resolver::client_for(route_resolver::PURPOSE_SLIDE_VISION)->route());
     }
 
     /**
@@ -176,7 +211,8 @@ final class ai_route_resolver_test extends \advanced_testcase {
     }
 
     /**
-     * Scoring on core AI reports no body language feedback, even with a vision key (design 3.6).
+     * Scoring on core AI reports no body language and no slide design
+     * feedback, even with a vendor key set (design 3.6, D26).
      *
      * @return void
      */
@@ -185,11 +221,21 @@ final class ai_route_resolver_test extends \advanced_testcase {
         set_config('airoute', 'core', 'mod_presenterai');
         set_config('openaiapikey', 'o', 'mod_presenterai');
 
-        $this->assertNotNull(route_resolver::client_for(route_resolver::PURPOSE_VISION), 'Slide vision may still use the key.');
+        $this->assertNull(route_resolver::client_for(route_resolver::PURPOSE_VISION));
+        $this->assertNull(route_resolver::client_for(route_resolver::PURPOSE_SLIDE_VISION));
         $readiness = route_resolver::readiness();
         $this->assertSame('core', $readiness['route']);
         $this->assertFalse($readiness['vision']);
+        $this->assertFalse($readiness['slidevision']);
+        $this->assertTrue($readiness['transcription'], 'Transcription still uses the OpenAI key.');
         $this->assertContains(get_string('aireadiness_novisioncore', 'mod_presenterai'), $readiness['messages']);
+        $this->assertContains(get_string('aireadiness_noslidevisioncore', 'mod_presenterai'), $readiness['messages']);
+
+        // On a keyed route neither message appears and slide vision is there.
+        set_config('airoute', 'openai', 'mod_presenterai');
+        $readiness = route_resolver::readiness();
+        $this->assertTrue($readiness['slidevision']);
+        $this->assertNotContains(get_string('aireadiness_noslidevisioncore', 'mod_presenterai'), $readiness['messages']);
     }
 
     /**

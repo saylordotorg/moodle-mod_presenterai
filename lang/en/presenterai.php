@@ -31,9 +31,10 @@ $string['aiheading_inst'] = 'AI feedback';
 $string['aireadiness'] = 'Current state';
 $string['aireadiness_blocked'] = 'Scoring is set up but transcription is not, so activities will refuse new recordings until a transcription service is added.';
 $string['aireadiness_noscoring'] = 'Scoring: nothing is set up, so recordings are graded by hand.';
+$string['aireadiness_noslidevisioncore'] = 'Slide design feedback: off while scoring runs on Moodle core AI. Slide images aren\'t sent to any other service, so learners get their score without a slide design comment.';
 $string['aireadiness_notranscription'] = 'Transcription: not set up. Add an OpenAI key or a transcription endpoint.';
 $string['aireadiness_novision'] = 'Body language feedback: not available. It needs a Claude, OpenAI or Gemini key or a compatible endpoint, because Moodle core AI can\'t take images.';
-$string['aireadiness_novisioncore'] = 'Body language feedback: not available while scoring runs on Moodle core AI, because core keeps every prompt it sends and the frame notes must not be kept.';
+$string['aireadiness_novisioncore'] = 'Body language feedback: off while scoring runs on Moodle core AI. Frames aren\'t sent to any other service, even when a provider key is set below, and core can\'t take images.';
 $string['aireadiness_routeunconfigured'] = 'Scoring: {$a} is chosen but isn\'t set up, so scoring is unavailable.';
 $string['aireadiness_scoring'] = 'Scoring: {$a}.';
 $string['aireadiness_sttsizelimit'] = 'Transcription: OpenAI takes files of up to 25 MB, and at this site\'s recording quality a video longer than about {$a} minute(s) is bigger than that, so it can\'t be transcribed or scored by AI. Lower the recording quality, shorten the longest recording allowed, or use a self hosted transcription endpoint.';
@@ -46,7 +47,7 @@ $string['airoute_compatible'] = 'OpenAI compatible endpoint';
 $string['airoute_core'] = 'Moodle core AI (scoring only)';
 $string['airoute_desc'] = 'Which service scores a transcript against the rubric. Automatic uses the first of these that is set up: a Claude key, an OpenAI key, a Gemini key, an OpenAI compatible endpoint, then Moodle core AI.
 
-Moodle core AI covers scoring only. Core AI has no way to take audio or images, so transcription and body language feedback always use the plugin\'s own provider keys below, whatever is chosen here. A site with only Moodle core AI set up can\'t transcribe a recording and so can\'t score one either: activities then refuse new recordings rather than let them fail. It also gets no body language feedback.
+Moodle core AI covers scoring only. When scoring runs on Moodle core AI, learner content isn\'t sent to any provider key below for anything else: there\'s no body language feedback, no slide design feedback and no second model checking the feedback, and learners are scored on what they said and on their slide text. Transcription is the one exception. Core AI can\'t take audio, so recordings are still sent to the transcription service set up below. A site with only Moodle core AI set up can\'t transcribe a recording and so can\'t score one either: activities then refuse new recordings rather than let them fail.
 
 A service chosen by name that has no key isn\'t replaced by another one. Scoring is unavailable until it is set up.';
 $string['airoute_gemini'] = 'Gemini (Google)';
@@ -624,7 +625,7 @@ $string['slide_prev'] = 'Previous slide';
 $string['slidesenabled'] = 'Slides';
 $string['slidesenabled_help'] = 'Learners may present a PDF slide deck and advance it while recording. Playback re-syncs the slides with the recording. A deck is optional: a learner can still record without one.';
 $string['slidevision'] = 'Slide design feedback';
-$string['slidevision_help'] = 'Sends images of the learner\'s slides to the AI service for one short comment on their visual design, added to the overall feedback. Only used when the activity has slides.';
+$string['slidevision_help'] = 'Sends images of the learner\'s slides to the AI service for one short comment on their visual design, added to the overall feedback. Only used when the activity has slides. It\'s off on a site that scores with Moodle core AI, because slide images are never sent to another service there.';
 $string['speakinglevel'] = 'Speaking level';
 $string['speakinglevel_help'] = 'Sets the built-in criteria and the tone of the feedback. The English as a second language levels weigh pronunciation, fluency, grammar and vocabulary for that level and do not mark down an accent. A rubric chosen below, or defined for this activity or course, replaces the built-in criteria but keeps the tone.';
 $string['status_abandoned'] = 'Not submitted';
@@ -666,7 +667,7 @@ $string['trustedhosts'] = 'Trusted hosts';
 $string['trustedhosts_desc'] = 'Hosts allowed to use http or a private address, one per line, for a self hosted service on your own network: for example http://whisper.internal:8000. A scheme or port given must match exactly. Moodle\'s own cURL blocked hosts setting still applies, so a private address may need allowing there too.';
 $string['valuenotnegative'] = 'Enter 0 or a positive number.';
 $string['videovision'] = 'Body language feedback';
-$string['videovision_help'] = 'When on, six still frames are taken from each video recording in the browser and sent to an AI model, which describes the speaker\'s hands, posture, gaze and framing. Learners are told this before they record. The two body language criteria are scored from that description, and a short summary, checked before it is shown, is added to the learner\'s feedback. Not available for audio only activities.';
+$string['videovision_help'] = 'When on, six still frames are taken from each video recording in the browser and sent to an AI model, which describes the speaker\'s hands, posture, gaze and framing. Learners are told this before they record. The two body language criteria are scored from that description, and a short summary, checked before it is shown, is added to the learner\'s feedback. Not available for audio only activities. On a site that scores with Moodle core AI the frames aren\'t analyzed, so learners get no body language feedback there.';
 $string['viewsubmissions'] = 'View submissions';
 $string['visual_criterion_withheld'] = 'The written comment for this criterion was not shown, because an automatic check found it did not meet the standard for feedback about a person. This criterion has been left out of your score rather than counted against you.';
 $string['visual_disclosure'] = 'Six still frames from this recording are sent to an AI model to give you feedback on your body language and camera presence.';

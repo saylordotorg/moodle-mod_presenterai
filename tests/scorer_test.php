@@ -942,4 +942,61 @@ final class scorer_test extends \advanced_testcase {
         $this->assertStringContainsString('- Pronunciation & Intelligibility:', $system);
         $this->assertSame('scored', $this->reload((int) $rec->id)->status);
     }
+
+    /**
+     * On the core route a video attempt with body language and slide design
+     * on is scored from the transcript alone: no vision, slide vision or
+     * judge call, nothing withheld, and the learner told the frames weren't
+     * analyzed (D26). Vendor keys set on the site make no difference.
+     *
+     * @return void
+     */
+    public function test_core_route_scores_without_vision_or_judge(): void {
+        global $DB;
+
+        set_config('airoute', 'core', 'mod_presenterai');
+        set_config('claudeapikey', 'c', 'mod_presenterai');
+        set_config('openaiapikey', 'o', 'mod_presenterai');
+        $prompts = [];
+        \mod_presenterai\local\ai\core_ai_client::set_test_processor(
+            function (int $contextid, int $userid, string $prompt) use (&$prompts): array {
+                $prompts[] = $prompt;
+                return ['success' => true, 'text' => self::default_answer(), 'errorcode' => 0];
+            }
+        );
+        route_resolver::set_test_stt(self::fake_stt([self::TRANSCRIPT]));
+
+        $instance = $this->getDataGenerator()->create_module('presenterai', [
+            'course' => $this->course->id,
+            'grade' => 100,
+            'videovision' => 1,
+            'slidesenabled' => 1,
+            'slidevision' => 1,
+        ]);
+        $this->instance = $instance;
+        $this->ctx = \context_module::instance($instance->cmid);
+        $rec = $this->recording_with_media(['presenteraiid' => $instance->id, 'frameskey' => 'sheet.jpg']);
+
+        try {
+            $this->score((int) $rec->id);
+        } finally {
+            \mod_presenterai\local\ai\core_ai_client::set_test_processor(null);
+        }
+
+        $after = $this->reload((int) $rec->id);
+        $this->assertSame('scored', $after->status);
+        $this->assertCount(1, $prompts, 'Only the scoring call went to core.');
+        $score = $DB->get_record('presenterai_score', ['recordingid' => $rec->id], '*', MUST_EXIST);
+        $this->assertSame('notanalysed', $score->visualstatus);
+        $this->assertNull($score->visualsummary);
+        $this->assertStringNotContainsString(get_string('feedback_withheld', 'mod_presenterai'), (string) $score->feedback);
+        $this->assertGreaterThan(0, (int) $score->rawmax);
+        foreach (['video_vision', 'slide_vision', 'judge'] as $action) {
+            $this->assertFalse(
+                $DB->record_exists('presenterai_aiusage', ['recordingid' => $rec->id, 'action' => $action]),
+                $action . ' ran on the core route.'
+            );
+        }
+        $this->assertFalse($DB->record_exists('presenterai_gatelog', ['recordingid' => $rec->id]));
+    }
 }

@@ -25,11 +25,19 @@ namespace mod_presenterai\local\ai;
  * Gemini key, a compatible endpoint with a model, Moodle core AI with
  * generate_text available. Vision, slide vision and the summary judge use the
  * same order without core, because core AI cannot take an image (plan 5.1)
- * and the judge must be the plugin's own call; when airoute is core they
- * therefore fall back to that keyed order too, which is how a core site that
- * also has a key gets body language feedback. An explicit route that is not
- * configured resolves to null: no silent fallback to another vendor that the
- * admin did not choose.
+ * and the judge must be the plugin's own call.
+ *
+ * When scoring runs on core AI, whether because airoute is core or because
+ * auto found nothing else, vision, slide vision and the judge resolve to
+ * nothing (D26). An admin who picks core has chosen to keep learner content
+ * inside core, so no purpose falls back to a vendor key the site happens to
+ * hold. Scoring then goes ahead without slide notes or body language, and the
+ * visual gate never runs, because the visual pipeline has no evidence on core
+ * (design 3.6). Transcription is the one exception and can't be avoided:
+ * core has no audio action, so it always uses the transcription service.
+ *
+ * An explicit route that is not configured resolves to null: no silent
+ * fallback to another vendor that the admin did not choose.
  *
  * Transcription is separate and never core: the sttendpoint setting with its
  * own key when set, otherwise OpenAI's endpoint with the OpenAI key, otherwise
@@ -101,8 +109,17 @@ class route_resolver {
             return core_ai_client::is_available() ? new core_ai_client() : null;
         }
 
-        if ($route !== 'auto' && $route !== 'core') {
+        if ($route === 'core') {
+            // D26: nothing leaves core for a vendor key when core was chosen.
+            return null;
+        }
+        if ($route !== 'auto') {
             return self::build($route, $judge);
+        }
+        if (self::scoring_on_core()) {
+            // D26 again: auto found no keyed scoring route and settled on
+            // core, so a key that only serves this purpose isn't used either.
+            return null;
         }
         foreach (self::KEYED_ORDER as $candidate) {
             $client = self::build($candidate, $judge);
@@ -111,6 +128,16 @@ class route_resolver {
             }
         }
         return null;
+    }
+
+    /**
+     * Whether scoring resolves to Moodle core AI.
+     *
+     * @return bool
+     */
+    public static function scoring_on_core(): bool {
+        $client = self::client_for(self::PURPOSE_SCORE);
+        return $client !== null && $client->route() === 'core';
     }
 
     /**
@@ -170,16 +197,15 @@ class route_resolver {
      * What is configured and what is missing, for the settings page.
      *
      * @return array ['scoring' => bool, 'transcription' => bool,
-     *     'vision' => bool, 'route' => string, 'messages' => string[]]
+     *     'vision' => bool, 'slidevision' => bool, 'route' => string, 'messages' => string[]]
      */
     public static function readiness(): array {
         $scoring = self::client_for(self::PURPOSE_SCORE);
         $stt = self::stt();
         $vision = self::client_for(self::PURPOSE_VISION);
-        // Design 3.6: with scoring on core AI, visual_pipeline never analyses
-        // frames, because the note would go into a prompt core keeps forever.
-        // The vision client can still serve slide vision, but body language
-        // feedback is off, and the page should say so.
+        // Design 3.6 and D26: with scoring on core AI there is no vision,
+        // slide vision or judge client at all, so body language feedback and
+        // slide design feedback are both off, and the page says so.
         $corescoring = $scoring !== null && $scoring->route() === 'core';
         $configured = self::configured_route();
         $messages = [];
@@ -204,6 +230,7 @@ class route_resolver {
             : get_string('aireadiness_notranscription', 'mod_presenterai');
         if ($corescoring) {
             $messages[] = get_string('aireadiness_novisioncore', 'mod_presenterai');
+            $messages[] = get_string('aireadiness_noslidevisioncore', 'mod_presenterai');
         } else {
             $messages[] = $vision !== null
                 ? get_string(
@@ -228,6 +255,7 @@ class route_resolver {
             'scoring' => $scoring !== null,
             'transcription' => $stt !== null,
             'vision' => $vision !== null && !$corescoring,
+            'slidevision' => self::client_for(self::PURPOSE_SLIDE_VISION) !== null,
             'route' => $scoring === null ? '' : $scoring->route(),
             'messages' => $messages,
         ];

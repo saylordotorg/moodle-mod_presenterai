@@ -195,6 +195,8 @@ Worse, `store_action_result()` writes the full prompt into `ai_action_generate_t
 
 **The rule: when the resolved scoring route is core AI, the raw note is never put in the prompt.** `$hasvisual` is forced false, the visual criteria are absent from the rubric entirely by the existing mechanism at `classes/rubric_manager.php:255-257`, no `visual_summary` is requested, and the learner gets the "could not be analysed" string from section 6 case (a2). The settings page says this at the point of choosing the route, the same way D6 already requires for transcription.
 
+D26 (7 October 2026) goes further: on the core route the vision pass, the slide design pass and the judge don't run at all, even when the site also holds a vendor key, so frames and slide images never leave the site and the gate has nothing to judge.
+
 The alternative considered and rejected was a PresenterAI scheduled task that deletes the plugin's own rows out of `ai_action_generate_text` on the `visualdatadays` clock. That is a plugin reaching into a core table it does not own, to clean up after a core feature, and it would still leave a window between the write and the sweep.
 
 ---

@@ -161,6 +161,17 @@ Recorded 6 October 2026 by Tom, settling 9.18. An activity setting, `allowvisual
 **D25. English only until the plugin directory submission.**
 Recorded 6 October 2026 by Tom, settling 9.22. Phases 3 and 4 add strings in `lang/en` only. One translation pass into SOLA's 45 other locales happens in phase 5, before the directory submission, once the strings have stopped changing. Privacy strings are translated, not left identical to English, so the parity trap in 9.22 isn't repeated.
 
+**D26. When scoring runs on Moodle core AI, nothing else leaves core for a vendor key.**
+Recorded 7 October 2026 by Tom. Until now, vision, slide vision and the summary judge fell back to the keyed order (Claude, OpenAI, Gemini, compatible) when the route was core, which is how a core site that also held a key got slide design notes. That's the wrong reading of an admin who picks core: they've chosen to keep learner content inside core. So when scoring resolves to core, whether by `airoute = core` or by `auto` finding nothing else, `route_resolver::client_for()` returns null for `vision`, `slide_vision` and `judge`. Scoring goes ahead on the transcript and the slide text, without a slide design note and without body language.
+
+Three things follow.
+
+The D21 gate doesn't fail closed on core. The visual pipeline already answers `unavailable` on the core route before it asks for a client (design 3.6), and `finalise()` gates nothing when there's no usable evidence, so the judge is never asked for and its absence withholds nothing. A test scores a core attempt with body language and slide design switched on and vendor keys present, and checks that no vision, slide or judge call is made, nothing is withheld, and the learner gets the "couldn't be analyzed" sentence. No code path needed changing for this.
+
+Transcription is the one exception and it can't be removed. Core AI has no audio action (D6), so a recording is still sent to the transcription service. The route's help text says so, and doesn't claim that nothing at all leaves core.
+
+The settings page says it. The readiness list shows that body language and slide design feedback are off on core, the route's help text says no provider key is used for anything but transcription there, and the vendor fields that can't be used under core are hidden (the OpenAI key stays visible, because transcription uses it).
+
 ## Part 4: open questions these two decisions raised
 
 These are **new information produced by designing 9.1 and 9.2**, not a reopening of either. D21 and D22 stand as taken. What the design work found is that both of them sit on top of an older assumption nobody has written down as a decision, and on four smaller choices the plan never made. They belong in `IMPLEMENTATION-PLAN.md` section 9 when it is next updated and are numbered to continue it.
