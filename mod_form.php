@@ -17,10 +17,14 @@
 /**
  * Instance settings form for mod_presenterai.
  *
- * Phase 1: recording, topics and retention. The AI settings (presentation
- * type, rubric, speaking level, slide and video vision) and the grade arrive
+ * Recording, topics, retention, the grade and completion. The AI settings
+ * (presentation type, rubric, speaking level, slide and video vision) arrive
  * with the features they configure, so the form never offers a setting that
  * does nothing. Their columns exist and keep their database defaults.
+ *
+ * The grade is core's modgrade element plus a grading method saying how
+ * attempts combine. Outcomes are core's too: declaring FEATURE_GRADE_OUTCOMES
+ * makes moodleform_mod list them, so nothing here adds them.
  *
  * Every bound enforced here is enforced again by instance_manager::normalise(),
  * which every write goes through. This form's job is to explain the rule to
@@ -36,6 +40,7 @@ defined('MOODLE_INTERNAL') || die();
 require_once($CFG->dirroot . '/course/moodleform_mod.php');
 
 use mod_presenterai\local\config;
+use mod_presenterai\local\grader;
 use mod_presenterai\local\instance_manager;
 use mod_presenterai\local\topic_manager;
 
@@ -72,6 +77,9 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $this->add_topic_elements();
         $this->add_retention_elements();
 
+        $this->standard_grading_coursemodule_elements();
+        $this->add_gradingmethod_element();
+
         $this->standard_coursemodule_elements();
         $this->add_action_buttons();
     }
@@ -99,6 +107,13 @@ class mod_presenterai_mod_form extends moodleform_mod {
                 $defaultvalues['retentionmode'] = 'days';
                 $defaultvalues['retentiondaysvalue'] = $days;
             }
+        }
+
+        // The checkboxes beside the completion numbers aren't columns; they
+        // reflect whether a stored number is in force.
+        $suffix = $this->get_suffix();
+        foreach (['completionsubmit', 'completionminscore'] as $rule) {
+            $defaultvalues[$rule . 'enabled' . $suffix] = !empty($defaultvalues[$rule . $suffix]) ? 1 : 0;
         }
 
         if (empty($this->_instance)) {
@@ -170,7 +185,108 @@ class mod_presenterai_mod_form extends moodleform_mod {
             $errors['retentiondaysvalue'] = get_string('retentiondaysmin', 'mod_presenterai');
         }
 
+        $suffix = $this->get_suffix();
+        if (!empty($data['completionsubmitenabled' . $suffix]) && (int) ($data['completionsubmit' . $suffix] ?? 0) < 1) {
+            $errors['completionsubmitgroup' . $suffix] = get_string('error:completionsubmit', 'mod_presenterai');
+        }
+        if (!empty($data['completionminscoreenabled' . $suffix])) {
+            $minscore = (int) ($data['completionminscore' . $suffix] ?? 0);
+            if ($minscore < 1 || $minscore > 100) {
+                $errors['completionminscoregroup' . $suffix] = get_string('error:completionminscore', 'mod_presenterai');
+            }
+        }
+
         return $errors;
+    }
+
+    /**
+     * Add the custom completion rules.
+     *
+     * Each rule is a checkbox with a number beside it, as mod_forum does, and
+     * the element names carry the suffix core uses when the same form is shown
+     * for default completion settings.
+     *
+     * @return string[] The names of the groups added.
+     */
+    public function add_completion_rules() {
+        $mform = $this->_form;
+        $suffix = $this->get_suffix();
+
+        $groups = [];
+        foreach (['completionsubmit', 'completionminscore'] as $rule) {
+            $enabledel = $rule . 'enabled' . $suffix;
+            $valueel = $rule . $suffix;
+            $groupel = $rule . 'group' . $suffix;
+
+            $group = [];
+            $group[] = $mform->createElement('advcheckbox', $enabledel, '', get_string($rule . 'enabled', 'mod_presenterai'));
+            $group[] = $mform->createElement('text', $valueel, get_string($rule, 'mod_presenterai'), ['size' => 3]);
+            $mform->setType($valueel, PARAM_INT);
+            $mform->addGroup($group, $groupel, get_string($rule, 'mod_presenterai'), ' ', false);
+            $mform->addHelpButton($groupel, $rule, 'mod_presenterai');
+            $mform->disabledIf($valueel, $enabledel, 'notchecked');
+            $groups[] = $groupel;
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Whether any custom completion rule is switched on.
+     *
+     * @param array $data Submitted values.
+     * @return bool
+     */
+    public function completion_rule_enabled($data) {
+        $suffix = $this->get_suffix();
+        foreach (['completionsubmit', 'completionminscore'] as $rule) {
+            if (!empty($data[$rule . 'enabled' . $suffix]) && (int) ($data[$rule . $suffix] ?? 0) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Zero a completion number whose checkbox is off, or when completion isn't automatic.
+     *
+     * @param stdClass $data Submitted values, changed in place.
+     * @return void
+     */
+    public function data_postprocessing($data) {
+        parent::data_postprocessing($data);
+
+        if (empty($data->completionunlocked)) {
+            return;
+        }
+        $suffix = $this->get_suffix();
+        $completion = $data->{'completion' . $suffix} ?? COMPLETION_TRACKING_NONE;
+        $automatic = (int) $completion === COMPLETION_TRACKING_AUTOMATIC;
+        foreach (['completionsubmit', 'completionminscore'] as $rule) {
+            if (!$automatic || empty($data->{$rule . 'enabled' . $suffix})) {
+                $data->{$rule . $suffix} = 0;
+            }
+        }
+    }
+
+    /**
+     * The grading method: how a learner's attempts combine into one grade.
+     *
+     * Hidden when the activity has no grade, because then there's nothing to combine.
+     *
+     * @return void
+     */
+    private function add_gradingmethod_element(): void {
+        $mform = $this->_form;
+
+        $options = [];
+        foreach (grader::GRADING_METHODS as $method) {
+            $options[$method] = get_string('gradingmethod_' . $method, 'mod_presenterai');
+        }
+        $mform->addElement('select', 'gradingmethod', get_string('gradingmethod', 'mod_presenterai'), $options);
+        $mform->setDefault('gradingmethod', grader::DEFAULT_GRADING_METHOD);
+        $mform->addHelpButton('gradingmethod', 'gradingmethod', 'mod_presenterai');
+        $mform->hideIf('gradingmethod', 'grade[modgrade_type]', 'eq', 'none');
     }
 
     /**

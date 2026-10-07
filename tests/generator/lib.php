@@ -142,4 +142,76 @@ class mod_presenterai_generator extends testing_module_generator {
         $id = $DB->insert_record('presenterai_topic', $record);
         return $DB->get_record('presenterai_topic', ['id' => $id], '*', MUST_EXIST);
     }
+
+    /**
+     * Create a score row for a recording.
+     *
+     * The recording's scoreid is NOT updated, so a test can set up a stale or
+     * missing pointer on purpose; tests that need it set do it themselves.
+     *
+     * @param array|stdClass $record Fields for the row, requiring recordingid.
+     * @return stdClass The row as read back from the database.
+     */
+    public function create_score($record): stdClass {
+        global $DB;
+
+        $record = (object) (array) $record;
+        if (empty($record->recordingid)) {
+            throw new coding_exception('create_score needs recordingid');
+        }
+        $defaults = [
+            'userid' => (int) $DB->get_field('presenterai_recording', 'userid', ['id' => $record->recordingid], MUST_EXIST),
+            'rubricid' => 0,
+            'origin' => 'teacher',
+            'scores' => '[]',
+            'rawsum' => 0,
+            'rawmax' => 0,
+            'overallpct' => null,
+            'scoreprovenance' => 'exact',
+            'feedback' => null,
+            'tips' => null,
+            'graderid' => 0,
+            'timecreated' => time(),
+        ];
+        foreach ($defaults as $name => $value) {
+            if (!property_exists($record, $name)) {
+                $record->$name = $value;
+            }
+        }
+
+        $id = $DB->insert_record('presenterai_score', $record);
+        return $DB->get_record('presenterai_score', ['id' => $id], '*', MUST_EXIST);
+    }
+
+    /**
+     * Create a rubric row.
+     *
+     * @param array|stdClass $record Fields for the row, requiring contextid.
+     * @return stdClass The row as read back from the database.
+     */
+    public function create_rubric($record): stdClass {
+        global $DB;
+
+        $record = (object) (array) $record;
+        if (empty($record->contextid)) {
+            throw new coding_exception('create_rubric needs contextid');
+        }
+        $now = time();
+        $defaults = [
+            'type' => 'speech',
+            'title' => 'Rubric',
+            'criteria' => json_encode(\mod_presenterai\local\rubric_manager::DEFAULT_CRITERIA),
+            'active' => 1,
+            'timecreated' => $now,
+            'timemodified' => $now,
+        ];
+        foreach ($defaults as $name => $value) {
+            if (!property_exists($record, $name)) {
+                $record->$name = $value;
+            }
+        }
+
+        $id = $DB->insert_record('presenterai_rubric', $record);
+        return $DB->get_record('presenterai_rubric', ['id' => $id], '*', MUST_EXIST);
+    }
 }
