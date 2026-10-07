@@ -50,10 +50,14 @@ class usage {
 
     /**
      * @var array Model prefix => [input, output] microcents per token, from
-     * the providers' published per million token prices: $3/$15 is 300/1500.
+     * the providers' published per million token prices: $2/$10 is 200/1000.
+     * The longest matching prefix wins, so a named model beats its family.
+     * Claude prices match SOLA's table, checked against claude.com/pricing.
      */
     public const TOKEN_PRICES = [
-        'claude-sonnet-5-5' => [300, 1500],
+        'claude-sonnet-5' => [200, 1000],
+        'claude-opus-5-5' => [400, 2000],
+        'claude-opus-5' => [500, 2500],
         'claude-haiku-4-5' => [100, 500],
         'gpt-4o-mini' => [15, 60],
         'gemini-2.5-flash' => [30, 250],

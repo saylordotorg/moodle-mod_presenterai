@@ -322,6 +322,23 @@ final class scorer_test extends \advanced_testcase {
     }
 
     /**
+     * Quotes the model escaped twice reach the learner without their backslashes.
+     *
+     * Seen live on dev: an overall comment read \"Slide 1,\" on the learner's page.
+     *
+     * @return void
+     */
+    public function test_model_text_undoes_escaped_quotes(): void {
+        $this->assertSame(
+            'Your slides say "Slide 1," and nothing else.',
+            scorer::model_text('  Your slides say \\"Slide 1,\\" and nothing else. ')
+        );
+        $this->assertSame("Don't rush.", scorer::model_text("Don\\'t rush."));
+        $this->assertSame('A path like C:\\notes stays.', scorer::model_text('A path like C:\\notes stays.'));
+        $this->assertSame('42', scorer::model_text(42));
+    }
+
+    /**
      * A clean run transcribes, scores, saves the transcript and an AI row, and pushes the grade.
      *
      * @return void

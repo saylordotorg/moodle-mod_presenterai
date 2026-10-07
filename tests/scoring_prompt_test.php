@@ -45,7 +45,8 @@ final class scoring_prompt_test extends \basic_testcase {
             'level' => 'general',
             'ptype' => 'persuasive',
             'topictitle' => 'Wind power',
-            'targetseconds' => 300,
+            'minseconds' => 180,
+            'maxseconds' => 300,
             'durationseconds' => 270,
             'slides' => '',
             'visualblock' => '',
@@ -74,7 +75,8 @@ final class scoring_prompt_test extends \basic_testcase {
         $this->assertStringContainsString('PERSUASIVE presentation', $system);
         $this->assertStringContainsString('Their stated topic is: "Wind power".', $system);
         $this->assertStringContainsString(
-            'target length is about 5 minute(s); they actually spoke for about 4.5 minute(s).',
+            'The activity allows between 3 and 5 minute(s), and any length in that range is on target.'
+                . ' They spoke for about 4.5 minute(s).',
             $system
         );
         $this->assertStringContainsString('has no instructor to ask', $system);
@@ -147,6 +149,33 @@ final class scoring_prompt_test extends \basic_testcase {
     }
 
     /**
+     * A maximum or a minimum alone still says the length is a range, not a target to hit.
+     *
+     * The demo on dev scored a 56 second pitch 1/5 for timing in a 30 second to 3 minute
+     * activity, because the prompt called the 3 minute cap "the target length".
+     *
+     * @return void
+     */
+    public function test_length_is_a_range(): void {
+        $maxonly = scoring_prompt::build($this->inputs([
+            'minseconds' => 0,
+            'maxseconds' => 180,
+            'durationseconds' => 56,
+        ]))['system'];
+        $this->assertStringContainsString(
+            'The activity allows up to 3 minute(s), and any length up to that is on target.'
+                . ' They spoke for about 0.9 minute(s).',
+            $maxonly
+        );
+        $minonly = scoring_prompt::build($this->inputs(['minseconds' => 30, 'maxseconds' => 0]))['system'];
+        $this->assertStringContainsString(
+            'The activity asks for at least 0.5 minute(s), and any length from that up is on target.',
+            $minonly
+        );
+        $this->assertStringNotContainsString('target length', $maxonly . $minonly);
+    }
+
+    /**
      * No topic, no target and an unknown type leave their sentences out.
      *
      * @return void
@@ -154,13 +183,15 @@ final class scoring_prompt_test extends \basic_testcase {
     public function test_optional_parts(): void {
         $system = scoring_prompt::build($this->inputs([
             'topictitle' => '',
-            'targetseconds' => 0,
+            'minseconds' => 0,
+            'maxseconds' => 0,
             'ptype' => 'unknown',
             'level' => 'esl_advanced',
         ]))['system'];
 
         $this->assertStringNotContainsString('stated topic', $system);
-        $this->assertStringNotContainsString('target length', $system);
+        $this->assertStringNotContainsString('The activity allows', $system);
+        $this->assertStringNotContainsString('They spoke for about', $system);
         $this->assertStringNotContainsString('INFORMATIVE', $system);
         $this->assertStringNotContainsString('PERSUASIVE', $system);
         $this->assertStringContainsString('advanced English-as-a-second-language', $system);

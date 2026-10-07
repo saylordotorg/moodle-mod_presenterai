@@ -74,7 +74,8 @@ final class scoring_prompt {
      *                 - level string, one of rubric_manager::LEVELS
      *                 - ptype string, 'informative' or 'persuasive'
      *                 - topictitle string
-     *                 - targetseconds int
+     *                 - minseconds int, the shortest length the activity allows, 0 for none
+     *                 - maxseconds int, the longest length the activity allows, 0 for none
      *                 - durationseconds int
      *                 - slides string, the slide context, may be ''
      *                 - visualblock string, may be ''
@@ -86,7 +87,8 @@ final class scoring_prompt {
         $transcript = \core_text::substr(trim((string) ($p['transcript'] ?? '')), 0, self::MAX_TRANSCRIPT_CHARS);
         $criteria = (array) ($p['criteria'] ?? []);
         $topic = trim((string) ($p['topictitle'] ?? ''));
-        $target = max(0, (int) ($p['targetseconds'] ?? 0));
+        $min = max(0, (int) ($p['minseconds'] ?? 0));
+        $max = max(0, (int) ($p['maxseconds'] ?? 0));
         $duration = max(0, (int) ($p['durationseconds'] ?? 0));
         $slides = trim((string) ($p['slides'] ?? ''));
         $visualblock = trim((string) ($p['visualblock'] ?? ''));
@@ -96,12 +98,20 @@ final class scoring_prompt {
         if ($topic !== '') {
             $context .= ' Their stated topic is: "' . \core_text::substr($topic, 0, self::MAX_TOPIC_CHARS) . '".';
         }
-        if ($target > 0) {
-            $context .= ' Their target length is about ' . self::minutes($target) . ' minute(s)';
-            if ($duration > 0) {
-                $context .= '; they actually spoke for about ' . self::minutes($duration) . ' minute(s)';
-            }
-            $context .= '.';
+        // The activity sets a range, not a target. Passing only the maximum as "the target" made the
+        // model mark down any talk shorter than the cap, even one well inside the range.
+        if ($min > 0 && $max > 0) {
+            $context .= ' The activity allows between ' . self::minutes($min) . ' and ' . self::minutes($max)
+                . ' minute(s), and any length in that range is on target.';
+        } else if ($max > 0) {
+            $context .= ' The activity allows up to ' . self::minutes($max)
+                . ' minute(s), and any length up to that is on target.';
+        } else if ($min > 0) {
+            $context .= ' The activity asks for at least ' . self::minutes($min)
+                . ' minute(s), and any length from that up is on target.';
+        }
+        if (($min > 0 || $max > 0) && $duration > 0) {
+            $context .= ' They spoke for about ' . self::minutes($duration) . ' minute(s).';
         }
         $context .= self::ptype_hint((string) ($p['ptype'] ?? ''));
 
