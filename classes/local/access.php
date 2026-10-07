@@ -36,6 +36,9 @@ namespace mod_presenterai\local;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class access {
+    /** @var string[] Statuses of an attempt that never finished arriving, so there is nothing to score. */
+    private const NOT_GRADABLE = ['uploading', 'abandoned'];
+
     /**
      * Whether the site lets learners download their own recordings at all.
      *
@@ -143,6 +146,104 @@ final class access {
     public static function may_download_own_prospectively(\context_module $ctx, int $userid): bool {
         return self::site_allows_learner_download()
             && has_capability('mod/presenterai:downloadown', $ctx, $userid);
+    }
+
+    /**
+     * Whether the user may score this attempt on the grading screen.
+     *
+     * The same group rule as watching, so a grader in separate groups cannot
+     * reach a learner outside their groups by guessing an id. An attempt that
+     * never finished uploading has nothing to score. An owner who holds the
+     * grade capability (a teacher trying the activity out) may score their own
+     * attempt through that capability and no other route.
+     *
+     * @param \stdClass $rec A presenterai_recording row.
+     * @param \context_module $ctx The activity's module context.
+     * @param int $userid The user asking.
+     * @return bool
+     */
+    public static function may_grade(\stdClass $rec, \context_module $ctx, int $userid): bool {
+        if (in_array((string) ($rec->status ?? ''), self::NOT_GRADABLE, true)) {
+            return false;
+        }
+
+        return has_capability('mod/presenterai:grade', $ctx, $userid)
+            && self::group_allows($rec, $ctx, $userid);
+    }
+
+    /**
+     * Load a recording named in a request and confirm the user may grade it.
+     *
+     * The id in the URL is only a claim. The row must belong to this course
+     * module's instance and pass may_grade(). A missing row and a forbidden one
+     * raise the same error, so the response does not reveal which ids exist.
+     *
+     * @param \stdClass|\cm_info $cm The course module the request came through. A cm_info
+     *                              is accepted because that is what get_course_and_cm_from_cmid() returns.
+     * @param \context_module $ctx That course module's context.
+     * @param int $recordingid The recording id from the request.
+     * @param int $userid The user asking.
+     * @return \stdClass The presenterai_recording row.
+     * @throws \moodle_exception error:recordingnotfound
+     */
+    public static function require_gradable_recording(
+        \stdClass|\cm_info $cm,
+        \context_module $ctx,
+        int $recordingid,
+        int $userid
+    ): \stdClass {
+        global $DB;
+
+        $rec = $DB->get_record('presenterai_recording', ['id' => $recordingid, 'presenteraiid' => (int) $cm->instance]);
+        if (!$rec || !self::may_grade($rec, $ctx, $userid)) {
+            throw new \moodle_exception('error:recordingnotfound', 'mod_presenterai');
+        }
+
+        return $rec;
+    }
+
+    /**
+     * Whether the user may read the raw body language note on the grading screen.
+     *
+     * The note is unreviewed prose about a named learner's body (design 7.3),
+     * so it has a capability of its own rather than riding on grade.
+     *
+     * @param \context_module $ctx The activity's module context.
+     * @param int $userid The user asking.
+     * @return bool
+     */
+    public static function may_view_visual_evidence(\context_module $ctx, int $userid): bool {
+        return has_capability('mod/presenterai:viewvisualevidence', $ctx, $userid);
+    }
+
+    /**
+     * The learners a staff member sees on the submissions report.
+     *
+     * Everyone actively enrolled who may submit, narrowed to one group when a
+     * group is chosen. In separate groups the caller passes the active group
+     * from groups_get_activity_group(), which core already limits to the
+     * viewer's own groups unless they hold moodle/site:accessallgroups. The
+     * capability is checked for the current user, who is the viewer.
+     *
+     * @param \stdClass|\cm_info $cm The course module.
+     * @param \context_module $ctx Its context.
+     * @param int $groupid The active group, or 0 for everyone.
+     * @return int[] User ids.
+     */
+    public static function visible_learner_ids(\stdClass|\cm_info $cm, \context_module $ctx, int $groupid): array {
+        // A viewer in separate groups who is in no group gets 0 back from core
+        // as the active group. That must mean nobody, not everybody.
+        if (
+            $groupid <= 0
+            && (int) groups_get_activity_groupmode($cm) === SEPARATEGROUPS
+            && !has_capability('moodle/site:accessallgroups', $ctx)
+        ) {
+            return [];
+        }
+
+        $users = get_enrolled_users($ctx, 'mod/presenterai:submit', max(0, $groupid), 'u.id', null, 0, 0, true);
+
+        return array_map('intval', array_keys($users));
     }
 
     /**

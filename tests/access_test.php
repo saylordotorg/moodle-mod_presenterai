@@ -255,6 +255,158 @@ final class access_test extends \advanced_testcase {
     }
 
     /**
+     * A teacher may grade a finished attempt; a learner may not grade anything.
+     *
+     * @return void
+     */
+    public function test_may_grade_teacher_and_not_learner(): void {
+        $this->assertTrue(access::may_grade($this->rec, $this->context, (int) $this->teacher->id));
+        $this->assertTrue(access::may_grade($this->rec, $this->context, (int) $this->manager->id));
+        $this->assertFalse(access::may_grade($this->rec, $this->context, (int) $this->owner->id));
+        $this->assertFalse(access::may_grade($this->rec, $this->context, (int) $this->peer->id));
+    }
+
+    /**
+     * An attempt that never finished uploading has nothing to grade.
+     *
+     * @return void
+     */
+    public function test_may_grade_refuses_unfinished_attempts(): void {
+        foreach (['uploading', 'abandoned'] as $status) {
+            $rec = clone $this->rec;
+            $rec->status = $status;
+            $this->assertFalse(access::may_grade($rec, $this->context, (int) $this->teacher->id), $status);
+        }
+        foreach (['uploaded', 'scoring', 'scored', 'failed'] as $status) {
+            $rec = clone $this->rec;
+            $rec->status = $status;
+            $this->assertTrue(access::may_grade($rec, $this->context, (int) $this->teacher->id), $status);
+        }
+
+        // Media gone is still gradable: the attempt still counts (D8).
+        $gone = clone $this->rec;
+        $gone->storagekey = null;
+        $this->assertTrue(access::may_grade($gone, $this->context, (int) $this->teacher->id));
+    }
+
+    /**
+     * In separate groups a non-editing teacher grades only learners who share a group.
+     *
+     * @return void
+     */
+    public function test_may_grade_respects_separate_groups(): void {
+        global $DB;
+
+        $generator = $this->getDataGenerator();
+        $cm = get_coursemodule_from_id('presenterai', (int) $this->context->instanceid, 0, false, MUST_EXIST);
+        $DB->set_field('course_modules', 'groupmode', SEPARATEGROUPS, ['id' => $cm->id]);
+        rebuild_course_cache((int) $this->course->id, true);
+
+        $groupa = $generator->create_group(['courseid' => $this->course->id]);
+        $groupb = $generator->create_group(['courseid' => $this->course->id]);
+        $generator->create_group_member(['groupid' => $groupa->id, 'userid' => $this->teacher->id]);
+        $generator->create_group_member(['groupid' => $groupb->id, 'userid' => $this->owner->id]);
+
+        $this->assertFalse(
+            access::may_grade($this->rec, $this->context, (int) $this->teacher->id),
+            'A teacher in group A could grade a group B learner in separate groups.'
+        );
+        $this->assertTrue(access::may_grade($this->rec, $this->context, (int) $this->manager->id));
+
+        $generator->create_group_member(['groupid' => $groupb->id, 'userid' => $this->teacher->id]);
+        $this->assertTrue(access::may_grade($this->rec, $this->context, (int) $this->teacher->id));
+    }
+
+    /**
+     * A recording id from another activity is refused with the not found error (IDOR).
+     *
+     * @return void
+     */
+    public function test_require_gradable_recording_rejects_other_instance(): void {
+        $generator = $this->getDataGenerator();
+        $cm = get_coursemodule_from_id('presenterai', (int) $this->context->instanceid, 0, false, MUST_EXIST);
+
+        $this->assertSame(
+            (int) $this->rec->id,
+            (int) access::require_gradable_recording($cm, $this->context, (int) $this->rec->id, (int) $this->teacher->id)->id
+        );
+
+        // The grading page passes the cm_info that get_course_and_cm_from_cmid() returns.
+        [, $cminfo] = get_course_and_cm_from_cmid((int) $this->context->instanceid, 'presenterai');
+        $this->assertSame(
+            (int) $this->rec->id,
+            (int) access::require_gradable_recording($cminfo, $this->context, (int) $this->rec->id, (int) $this->teacher->id)->id
+        );
+
+        $other = $generator->create_module('presenterai', ['course' => $this->course->id]);
+        $foreign = $generator->get_plugin_generator('mod_presenterai')->create_recording([
+            'presenteraiid' => $other->id,
+            'userid' => $this->owner->id,
+            'storagekey' => 'other.webm',
+        ]);
+
+        try {
+            access::require_gradable_recording($cm, $this->context, (int) $foreign->id, (int) $this->teacher->id);
+            $this->fail('A recording from another activity was accepted through this one.');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:recordingnotfound', $e->errorcode);
+        }
+    }
+
+    /**
+     * A forbidden recording and a missing one raise the same error.
+     *
+     * @return void
+     */
+    public function test_require_gradable_recording_same_error_for_forbidden_and_missing(): void {
+        $cm = get_coursemodule_from_id('presenterai', (int) $this->context->instanceid, 0, false, MUST_EXIST);
+
+        $cases = [
+            [(int) $this->rec->id, (int) $this->peer->id],
+            [(int) $this->rec->id + 1000, (int) $this->teacher->id],
+        ];
+        foreach ($cases as $case) {
+            try {
+                access::require_gradable_recording($cm, $this->context, $case[0], $case[1]);
+                $this->fail('Expected error:recordingnotfound');
+            } catch (\moodle_exception $e) {
+                $this->assertSame('error:recordingnotfound', $e->errorcode);
+            }
+        }
+    }
+
+    /**
+     * Visual evidence follows its own capability, which learners don't hold.
+     *
+     * @return void
+     */
+    public function test_may_view_visual_evidence(): void {
+        $this->assertTrue(access::may_view_visual_evidence($this->context, (int) $this->teacher->id));
+        $this->assertTrue(access::may_view_visual_evidence($this->context, (int) $this->manager->id));
+        $this->assertFalse(access::may_view_visual_evidence($this->context, (int) $this->owner->id));
+    }
+
+    /**
+     * The report lists learners who may submit, narrowed to a group when one is chosen.
+     *
+     * @return void
+     */
+    public function test_visible_learner_ids(): void {
+        $generator = $this->getDataGenerator();
+        $cm = get_coursemodule_from_id('presenterai', (int) $this->context->instanceid, 0, false, MUST_EXIST);
+
+        $ids = access::visible_learner_ids($cm, $this->context, 0);
+        sort($ids);
+        $expected = [(int) $this->owner->id, (int) $this->peer->id];
+        sort($expected);
+        $this->assertSame($expected, $ids, 'Only learners who may submit, and not staff.');
+
+        $group = $generator->create_group(['courseid' => $this->course->id]);
+        $generator->create_group_member(['groupid' => $group->id, 'userid' => $this->peer->id]);
+        $this->assertSame([(int) $this->peer->id], access::visible_learner_ids($cm, $this->context, (int) $group->id));
+    }
+
+    /**
      * The id of an archetype role.
      *
      * @param string $shortname Role shortname.

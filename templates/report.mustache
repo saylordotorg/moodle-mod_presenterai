@@ -1,0 +1,133 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/report
+
+    The submissions report: one row per learner the viewer may see, with the
+    latest attempt's status, the attempt count, the latest attempt's number
+    and length, its latest AI and teacher percentages, the overall percentage
+    under the activity's grading method, the AI spend, and a link to grade
+    each finished attempt.
+
+    Every cell has text or is deliberately empty for a percentage that
+    doesn't exist yet. Each attempt link carries an aria-label naming the
+    learner and the attempt, so a screen reader user doesn't hear a column of
+    "Attempt 1" links with nothing to tell them apart.
+
+    Context variables required for this template:
+    * cmid - The course module id.
+    * graded - Whether the activity has a grade.
+    * groupselector - The group menu, HTML, or empty.
+    * hasrows - Whether there are any learners to show.
+    * rows - List of rows: userid, fullname, hasattempt, status, attempts,
+      latestattempt, length, aipct, teacherpct, finalpct, spend, gradeurl and
+      attemptlinks (label, url, aria).
+
+    Example context (json):
+    {
+        "cmid": 12,
+        "graded": true,
+        "groupselector": "",
+        "hasrows": true,
+        "rows": [
+            {
+                "userid": 5,
+                "fullname": "Ada Lovelace",
+                "hasattempt": true,
+                "status": "Scored",
+                "attempts": "2",
+                "latestattempt": "2",
+                "length": "6:12",
+                "aipct": "",
+                "teacherpct": "80.00%",
+                "finalpct": "80.00%",
+                "spend": "$0.00",
+                "gradeurl": "https://example.com/mod/presenterai/grade.php?id=12&recordingid=8",
+                "attemptlinks": [
+                    {"label": "Attempt 1", "url": "https://example.com/mod/presenterai/grade.php?id=12&recordingid=7",
+                        "aria": "Grade attempt 1 by Ada Lovelace"},
+                    {"label": "Attempt 2", "url": "https://example.com/mod/presenterai/grade.php?id=12&recordingid=8",
+                        "aria": "Grade attempt 2 by Ada Lovelace"}
+                ]
+            },
+            {
+                "userid": 6,
+                "fullname": "Alan Turing",
+                "hasattempt": false,
+                "status": "No attempt",
+                "attempts": "0",
+                "latestattempt": "-",
+                "length": "-",
+                "aipct": "",
+                "teacherpct": "",
+                "finalpct": "",
+                "spend": "$0.00",
+                "gradeurl": "",
+                "attemptlinks": []
+            }
+        ]
+    }
+}}
+<div class="mod-presenterai-report" data-cmid="{{cmid}}">
+    {{#groupselector}}
+    <div class="mod-presenterai-report-groups mb-3">{{{groupselector}}}</div>
+    {{/groupselector}}
+    {{^hasrows}}
+    <p class="mod-presenterai-nolearners">{{#str}}report_nolearners, mod_presenterai{{/str}}</p>
+    {{/hasrows}}
+    {{#hasrows}}
+    <div class="table-responsive">
+        <table class="generaltable mod-presenterai-report-table">
+            <caption>{{#str}}report_caption, mod_presenterai{{/str}}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{#str}}report_col_learner, mod_presenterai{{/str}}</th>
+                    <th scope="col">{{#str}}report_col_status, mod_presenterai{{/str}}</th>
+                    <th scope="col">{{#str}}report_col_attempts, mod_presenterai{{/str}}</th>
+                    <th scope="col">{{#str}}report_col_latest, mod_presenterai{{/str}}</th>
+                    <th scope="col">{{#str}}report_col_length, mod_presenterai{{/str}}</th>
+                    <th scope="col">{{#str}}report_col_aipct, mod_presenterai{{/str}}</th>
+                    <th scope="col">{{#str}}report_col_teacherpct, mod_presenterai{{/str}}</th>
+                    <th scope="col">{{#str}}report_col_finalpct, mod_presenterai{{/str}}</th>
+                    <th scope="col">{{#str}}report_col_spend, mod_presenterai{{/str}}</th>
+                    <th scope="col">{{#str}}report_col_actions, mod_presenterai{{/str}}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#rows}}
+                <tr data-userid="{{userid}}">
+                    <th scope="row">{{fullname}}</th>
+                    <td>{{status}}</td>
+                    <td>{{attempts}}</td>
+                    <td>{{latestattempt}}</td>
+                    <td>{{length}}</td>
+                    <td>{{aipct}}</td>
+                    <td>{{teacherpct}}</td>
+                    <td>{{finalpct}}</td>
+                    <td>{{spend}}</td>
+                    <td class="mod-presenterai-report-actions">
+                        {{#attemptlinks}}
+                        <a href="{{url}}" aria-label="{{aria}}">{{label}}</a>
+                        {{/attemptlinks}}
+                    </td>
+                </tr>
+                {{/rows}}
+            </tbody>
+        </table>
+    </div>
+    {{/hasrows}}
+</div>

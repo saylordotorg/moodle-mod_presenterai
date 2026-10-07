@@ -214,4 +214,140 @@ final class template_a11y_test extends \advanced_testcase {
             'the live region must not sit inside a conditional section'
         );
     }
+
+    /**
+     * The report table has a caption, scoped headers and attempt links that name their row (rules 3 and 6).
+     *
+     * @return void
+     */
+    public function test_report_table_markup(): void {
+        global $PAGE;
+
+        $this->resetAfterTest();
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/report', [
+            'cmid' => 12,
+            'graded' => true,
+            'groupselector' => '',
+            'hasrows' => true,
+            'rows' => [[
+                'userid' => 5, 'fullname' => 'Ada Lovelace', 'hasattempt' => true, 'status' => 'Scored',
+                'attempts' => '1', 'latestattempt' => '1', 'length' => '6:12', 'aipct' => '', 'teacherpct' => '80.00%',
+                'finalpct' => '80.00%', 'spend' => '$0.00', 'gradeurl' => 'https://example.com/g',
+                'attemptlinks' => [
+                    ['label' => 'Attempt 1', 'url' => 'https://example.com/g', 'aria' => 'Grade attempt 1 by Ada Lovelace'],
+                ],
+            ]],
+        ]);
+
+        $caption = preg_quote(get_string('report_caption', 'mod_presenterai'), '/');
+        $this->assertMatchesRegularExpression('/<table[^>]*>\s*<caption>' . $caption . '<\/caption>/', $html);
+        $this->assertSame(10, preg_match_all('/<th scope="col">/', $html), 'Every column header is scoped.');
+        $this->assertSame(0, preg_match('/<th(?=[\s>])(?![^>]*scope=)/', $html), 'A header cell without a scope.');
+        $this->assertMatchesRegularExpression('/<th scope="row">Ada Lovelace<\/th>/', $html);
+        $this->assertStringContainsString('aria-label="Grade attempt 1 by Ada Lovelace"', $html);
+
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/report', [
+            'cmid' => 12, 'graded' => false, 'groupselector' => '', 'hasrows' => false, 'rows' => [],
+        ]);
+        $this->assertStringNotContainsString('<table', $html);
+        $this->assertStringContainsString(get_string('report_nolearners', 'mod_presenterai'), $html);
+    }
+
+    /**
+     * The grading screen announces its total politely and has its live region at load (rule 8).
+     *
+     * @return void
+     */
+    public function test_grade_page_markup(): void {
+        global $PAGE;
+
+        $this->resetAfterTest();
+        $context = [
+            'rootid' => 'mod-presenterai-grade', 'cmid' => 12, 'recordingid' => 8, 'learnername' => 'Ada Lovelace',
+            'attemptlabel' => 'Attempt 2', 'recorded' => '6/10/26, 14:00', 'length' => '6:12', 'status' => 'Submitted',
+            'mediaavailable' => true, 'watcharia' => 'Recording by Ada Lovelace, made on 6/10/26, 14:00',
+            'hastranscript' => false, 'transcript' => '', 'transcriptempty' => 'No transcript.',
+            'showvisual' => false, 'hasvisual' => false, 'visualevidence' => '', 'visualempty' => 'No note.',
+            'form' => '<form></form>', 'reporturl' => 'https://example.com/r', 'total' => ['label' => 'Total: none'],
+        ];
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/grade', $context);
+
+        $this->assertMatchesRegularExpression(
+            '/<div[^>]*data-region="total"[^>]*aria-live="polite"[^>]*>Total: none<\/div>/',
+            $html
+        );
+        $this->assertMatchesRegularExpression('/<div[^>]*aria-live="polite"[^>]*data-region="live"/', $html);
+        $this->assertMatchesRegularExpression('/<div id="mod-presenterai-grade"[^>]*data-recordingid="8"/', $html);
+        $this->assertStringContainsString('data-watcharia="Recording by Ada Lovelace, made on 6/10/26, 14:00"', $html);
+        $this->assertStringContainsString('No transcript.', $html);
+        $this->assertStringNotContainsString('No note.', $html, 'The visual section rendered without showvisual.');
+
+        $markup = $this->templates()['grade.mustache'];
+        $before = substr($markup, 0, strpos($markup, 'data-region="live"'));
+        $this->assertSame(
+            substr_count($before, '{{#') + substr_count($before, '{{^'),
+            substr_count($before, '{{/'),
+            'the live region must not sit inside a conditional section'
+        );
+    }
+
+    /**
+     * The attempt list has a scoped Score header and a feedback disclosure that names its attempt.
+     *
+     * @return void
+     */
+    public function test_attempts_score_and_feedback_disclosure(): void {
+        global $PAGE;
+
+        $this->resetAfterTest();
+        $row = [
+            'recid' => 7, 'attempt' => '1', 'recorded' => '6/10/26, 14:00', 'length' => '6:12',
+            'status' => 'Scored', 'statekey' => 'attempt_kept', 'state' => 'Kept until deleted',
+            'mediaavailable' => true, 'canwatch' => false, 'watcharia' => 'Watch', 'candownload' => false,
+            'downloadurl' => '', 'downloadaria' => 'Download', 'candelete' => false, 'deletearia' => 'Delete',
+            'gonenote' => '', 'hasscore' => true, 'score' => '80.00%', 'hasfeedback' => true,
+            'feedbackaria' => 'Feedback on the attempt you made on 6/10/26, 14:00',
+            'feedback' => [
+                'criteria' => [['name' => 'Content', 'scoretext' => '4 out of 5', 'feedback' => 'Clear.']],
+                'overall' => 'Well done.',
+            ],
+        ];
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/attempts', [
+            'hasattempts' => true, 'showdownloadoffnote' => false, 'rows' => [$row],
+        ]);
+
+        $this->assertStringContainsString('<th scope="col">' . get_string('col_score', 'mod_presenterai') . '</th>', $html);
+        $this->assertSame(0, preg_match('/<th(?=[\s>])(?![^>]*scope=)/', $html), 'A header cell without a scope.');
+        $this->assertMatchesRegularExpression('/<td data-region="score">80.00%<\/td>/', $html);
+        $this->assertMatchesRegularExpression(
+            '/<details[^>]*>\s*<summary aria-label="Feedback on the attempt you made on 6\/10\/26, 14:00">'
+                . preg_quote(get_string('feedback_toggle', 'mod_presenterai'), '/') . '<\/summary>/',
+            $html
+        );
+        $this->assertStringContainsString('4 out of 5', $html);
+        $this->assertStringContainsString('Well done.', $html);
+        // The feedback row spans every column of the table.
+        $this->assertSame(1, preg_match('/<td colspan="(\d+)">/', $html, $m));
+        $this->assertSame((int) $m[1], preg_match_all('/<th scope="col">/', $html));
+
+        $row['hasfeedback'] = false;
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/attempts', [
+            'hasattempts' => true, 'showdownloadoffnote' => false, 'rows' => [$row],
+        ]);
+        $this->assertStringNotContainsString('<details', $html);
+    }
+
+    /**
+     * Learner facing feedback strings never promise that a teacher's decision wins (DECISIONS.md).
+     *
+     * @return void
+     */
+    public function test_no_teacher_override_promise_in_learner_strings(): void {
+        $keys = ['col_score', 'feedback_criterion_score', 'feedback_notassessed', 'feedback_toggle', 'feedback_toggle_aria'];
+        foreach ($keys as $key) {
+            $text = \core_text::strtolower(get_string($key, 'mod_presenterai'));
+            $this->assertStringNotContainsString('teacher', $text, $key);
+            $this->assertStringNotContainsString('override', $text, $key);
+        }
+    }
 }

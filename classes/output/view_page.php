@@ -96,6 +96,12 @@ final class view_page implements \renderable, \templatable {
             'callout' => policy::callout($this->instance, $this->context, $this->userid),
             'privacy' => policy::privacy_paragraph($this->instance, $candownload),
             'canrecord' => has_capability('mod/presenterai:submit', $this->context, $this->userid),
+            // Staff reach the submissions report from here as well as from the
+            // activity's settings menu.
+            'showsubmissions' => has_capability('mod/presenterai:viewallattempts', $this->context, $this->userid),
+            'submissionsurl' => (new \moodle_url('/mod/presenterai/report.php', [
+                'id' => (int) $this->context->instanceid,
+            ]))->out(false),
             'blocked' => '',
             'recorder' => null,
             'config' => null,

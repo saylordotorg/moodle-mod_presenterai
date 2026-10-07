@@ -242,4 +242,28 @@ final class view_page_test extends \advanced_testcase {
             event\course_module_viewed::get_objectid_mapping()
         );
     }
+
+    /**
+     * Staff get the link to the submissions report; learners don't.
+     *
+     * @return void
+     */
+    public function test_submissions_link_for_staff_only(): void {
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student, $teacher] = $this->setup_activity();
+
+        $data = $this->export($instance, $course, $context, $teacher);
+        $this->assertTrue($data['showsubmissions']);
+        $this->assertStringContainsString('/mod/presenterai/report.php?id=' . $context->instanceid, $data['submissionsurl']);
+
+        global $PAGE;
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/view', $data);
+        $this->assertStringContainsString(get_string('viewsubmissions', 'mod_presenterai'), $html);
+
+        $data = $this->export($instance, $course, $context, $student);
+        $this->assertFalse($data['showsubmissions']);
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/view', $data);
+        $this->assertStringNotContainsString(get_string('viewsubmissions', 'mod_presenterai'), $html);
+    }
 }
