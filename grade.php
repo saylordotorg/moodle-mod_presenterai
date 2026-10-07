@@ -25,6 +25,10 @@
  * gradebook, completion, the event and the learner's message, and then
  * through grading_outcomes for any outcomes attached to the activity.
  *
+ * action=rescore queues an AI rescore of the attempt. It's a POST with the
+ * sesskey, and it's refused unless grade_page::rescore_state() offers it, so
+ * an attempt a teacher has scored is never handed back to the model.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -34,12 +38,14 @@ require(__DIR__ . '/../../config.php');
 
 use mod_presenterai\form\grade_form;
 use mod_presenterai\local\access;
+use mod_presenterai\output\grade_page;
 use mod_presenterai\local\grading_outcomes;
 use mod_presenterai\local\rubric_manager;
 use mod_presenterai\local\score_manager;
 
 $id = required_param('id', PARAM_INT);
 $recordingid = required_param('recordingid', PARAM_INT);
+$action = optional_param('action', '', PARAM_ALPHA);
 
 [$course, $cm] = get_course_and_cm_from_cmid($id, 'presenterai');
 require_login($course, false, $cm);
@@ -57,6 +63,18 @@ $PAGE->set_url($url);
 $PAGE->set_context($context);
 $PAGE->set_pagelayout('incourse');
 $PAGE->set_activity_record($instance);
+
+if ($action === 'rescore') {
+    if (!data_submitted()) {
+        throw new moodle_exception('invalidrequest');
+    }
+    require_sesskey();
+    if (grade_page::rescore_state($rec, $context, (int) $USER->id) !== grade_page::RESCORE_AVAILABLE) {
+        redirect($url, get_string('rescore_notavailable', 'mod_presenterai'), null, \core\output\notification::NOTIFY_ERROR);
+    }
+    \mod_presenterai\task\score_recording::queue((int) $rec->id, true);
+    redirect($url, get_string('rescore_queued', 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
 
 $rubric = rubric_manager::resolve($instance, $context);
 $current = score_manager::current_score((int) $rec->id);
@@ -100,9 +118,9 @@ $PAGE->navbar->add($title);
 // Only the selector: the recording id and the player label travel as data
 // attributes on the root, which keeps the call under js_call_amd()'s 1024
 // character warning.
-$PAGE->requires->js_call_amd('mod_presenterai/grading', 'init', ['#' . \mod_presenterai\output\grade_page::ROOT_ID]);
+$PAGE->requires->js_call_amd('mod_presenterai/grading', 'init', ['#' . grade_page::ROOT_ID]);
 
-$page = new \mod_presenterai\output\grade_page($instance, $rec, $course, $cm, $context, (int) $USER->id, $form->render());
+$page = new grade_page($instance, $rec, $course, $cm, $context, (int) $USER->id, $form->render());
 
 echo $OUTPUT->header();
 echo $OUTPUT->render_from_template('mod_presenterai/grade', $page->export_for_template($OUTPUT));

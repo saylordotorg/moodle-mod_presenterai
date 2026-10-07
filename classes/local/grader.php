@@ -25,6 +25,8 @@ namespace mod_presenterai\local;
  *
  * - One attempt's fraction is rawsum / rawmax over assessed criteria only. A
  *   criterion nobody could judge is left out of both sums, not counted as 0.
+ *   So is a criterion marked counts = false, which is how D23 keeps the two
+ *   visual criteria feedback only unless the activity scores them.
  * - An attempt with rawmax 0 has no number and doesn't count, rather than
  *   counting as zero.
  * - Across attempts, gradingmethod picks or averages, over every attempt with
@@ -49,9 +51,14 @@ final class grader {
     public const IN_CHUNK = 1000;
 
     /**
-     * Sum the assessed criteria of one score.
+     * Sum the assessed, counting criteria of one score.
      *
-     * @param array $criteria A list of ['score' => int, 'max_score' => int, 'assessed' => bool].
+     * A criterion is left out of both sums when it isn't assessed
+     * (rubric_manager::is_assessed()) or when its 'counts' flag is an explicit
+     * false (D23). An absent counts flag counts, which is every score written
+     * before the flag existed.
+     *
+     * @param array $criteria A list of ['score' => int, 'max_score' => int, 'assessed' => bool, 'counts' => bool].
      * @return array ['rawsum' => int, 'rawmax' => int, 'assessed' => int]
      */
     public static function sums(array $criteria): array {
@@ -60,6 +67,9 @@ final class grader {
         $assessed = 0;
         foreach ($criteria as $criterion) {
             if (!is_array($criterion) || !rubric_manager::is_assessed($criterion)) {
+                continue;
+            }
+            if (($criterion['counts'] ?? null) === false) {
                 continue;
             }
             $rawsum += (int) ($criterion['score'] ?? 0);

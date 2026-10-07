@@ -53,6 +53,7 @@ export const _percent = (sum, max) => {
  *
  * A criterion counts only when its assessed box is ticked and a score is
  * chosen, so an unassessed criterion leaves both the sum and the maximum.
+ * A feedback only criterion (data-counts="0", D23) never counts.
  *
  * @param {HTMLElement} root The page root.
  * @return {object} {sum, max, chosen}
@@ -62,6 +63,9 @@ export const _total = (root) => {
     let max = 0;
     let chosen = 0;
     root.querySelectorAll('select[data-criterion]').forEach((select) => {
+        if (select.dataset.counts === '0') {
+            return;
+        }
         const index = select.dataset.criterion;
         const box = root.querySelector('input[type="checkbox"][data-assessed="' + index + '"]');
         if (box && !box.checked) {

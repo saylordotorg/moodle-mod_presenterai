@@ -93,6 +93,10 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
 
         $data = (object) $data;
         $data->course = $this->get_courseid();
+        // A backup from before phase 3 has neither; the database defaults would
+        // apply anyway, and saying so here keeps a later NOT NULL change honest.
+        $data->visualscored = (int) ($data->visualscored ?? 0);
+        $data->allowvisualoptout = (int) ($data->allowvisualoptout ?? 0);
 
         // The rubric rows are restored after this one, so the reference is
         // remembered and set in after_execute(), once the mapping exists. A
@@ -172,6 +176,7 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         // Both belong to a browser page on the source course, not to this one.
         $data->clienttoken = null;
         $data->uploadid = null;
+        $data->visualoptout = (int) ($data->visualoptout ?? 0);
         $oldscoreid = (int) ($data->scoreid ?? 0);
         $data->scoreid = null;
 
@@ -200,6 +205,7 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         }
         $data->recordingid = $recordingid;
         $data->userid = $userid;
+        $data->visualstatus = (string) ($data->visualstatus ?? '');
         $data->graderid = !empty($data->graderid) ? ($this->get_mappingid('user', $data->graderid) ?: 0) : 0;
         $data->rubricid = !empty($data->rubricid) ? ($this->get_mappingid('presenterai_rubric', $data->rubricid) ?: 0) : 0;
 

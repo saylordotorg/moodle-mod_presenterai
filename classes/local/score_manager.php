@@ -17,7 +17,7 @@
 namespace mod_presenterai\local;
 
 /**
- * Score rows: which one is current, and writing a teacher's.
+ * Score rows: which one is current, and writing a teacher's or the AI's.
  *
  * A score is its own table rather than columns on the recording because an AI
  * judgement and a teacher's are two assertions about the same attempt and both
@@ -29,8 +29,14 @@ namespace mod_presenterai\local;
  * but readers that decide a grade compute precedence here instead of trusting
  * that column, so a stale pointer can never change anyone's grade.
  *
- * Phase 2 has no AI. AI rows are only read, so a site with rows from a later
- * phase or from the Soapbox migration gets the same precedence.
+ * An AI row never displaces a teacher's. save_ai_score() still writes one for
+ * an attempt a teacher has scored, so the audit trail shows the rescore, but
+ * it leaves scoreid, the grade, completion and the learner's inbox alone
+ * (IMPLEMENTATION-PLAN section 6: a rescore only rewrites attempts with no
+ * teacher row).
+ *
+ * Each stored criterion carries 'visual' and 'counts' (D23). Both are derived
+ * here from the resolved rubric, never from a request or a model's output.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -45,6 +51,20 @@ final class score_manager {
 
     /** @var string The recording status once it has a score. */
     public const RECORDING_STATUS_SCORED = 'scored';
+
+    /** @var string[] visualstatus values that carry a visualsummary (visual_pipeline STATUS_SUMMARY, STATUS_FALLBACK). */
+    private const SUMMARY_STATUSES = ['summary', 'fallback'];
+
+    /**
+     * Whether a teacher has scored this attempt.
+     *
+     * @param int $recordingid The recording id.
+     * @return bool
+     */
+    public static function has_teacher_score(int $recordingid): bool {
+        global $DB;
+        return $DB->record_exists('presenterai_score', ['recordingid' => $recordingid, 'origin' => self::ORIGIN_TEACHER]);
+    }
 
     /**
      * The current score of one attempt.
@@ -123,7 +143,8 @@ final class score_manager {
      *
      * @param \stdClass $score A presenterai_score row.
      * @return array[] A list of ['name' => string, 'score' => int, 'max_score' => int,
-     *                 'feedback' => string, 'assessed' => bool].
+     *                 'feedback' => string, 'assessed' => bool, 'visual' => bool, 'counts' => bool].
+     *                 An absent visual flag reads false and an absent counts flag reads true.
      */
     public static function decode_criteria(\stdClass $score): array {
         $raw = json_decode((string) ($score->scores ?? ''), true);
@@ -144,6 +165,8 @@ final class score_manager {
                     : rubric_manager::DEFAULT_MAX_SCORE,
                 'feedback' => isset($entry['feedback']) && is_scalar($entry['feedback']) ? (string) $entry['feedback'] : '',
                 'assessed' => rubric_manager::is_assessed($entry),
+                'visual' => !empty($entry['visual']),
+                'counts' => ($entry['counts'] ?? null) !== false,
             ];
         }
         return $criteria;
@@ -154,9 +177,11 @@ final class score_manager {
      *
      * The caller checks capabilities and that the attempt may be graded; this
      * checks the numbers and that the attempt belongs to the instance, and
-     * trusts nothing else it's given. After the row and the recording are
-     * written together, the event fires, the grade is pushed, completion is
-     * updated and then the learner is told.
+     * trusts nothing else it's given. Each criterion's visual and counts flags
+     * come from the activity's resolved rubric, matched by normalized name, so a
+     * request can't move a feedback only criterion into the total. After the
+     * row and the recording are written together, the event fires, the grade
+     * is pushed, completion is updated and then the learner is told.
      *
      * @param \stdClass $rec The presenterai_recording row being scored.
      * @param \stdClass $instance The presenterai row it belongs to.
@@ -182,7 +207,7 @@ final class score_manager {
         if ((int) $rec->presenteraiid !== (int) $instance->id) {
             throw new \invalid_parameter_exception('The recording does not belong to this activity.');
         }
-        $entries = self::validate_criteria($criteria);
+        $entries = self::apply_rubric_flags(self::validate_criteria($criteria), $instance, $ctx);
         $sums = grader::sums($entries);
 
         $now = time();
@@ -225,6 +250,164 @@ final class score_manager {
         }
 
         return $score;
+    }
+
+    /**
+     * Record the scoring task's result for one attempt.
+     *
+     * The row is always inserted, origin 'ai' and graderid 0. When the attempt
+     * already has a teacher row, that's all: scoreid stays on the teacher's
+     * row, the recording is left scored, and the grade, completion and the
+     * learner's inbox are untouched, because a teacher's judgement always wins
+     * (plan section 6). Otherwise the recording points at the new row and is
+     * marked scored, the event fires, the grade is pushed, completion is
+     * updated and the learner is told, in that order, as for a teacher.
+     *
+     * The caller (scorer) has already applied the allowlist and the rubric's
+     * maxima and flags; this cleans the shape again and trusts nothing else.
+     *
+     * @param \stdClass $rec The presenterai_recording row being scored.
+     * @param \stdClass $instance The presenterai row it belongs to.
+     * @param \context_module $ctx The activity's module context.
+     * @param int $rubricid The rubric the criteria came from, 0 for the in-code preset.
+     * @param array $criteria A list of ['name', 'score', 'max_score', 'feedback', 'assessed', 'visual', 'counts'].
+     * @param string $feedback Overall feedback, plain text.
+     * @param string[] $tips Next-time tips, plain text.
+     * @param string|null $visualsummary The gated learner summary, or null.
+     * @param string $visualstatus One of visual_pipeline's STATUS_* values.
+     * @return \stdClass The inserted presenterai_score row, as read back.
+     */
+    public static function save_ai_score(
+        \stdClass $rec,
+        \stdClass $instance,
+        \context_module $ctx,
+        int $rubricid,
+        array $criteria,
+        string $feedback,
+        array $tips,
+        ?string $visualsummary,
+        string $visualstatus
+    ): \stdClass {
+        global $DB;
+
+        if ((int) $rec->presenteraiid !== (int) $instance->id) {
+            throw new \invalid_parameter_exception('The recording does not belong to this activity.');
+        }
+        $entries = self::clean_ai_criteria($criteria);
+        $sums = grader::sums($entries);
+
+        $tips = array_values(array_filter(array_map(function ($tip): string {
+            return is_scalar($tip) ? trim((string) $tip) : '';
+        }, $tips), 'strlen'));
+        $visualstatus = \core_text::substr(clean_param($visualstatus, PARAM_ALPHA), 0, 16);
+        if (!in_array($visualstatus, self::SUMMARY_STATUSES, true) || trim((string) $visualsummary) === '') {
+            $visualsummary = null;
+        }
+
+        $now = time();
+        $transaction = $DB->start_delegated_transaction();
+        $scoreid = (int) $DB->insert_record('presenterai_score', (object) [
+            'recordingid' => (int) $rec->id,
+            'userid' => (int) $rec->userid,
+            'rubricid' => max(0, $rubricid),
+            'origin' => self::ORIGIN_AI,
+            'scores' => json_encode($entries),
+            'rawsum' => $sums['rawsum'],
+            'rawmax' => $sums['rawmax'],
+            'overallpct' => grader::percent($sums['rawsum'], $sums['rawmax']),
+            'scoreprovenance' => 'exact',
+            'feedback' => $feedback,
+            'tips' => json_encode($tips),
+            'visualsummary' => $visualsummary,
+            'visualstatus' => $visualstatus,
+            'graderid' => 0,
+            'timecreated' => $now,
+        ]);
+        // Read inside the transaction, so a teacher's save that landed while
+        // the model was thinking still wins.
+        $teacher = self::has_teacher_score((int) $rec->id);
+        $update = [
+            'id' => (int) $rec->id,
+            'status' => self::RECORDING_STATUS_SCORED,
+            'timemodified' => $now,
+        ];
+        if (!$teacher) {
+            $update['scoreid'] = $scoreid;
+        }
+        $DB->update_record('presenterai_recording', (object) $update);
+        $transaction->allow_commit();
+
+        $score = $DB->get_record('presenterai_score', ['id' => $scoreid], '*', MUST_EXIST);
+        if ($teacher) {
+            return $score;
+        }
+        $rec = $DB->get_record('presenterai_recording', ['id' => $rec->id], '*', MUST_EXIST);
+
+        \mod_presenterai\event\recording_scored::create_from_score($rec, $score, $ctx)->trigger();
+
+        gradebook::update_grades($instance, (int) $rec->userid);
+        self::update_completion($instance, $ctx, (int) $rec->userid);
+        notifier::recording_scored($rec, $instance, $ctx, $score);
+
+        return $score;
+    }
+
+    /**
+     * Set each entry's visual and counts flags from the activity's resolved rubric.
+     *
+     * Matched by normalized name. An entry the rubric doesn't name (a score
+     * entered against an older rubric) is not visual and counts.
+     *
+     * @param array[] $entries From validate_criteria().
+     * @param \stdClass $instance The presenterai row.
+     * @param \context_module $ctx The activity's module context.
+     * @return array[] The entries with 'visual' and 'counts'.
+     */
+    private static function apply_rubric_flags(array $entries, \stdClass $instance, \context_module $ctx): array {
+        $byname = [];
+        foreach (rubric_manager::resolve($instance, $ctx)['criteria'] as $criterion) {
+            $byname[rubric_manager::normalise_name((string) $criterion['name'])] = $criterion;
+        }
+        foreach ($entries as $i => $entry) {
+            $known = $byname[rubric_manager::normalise_name($entry['name'])] ?? null;
+            $visual = $known !== null && !empty($known['visual']);
+            $entries[$i]['visual'] = $visual;
+            $entries[$i]['counts'] = rubric_manager::counts($visual, $instance);
+        }
+        return $entries;
+    }
+
+    /**
+     * Clean a criteria list from the scorer into the stored shape.
+     *
+     * @param array $criteria The list given to save_ai_score().
+     * @return array[] A list of ['name', 'score', 'max_score', 'feedback', 'assessed', 'visual', 'counts'].
+     */
+    private static function clean_ai_criteria(array $criteria): array {
+        $entries = [];
+        foreach ($criteria as $criterion) {
+            if (!is_array($criterion)) {
+                continue;
+            }
+            $name = trim((string) ($criterion['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            $max = max(1, (int) ($criterion['max_score'] ?? rubric_manager::DEFAULT_MAX_SCORE));
+            $entries[] = [
+                'name' => $name,
+                'score' => max(0, min($max, (int) ($criterion['score'] ?? 0))),
+                'max_score' => $max,
+                'feedback' => (string) ($criterion['feedback'] ?? ''),
+                'assessed' => ($criterion['assessed'] ?? true) !== false,
+                'visual' => !empty($criterion['visual']),
+                'counts' => ($criterion['counts'] ?? true) !== false,
+            ];
+        }
+        if (empty($entries)) {
+            throw new \invalid_parameter_exception('A score needs at least one criterion.');
+        }
+        return $entries;
     }
 
     /**

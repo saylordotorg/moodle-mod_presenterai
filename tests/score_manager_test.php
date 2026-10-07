@@ -123,9 +123,12 @@ final class score_manager_test extends \advanced_testcase {
         $this->assertSame('Well done overall.', $score->feedback);
         $this->assertNull($score->tips);
         $this->assertSame([
-            ['name' => 'Pace', 'score' => 4, 'max_score' => 5, 'feedback' => 'Good pace.', 'assessed' => true],
-            ['name' => 'Eye contact', 'score' => 0, 'max_score' => 5, 'feedback' => '', 'assessed' => false],
-            ['name' => 'Structure', 'score' => 6, 'max_score' => 10, 'feedback' => 'Clear.', 'assessed' => true],
+            ['name' => 'Pace', 'score' => 4, 'max_score' => 5, 'feedback' => 'Good pace.', 'assessed' => true,
+                'visual' => false, 'counts' => true],
+            ['name' => 'Eye contact', 'score' => 0, 'max_score' => 5, 'feedback' => '', 'assessed' => false,
+                'visual' => false, 'counts' => true],
+            ['name' => 'Structure', 'score' => 6, 'max_score' => 10, 'feedback' => 'Clear.', 'assessed' => true,
+                'visual' => false, 'counts' => true],
         ], json_decode($score->scores, true));
         $this->assertSame(json_decode($score->scores, true), score_manager::decode_criteria($score));
 
@@ -396,13 +399,243 @@ final class score_manager_test extends \advanced_testcase {
     public function test_decode_criteria(): void {
         $this->assertSame([], score_manager::decode_criteria((object) ['scores' => 'nope']));
         $this->assertSame([
-            ['name' => 'Pace', 'score' => 3, 'max_score' => 5, 'feedback' => '', 'assessed' => true],
-            ['name' => '', 'score' => 0, 'max_score' => 5, 'feedback' => 'x', 'assessed' => false],
+            ['name' => 'Pace', 'score' => 3, 'max_score' => 5, 'feedback' => '', 'assessed' => true,
+                'visual' => false, 'counts' => true],
+            ['name' => '', 'score' => 0, 'max_score' => 5, 'feedback' => 'x', 'assessed' => false,
+                'visual' => false, 'counts' => true],
+            ['name' => 'Gestures', 'score' => 4, 'max_score' => 5, 'feedback' => '', 'assessed' => true,
+                'visual' => true, 'counts' => false],
         ], score_manager::decode_criteria((object) ['scores' => json_encode([
             ['name' => 'Pace', 'score' => 3, 'max_score' => 5],
             'junk',
             ['feedback' => 'x', 'assessed' => false],
+            ['name' => 'Gestures', 'score' => 4, 'max_score' => 5, 'visual' => true, 'counts' => false],
         ])]));
+    }
+
+    /**
+     * Seven criteria as the scorer hands them over: five spoken, two visual and feedback only.
+     *
+     * @return array[]
+     */
+    private static function ai_criteria(): array {
+        $out = [];
+        foreach (\mod_presenterai\local\rubric_manager::DEFAULT_CRITERIA as $criterion) {
+            $out[] = ['name' => $criterion['name'], 'score' => 4, 'max_score' => 5, 'feedback' => 'Good.',
+                'assessed' => true, 'visual' => false, 'counts' => true];
+        }
+        $out[] = ['name' => 'Body Language & Gestures', 'score' => 5, 'max_score' => 5, 'feedback' => 'Open hands.',
+            'assessed' => true, 'visual' => true, 'counts' => false];
+        $out[] = ['name' => 'Eye Contact & Camera Presence', 'score' => 1, 'max_score' => 5, 'feedback' => 'Look up.',
+            'assessed' => true, 'visual' => true, 'counts' => false];
+        return $out;
+    }
+
+    /**
+     * An AI score on an attempt with no teacher row becomes current and is passed on like a teacher's.
+     *
+     * @return void
+     */
+    public function test_save_ai_score(): void {
+        global $DB, $CFG;
+        require_once($CFG->libdir . '/gradelib.php');
+
+        $this->preventResetByRollback();
+        $rec = $this->recording();
+        $events = $this->redirectEvents();
+        $messages = $this->redirectMessages();
+
+        $score = score_manager::save_ai_score(
+            $rec,
+            $this->instance,
+            $this->ctx,
+            0,
+            self::ai_criteria(),
+            'Overall.',
+            ['Tip one.', '', '  Tip two. '],
+            'You kept your hands in view.',
+            'summary'
+        );
+
+        $this->assertSame('ai', $score->origin);
+        $this->assertSame(0, (int) $score->graderid);
+        $this->assertSame(20, (int) $score->rawsum, 'Feedback only visual criteria reached the sum (D23).');
+        $this->assertSame(25, (int) $score->rawmax);
+        $this->assertEqualsWithDelta(80.0, (float) $score->overallpct, 0.001);
+        $this->assertSame(['Tip one.', 'Tip two.'], json_decode($score->tips, true));
+        $this->assertSame('You kept your hands in view.', $score->visualsummary);
+        $this->assertSame('summary', $score->visualstatus);
+        $stored = score_manager::decode_criteria($score);
+        $this->assertSame([false, false], array_column(array_slice($stored, 5), 'counts'));
+
+        $after = $DB->get_record('presenterai_recording', ['id' => $rec->id]);
+        $this->assertSame('scored', $after->status);
+        $this->assertSame((int) $score->id, (int) $after->scoreid);
+
+        $scored = array_values(array_filter($events->get_events(), function ($e): bool {
+            return $e instanceof \mod_presenterai\event\recording_scored;
+        }));
+        $this->assertCount(1, $scored);
+        $this->assertSame('ai', $scored[0]->other['origin']);
+        $this->assertCount(1, $messages->get_messages());
+
+        $grades = grade_get_grades($this->course->id, 'mod', 'presenterai', $this->instance->id, $this->learner->id);
+        $this->assertEqualsWithDelta(80.0, (float) $grades->items[0]->grades[$this->learner->id]->grade, 0.001);
+    }
+
+    /**
+     * With visualscored on, the same visual criteria count.
+     *
+     * @return void
+     */
+    public function test_save_ai_score_with_visual_scored(): void {
+        $criteria = array_map(function (array $c): array {
+            $c['counts'] = true;
+            return $c;
+        }, self::ai_criteria());
+        $score = score_manager::save_ai_score($this->recording(), $this->instance, $this->ctx, 0, $criteria, '', [], null, '');
+        $this->assertSame(26, (int) $score->rawsum);
+        $this->assertSame(35, (int) $score->rawmax);
+    }
+
+    /**
+     * A summary is kept only for the summary and fallback statuses.
+     *
+     * @return void
+     */
+    public function test_save_ai_score_summary_only_with_its_status(): void {
+        $score = score_manager::save_ai_score(
+            $this->recording(),
+            $this->instance,
+            $this->ctx,
+            0,
+            self::ai_criteria(),
+            '',
+            [],
+            'Stray text.',
+            'notassessed'
+        );
+        $this->assertNull($score->visualsummary);
+        $this->assertSame('notassessed', $score->visualstatus);
+
+        $score = score_manager::save_ai_score(
+            $this->recording(2),
+            $this->instance,
+            $this->ctx,
+            0,
+            self::ai_criteria(),
+            '',
+            [],
+            'Template text.',
+            'fallback'
+        );
+        $this->assertSame('Template text.', $score->visualsummary);
+    }
+
+    /**
+     * An AI score never changes the current score of an attempt with a teacher row.
+     *
+     * The AI row is still written for the audit trail; the grade, scoreid,
+     * sums and the learner's inbox are untouched.
+     *
+     * @return void
+     */
+    public function test_ai_rescore_never_overrides_a_teacher(): void {
+        global $DB, $CFG;
+        require_once($CFG->libdir . '/gradelib.php');
+
+        $this->preventResetByRollback();
+        $rec = $this->recording();
+        $teacher = score_manager::save_teacher_score(
+            $rec,
+            $this->instance,
+            $this->ctx,
+            (int) $this->teacher->id,
+            0,
+            self::criteria(),
+            'Teacher says.'
+        );
+        $before = $DB->get_record('presenterai_recording', ['id' => $rec->id]);
+        $gradebefore = grade_get_grades($this->course->id, 'mod', 'presenterai', $this->instance->id, $this->learner->id)
+            ->items[0]->grades[$this->learner->id]->grade;
+
+        $events = $this->redirectEvents();
+        $messages = $this->redirectMessages();
+        $ai = score_manager::save_ai_score(
+            $before,
+            $this->instance,
+            $this->ctx,
+            0,
+            self::ai_criteria(),
+            'AI says.',
+            [],
+            null,
+            ''
+        );
+
+        $this->assertSame('ai', $ai->origin, 'The AI row is kept for the audit trail.');
+        $after = $DB->get_record('presenterai_recording', ['id' => $rec->id]);
+        $this->assertSame((int) $teacher->id, (int) $after->scoreid);
+        $this->assertSame('scored', $after->status);
+        $current = score_manager::current_score((int) $rec->id);
+        $this->assertSame((int) $teacher->id, (int) $current->id);
+        $this->assertSame((int) $teacher->rawsum, (int) $current->rawsum);
+        $this->assertSame((int) $teacher->rawmax, (int) $current->rawmax);
+        $this->assertSame((float) $teacher->overallpct, (float) $current->overallpct);
+        $gradeafter = grade_get_grades($this->course->id, 'mod', 'presenterai', $this->instance->id, $this->learner->id)
+            ->items[0]->grades[$this->learner->id]->grade;
+        $this->assertEquals($gradebefore, $gradeafter);
+        $this->assertCount(0, $messages->get_messages(), 'The learner was told about a score that is not theirs.');
+        $this->assertCount(0, array_filter($events->get_events(), function ($e): bool {
+            return $e instanceof \mod_presenterai\event\recording_scored;
+        }));
+    }
+
+    /**
+     * A teacher's row takes visual and counts from the rubric, never from the request.
+     *
+     * @return void
+     */
+    public function test_teacher_flags_come_from_the_rubric(): void {
+        global $DB;
+
+        $DB->update_record('presenterai', (object) ['id' => $this->instance->id, 'videovision' => 1, 'visualscored' => 0]);
+        $instance = $DB->get_record('presenterai', ['id' => $this->instance->id]);
+
+        $score = score_manager::save_teacher_score($this->recording(), $instance, $this->ctx, (int) $this->teacher->id, 0, [
+            ['name' => 'Delivery & Fluency', 'max_score' => 5, 'score' => 3, 'assessed' => true, 'visual' => true,
+                'counts' => false],
+            ['name' => 'body language &  GESTURES', 'max_score' => 5, 'score' => 5, 'assessed' => true, 'counts' => true],
+        ], '');
+
+        $stored = score_manager::decode_criteria($score);
+        $this->assertFalse($stored[0]['visual'], 'The request made a spoken criterion visual.');
+        $this->assertTrue($stored[0]['counts']);
+        $this->assertTrue($stored[1]['visual']);
+        $this->assertFalse($stored[1]['counts'], 'The request moved a feedback only criterion into the total.');
+        $this->assertSame(3, (int) $score->rawsum);
+        $this->assertSame(5, (int) $score->rawmax);
+
+        $DB->set_field('presenterai', 'visualscored', 1, ['id' => $this->instance->id]);
+        $instance = $DB->get_record('presenterai', ['id' => $this->instance->id]);
+        $score = score_manager::save_teacher_score($this->recording(2), $instance, $this->ctx, (int) $this->teacher->id, 0, [
+            ['name' => 'Body Language & Gestures', 'max_score' => 5, 'score' => 5, 'assessed' => true],
+        ], '');
+        $this->assertSame(5, (int) $score->rawmax);
+    }
+
+    /**
+     * has_teacher_score sees only teacher rows.
+     *
+     * @return void
+     */
+    public function test_has_teacher_score(): void {
+        $rec = $this->recording();
+        $this->assertFalse(score_manager::has_teacher_score((int) $rec->id));
+        $this->gen->create_score(['recordingid' => $rec->id, 'origin' => 'ai']);
+        $this->assertFalse(score_manager::has_teacher_score((int) $rec->id));
+        $this->gen->create_score(['recordingid' => $rec->id, 'origin' => 'teacher']);
+        $this->assertTrue(score_manager::has_teacher_score((int) $rec->id));
     }
 
     /**

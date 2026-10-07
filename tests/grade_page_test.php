@@ -16,6 +16,9 @@
 
 namespace mod_presenterai;
 
+use mod_presenterai\local\ai\client_interface;
+use mod_presenterai\local\ai\route_resolver;
+use mod_presenterai\local\score_manager;
 use mod_presenterai\output\grade_page;
 
 /**
@@ -28,6 +31,16 @@ use mod_presenterai\output\grade_page;
  * @covers     \mod_presenterai\output\grade_page
  */
 final class grade_page_test extends \advanced_testcase {
+    /**
+     * Never leave a double behind for the next test class.
+     *
+     * @return void
+     */
+    protected function tearDown(): void {
+        route_resolver::reset_test_doubles();
+        parent::tearDown();
+    }
+
     /** @var \stdClass The course. */
     private \stdClass $course;
 
@@ -106,7 +119,8 @@ final class grade_page_test extends \advanced_testcase {
         $this->assertSame([
             'rootid', 'cmid', 'recordingid', 'learnername', 'attemptlabel', 'recorded', 'length', 'status',
             'mediaavailable', 'watcharia', 'hastranscript', 'transcript', 'transcriptempty', 'showvisual',
-            'hasvisual', 'visualevidence', 'visualempty', 'form', 'reporturl', 'total',
+            'hasvisual', 'visualevidence', 'visualempty', 'canrescore', 'rescorenomedia', 'rescoreurl', 'sesskey',
+            'form', 'reporturl', 'total',
         ], array_keys($data));
 
         $this->assertSame('mod-presenterai-grade', $data['rootid']);
@@ -198,5 +212,86 @@ final class grade_page_test extends \advanced_testcase {
         $this->assertSame('', grade_page::visual_note('{"note": ""}'));
         $this->assertSame('Plain &amp; simple', grade_page::visual_note('Plain & simple'));
         $this->assertSame('{&quot;other&quot;:1}', grade_page::visual_note('{"other":1}'));
+    }
+
+    /**
+     * The D18 JSON is decoded: the note, then the confidence and unusable frames on their own line.
+     *
+     * @return void
+     */
+    public function test_visual_note_json(): void {
+        $note = grade_page::visual_note(json_encode([
+            'note' => "Hands <low> in four frames.\nLooks down in two.",
+            'confidence' => 'medium',
+            'unusable_frames' => 2,
+        ]));
+        $detail = get_string('scoring_evidencedetail', 'mod_presenterai', (object) [
+            'confidence' => get_string('scoring_confidence_medium', 'mod_presenterai'),
+            'unusable' => 2,
+        ]);
+        $this->assertSame(nl2br(s("Hands <low> in four frames.\nLooks down in two.\n\n" . $detail)), $note);
+        $this->assertStringContainsString('&lt;low&gt;', $note);
+
+        // An unknown confidence shows the note alone rather than a made up label.
+        $this->assertSame('Note.', grade_page::visual_note(json_encode(['note' => 'Note.', 'confidence' => 'certain'])));
+    }
+
+    /**
+     * Rescore is offered only with AI ready, a grader, no teacher row and something to score from.
+     *
+     * @return void
+     */
+    public function test_rescore_state(): void {
+        global $PAGE;
+
+        $rec = $this->recording(['status' => 'scored', 'transcript' => 'A transcript.']);
+        $teacherid = (int) $this->teacher->id;
+
+        $state = grade_page::rescore_state($rec, $this->context, $teacherid);
+        $this->assertSame(grade_page::RESCORE_HIDDEN, $state, 'AI is not ready.');
+
+        $client = $this->createMock(client_interface::class);
+        route_resolver::set_test_client(route_resolver::PURPOSE_SCORE, $client);
+        route_resolver::set_test_stt($this->createMock(\mod_presenterai\local\ai\stt_interface::class));
+        $this->assertTrue(route_resolver::ai_ready());
+
+        $this->assertSame(grade_page::RESCORE_AVAILABLE, grade_page::rescore_state($rec, $this->context, $teacherid));
+        $this->assertSame(
+            grade_page::RESCORE_HIDDEN,
+            grade_page::rescore_state($rec, $this->context, (int) $this->learner->id),
+            'A learner was offered a rescore.'
+        );
+
+        // Media gone but a transcript kept: still possible.
+        $kept = $this->recording(['storagekey' => null, 'transcript' => 'Kept.']);
+        $this->assertSame(grade_page::RESCORE_AVAILABLE, grade_page::rescore_state($kept, $this->context, $teacherid));
+
+        // Media gone and no transcript: a sentence instead of a button.
+        $gone = $this->recording(['storagekey' => null, 'transcript' => null, 'mediagonereason' => 'retention']);
+        $this->assertSame(grade_page::RESCORE_NOMEDIA, grade_page::rescore_state($gone, $this->context, $teacherid));
+        $data = $this->export($gone, $teacherid);
+        $this->assertFalse($data['canrescore']);
+        $this->assertTrue($data['rescorenomedia']);
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/grade', $data);
+        $this->assertStringContainsString(get_string('rescore_unavailable_nomedia', 'mod_presenterai'), $html);
+
+        // An unfinished upload isn't gradable at all.
+        $uploading = $this->recording(['status' => 'uploading']);
+        $this->assertSame(grade_page::RESCORE_HIDDEN, grade_page::rescore_state($uploading, $this->context, $teacherid));
+
+        // A teacher row removes the button for good.
+        $data = $this->export($rec, $teacherid);
+        $this->assertTrue($data['canrescore']);
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/grade', $data);
+        $this->assertStringContainsString('name="action" value="rescore"', $html);
+        $this->assertStringContainsString('name="sesskey" value="' . sesskey() . '"', $html);
+        $this->assertStringContainsString('method="post"', $html);
+
+        score_manager::save_teacher_score($rec, $this->instance, $this->context, $teacherid, 0, [
+            ['name' => 'Delivery & Fluency', 'max_score' => 5, 'score' => 3, 'assessed' => true, 'feedback' => ''],
+        ], '');
+        $this->assertSame(grade_page::RESCORE_HIDDEN, grade_page::rescore_state($rec, $this->context, $teacherid));
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/grade', $this->export($rec, $teacherid));
+        $this->assertStringNotContainsString('value="rescore"', $html);
     }
 }

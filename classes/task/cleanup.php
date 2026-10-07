@@ -53,6 +53,9 @@ use mod_presenterai\local\storage\store_factory;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class cleanup extends \core\task\scheduled_task {
+    /** @var string[] Statuses whose media pruning never deletes: scoring hasn't read it yet. */
+    public const PRUNE_PROTECTED = [recording_manager::STATUS_UPLOADED, recording_manager::STATUS_SCORING];
+
     /**
      * Name shown on the scheduled tasks page.
      *
@@ -211,6 +214,10 @@ class cleanup extends \core\task\scheduled_task {
      * their newest recording's media keeps the next one. The attempt rows, the
      * scores and the feedback all survive.
      *
+     * An attempt that is uploaded or scoring is counted but never pruned: its
+     * media is what transcription is about to read, or what a teacher grading
+     * by hand is about to watch, and nothing has been made from it yet.
+     *
      * @return void
      */
     protected function prune_stored_attempts(): void {
@@ -243,7 +250,7 @@ class cleanup extends \core\task\scheduled_task {
                     $seen = 0;
                 }
                 $seen++;
-                if ($seen <= $keep) {
+                if ($seen <= $keep || in_array((string) $rec->status, self::PRUNE_PROTECTED, true)) {
                     continue;
                 }
                 try {

@@ -328,4 +328,48 @@ final class instance_manager_test extends \advanced_testcase {
         $this->assertSame(-7, instance_manager::normalise((object) ['grade' => -7], null)->grade);
         $this->assertSame(250, instance_manager::normalise((object) ['grade' => 250], null)->grade);
     }
+
+    /**
+     * Presentation type and speaking level fall back to their defaults; the rubric must be visible and active.
+     *
+     * @return void
+     */
+    public function test_ptype_level_and_rubric(): void {
+        $this->resetAfterTest();
+
+        $this->assertSame('informative', instance_manager::normalise((object) ['ptype' => 'rant'], null)->ptype);
+        $this->assertSame('persuasive', instance_manager::normalise((object) ['ptype' => 'persuasive'], null)->ptype);
+        $this->assertNull(instance_manager::normalise((object) ['speakinglevel' => ''], null)->speakinglevel);
+        $this->assertNull(instance_manager::normalise((object) ['speakinglevel' => 'general'], null)->speakinglevel);
+        $this->assertNull(instance_manager::normalise((object) ['speakinglevel' => 'klingon'], null)->speakinglevel);
+        $this->assertSame(
+            'esl_intermediate',
+            instance_manager::normalise((object) ['speakinglevel' => 'esl_intermediate'], null)->speakinglevel
+        );
+
+        $course = $this->getDataGenerator()->create_course();
+        $other = $this->getDataGenerator()->create_course();
+        $mine = \mod_presenterai\local\rubric_manager::create(
+            (int) \context_course::instance($course->id)->id,
+            'speech',
+            'Mine',
+            [['name' => 'Pace']]
+        );
+        $theirs = \mod_presenterai\local\rubric_manager::create(
+            (int) \context_course::instance($other->id)->id,
+            'speech',
+            'Theirs',
+            [['name' => 'Pace']]
+        );
+
+        $this->assertNull(instance_manager::normalise((object) ['rubricid' => 0, 'course' => $course->id], null)->rubricid);
+        $chosen = instance_manager::normalise((object) ['rubricid' => $mine, 'course' => $course->id], null);
+        $this->assertSame($mine, $chosen->rubricid);
+        $this->assertNull(
+            instance_manager::normalise((object) ['rubricid' => $theirs, 'course' => $course->id], null)->rubricid,
+            'A rubric from another course was accepted.'
+        );
+        \mod_presenterai\local\rubric_manager::update($mine, 'Mine', [['name' => 'Pace']], false);
+        $this->assertNull(instance_manager::normalise((object) ['rubricid' => $mine, 'course' => $course->id], null)->rubricid);
+    }
 }
