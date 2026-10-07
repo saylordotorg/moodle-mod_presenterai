@@ -16,9 +16,14 @@
 
 namespace mod_presenterai;
 
+use mod_presenterai\local\ai\route_resolver;
 use mod_presenterai\local\recording_manager;
 use mod_presenterai\local\storage\fs_store;
 use mod_presenterai\local\storage\media_ref;
+
+defined('MOODLE_INTERNAL') || die();
+
+require_once(__DIR__ . '/scorer_test.php');
 
 /**
  * An attempt's life on the File API backend, end to end, with nothing mocked.
@@ -76,6 +81,16 @@ final class recording_manager_test extends \advanced_testcase {
         }
         $this->cm = get_coursemodule_from_id('presenterai', $this->instance->cmid, 0, false, MUST_EXIST);
         $this->context = \context_module::instance($this->instance->cmid);
+    }
+
+    /**
+     * Drop any AI doubles a test set, so they don't leak into later tests.
+     *
+     * @return void
+     */
+    protected function tearDown(): void {
+        route_resolver::reset_test_doubles();
+        parent::tearDown();
     }
 
     /**
@@ -1198,5 +1213,52 @@ final class recording_manager_test extends \advanced_testcase {
 
         $this->assertSame(0, (int) $done->visualoptout);
         $this->assertNotEmpty($done->frameskey);
+    }
+
+    /**
+     * Scoring is queued as an adhoc task at finalize only when AI is ready.
+     *
+     * @return void
+     */
+    public function test_finalize_queues_scoring_only_when_ai_is_ready(): void {
+        $rec = $this->begin();
+        $this->send($rec, 'recording', str_repeat('talk-', 300));
+        $this->finalize($rec);
+        $this->assertEmpty(
+            \core\task\manager::get_adhoc_tasks(\mod_presenterai\task\score_recording::class),
+            'With no AI set up an attempt must stay uploaded for hand grading.'
+        );
+
+        route_resolver::set_test_client(route_resolver::PURPOSE_SCORE, scorer_test::fake_client([]));
+        route_resolver::set_test_stt(scorer_test::fake_stt([]));
+        $second = $this->begin();
+        $this->send($second, 'recording', str_repeat('more-', 300));
+        $done = $this->finalize($second);
+
+        $tasks = \core\task\manager::get_adhoc_tasks(\mod_presenterai\task\score_recording::class);
+        $this->assertCount(1, $tasks);
+        $data = reset($tasks)->get_custom_data();
+        $this->assertSame((int) $done->id, (int) $data->recordingid);
+        $this->assertEmpty($data->rescore);
+
+        // A repeated finalize doesn't queue the attempt twice.
+        $this->finalize($this->reload((int) $done->id));
+        $this->assertCount(1, \core\task\manager::get_adhoc_tasks(\mod_presenterai\task\score_recording::class));
+    }
+
+    /**
+     * Scoring set up without transcription refuses a new attempt before the learner speaks.
+     *
+     * @return void
+     */
+    public function test_begin_refuses_when_scoring_has_no_transcription(): void {
+        route_resolver::set_test_client(route_resolver::PURPOSE_SCORE, scorer_test::fake_client([]));
+        route_resolver::set_test_stt(null);
+
+        $this->assert_refused(
+            'error:notranscription',
+            fn() => $this->begin(),
+            'An attempt that can never be scored must not be started.'
+        );
     }
 }

@@ -33,6 +33,7 @@ $string['aireadiness_blocked'] = 'Scoring is set up but transcription is not, so
 $string['aireadiness_noscoring'] = 'Scoring: nothing is set up, so recordings are graded by hand.';
 $string['aireadiness_notranscription'] = 'Transcription: not set up. Add an OpenAI key or a transcription endpoint.';
 $string['aireadiness_novision'] = 'Body language feedback: not available. It needs a Claude, OpenAI or Gemini key or a compatible endpoint, because Moodle core AI can\'t take images.';
+$string['aireadiness_novisioncore'] = 'Body language feedback: not available while scoring runs on Moodle core AI, because core keeps every prompt it sends and the frame notes must not be kept.';
 $string['aireadiness_routeunconfigured'] = 'Scoring: {$a} is chosen but isn\'t set up, so scoring is unavailable.';
 $string['aireadiness_scoring'] = 'Scoring: {$a}.';
 $string['aireadiness_transcription'] = 'Transcription: set up.';

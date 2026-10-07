@@ -176,6 +176,11 @@ class route_resolver {
         $scoring = self::client_for(self::PURPOSE_SCORE);
         $stt = self::stt();
         $vision = self::client_for(self::PURPOSE_VISION);
+        // Design 3.6: with scoring on core AI, visual_pipeline never analyses
+        // frames, because the note would go into a prompt core keeps forever.
+        // The vision client can still serve slide vision, but body language
+        // feedback is off, and the page should say so.
+        $corescoring = $scoring !== null && $scoring->route() === 'core';
         $configured = self::configured_route();
         $messages = [];
 
@@ -197,13 +202,17 @@ class route_resolver {
         $messages[] = $stt !== null
             ? get_string('aireadiness_transcription', 'mod_presenterai')
             : get_string('aireadiness_notranscription', 'mod_presenterai');
-        $messages[] = $vision !== null
-            ? get_string(
-                'aireadiness_vision',
-                'mod_presenterai',
-                get_string('airoute_' . $vision->route(), 'mod_presenterai')
-            )
-            : get_string('aireadiness_novision', 'mod_presenterai');
+        if ($corescoring) {
+            $messages[] = get_string('aireadiness_novisioncore', 'mod_presenterai');
+        } else {
+            $messages[] = $vision !== null
+                ? get_string(
+                    'aireadiness_vision',
+                    'mod_presenterai',
+                    get_string('airoute_' . $vision->route(), 'mod_presenterai')
+                )
+                : get_string('aireadiness_novision', 'mod_presenterai');
+        }
         if ($scoring !== null && $stt === null) {
             $messages[] = get_string('aireadiness_blocked', 'mod_presenterai');
         }
@@ -211,7 +220,7 @@ class route_resolver {
         return [
             'scoring' => $scoring !== null,
             'transcription' => $stt !== null,
-            'vision' => $vision !== null,
+            'vision' => $vision !== null && !$corescoring,
             'route' => $scoring === null ? '' : $scoring->route(),
             'messages' => $messages,
         ];

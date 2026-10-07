@@ -318,6 +318,12 @@ final class recording_manager {
                 throw new \moodle_exception('error:capreached', 'mod_presenterai');
             }
 
+            // Scoring is set up but transcription isn't, so every attempt would
+            // fail to score. Refuse before the learner speaks, not after.
+            if (!\mod_presenterai\local\ai\route_resolver::accepts_recordings()) {
+                throw new \moodle_exception('error:notranscription', 'mod_presenterai');
+            }
+
             // Throws errorstorenotconfigured when S3 is selected and not
             // configured, which is right: a recording must not quietly go to the
             // other backend. Stamped from the store's own name(), which is the
@@ -907,7 +913,11 @@ final class recording_manager {
         ]);
         $transitioned = true;
 
-        // Phase 3: queue \mod_presenterai\task\score_recording here.
+        // Scored in an adhoc task, never in this web request (plan section 5).
+        // With no AI set up the attempt stays uploaded and is graded by hand.
+        if (\mod_presenterai\local\ai\route_resolver::ai_ready()) {
+            \mod_presenterai\task\score_recording::queue((int) $rec->id);
+        }
 
         return $DB->get_record('presenterai_recording', ['id' => $rec->id], '*', MUST_EXIST);
     }

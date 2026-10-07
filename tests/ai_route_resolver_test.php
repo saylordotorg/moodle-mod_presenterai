@@ -176,6 +176,23 @@ final class ai_route_resolver_test extends \advanced_testcase {
     }
 
     /**
+     * Scoring on core AI reports no body language feedback, even with a vision key (design 3.6).
+     *
+     * @return void
+     */
+    public function test_readiness_core_scoring_has_no_body_language(): void {
+        self::core_on();
+        set_config('airoute', 'core', 'mod_presenterai');
+        set_config('openaiapikey', 'o', 'mod_presenterai');
+
+        $this->assertNotNull(route_resolver::client_for(route_resolver::PURPOSE_VISION), 'Slide vision may still use the key.');
+        $readiness = route_resolver::readiness();
+        $this->assertSame('core', $readiness['route']);
+        $this->assertFalse($readiness['vision']);
+        $this->assertContains(get_string('aireadiness_novisioncore', 'mod_presenterai'), $readiness['messages']);
+    }
+
+    /**
      * Transcription: a custom endpoint first, then OpenAI's with the OpenAI key.
      *
      * @return void
