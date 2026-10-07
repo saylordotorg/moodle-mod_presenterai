@@ -14,9 +14,9 @@ An activity module in which a learner records a video or audio presentation in t
 
 ## Demo video
 
-[![PresenterAI demo video](https://img.youtube.com/vi/z1i2aFDR690/maxresdefault.jpg)](https://youtu.be/z1i2aFDR690)
+[![PresenterAI demo video](https://img.youtube.com/vi/mg5zABu1o4I/maxresdefault.jpg)](https://youtu.be/mg5zABu1o4I)
 
-[Watch the two-and-a-half-minute demo on YouTube](https://youtu.be/z1i2aFDR690). It shows 0.4.1 on Saylor University's development site: a teacher adds the activity and turns on review before release, a learner presents with slides, the teacher reviews the AI's score, changes one criterion and releases it, and the learner reads their feedback and replays the attempt with the slides in sync. The narration is AI-generated.
+[Watch the three-minute demo on YouTube](https://youtu.be/mg5zABu1o4I). It shows 0.4.1 on Saylor University's development site: a teacher adds the activity, picks a rubric preset or builds a custom course rubric, and sets attempt limits and review before release; a learner presents with slides; the teacher reviews the AI's score, changes one criterion and releases it; and the learner reads their feedback and replays the attempt with the slides in sync. It also covers Moodle or S3 storage with automatic deletion, speaking levels for English learners, and the gradebook. The narration is AI-generated.
 
 ## What it does
 
