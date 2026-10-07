@@ -37,12 +37,17 @@
  * copy on the same site) would let a delete for one of them find the other's
  * file. A row whose recording did not arrive goes media-less.
  *
- * On S3 the backup carries keys only. A restore on the same site keeps them,
- * so the restored attempt still plays from the same bucket object, and the
- * shared-key guard (recording_manager::key_in_use_elsewhere()) stops either
- * row's deletion destroying the other's media. A restore anywhere else drops
- * them: the object is in another site's bucket, behind credentials this site
- * does not have.
+ * On S3 the backup carries keys only. A restore on the same site keeps the
+ * keys whose objects are still in the bucket, so the restored attempt still
+ * plays from the same bucket object, and the shared-key guard
+ * (recording_manager::key_in_use_elsewhere()) stops either row's deletion
+ * destroying the other's media. A key whose object is gone (a recycle bin
+ * restore, after deletion removed the media, is the common case) is dropped,
+ * and a missing recording leaves the attempt 'notbackedup'. When the bucket
+ * can't be asked, the keys are kept and the restore log says so, because
+ * dropping media that may well be there is worse than a key that may not be.
+ * A restore anywhere else drops them: the object is in another site's bucket,
+ * behind credentials this site does not have.
  *
  * @package    mod_presenterai
  * @category   backup
@@ -252,6 +257,9 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         $samesite = $this->task->is_samesite();
         $s3kept = false;
         $s3dropped = false;
+        $s3missing = false;
+        $s3unverified = false;
+        $s3exists = self::s3_probe();
 
         [$insql, $params] = $DB->get_in_or_equal(array_keys($this->oldscoreids), SQL_PARAMS_NAMED, 'rid');
         $rows = $DB->get_records_select(
@@ -264,6 +272,24 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         foreach ($rows as $row) {
             if ((string) $row->backend === 's3') {
                 if ($samesite) {
+                    $present = self::s3_media_present($row, $s3exists);
+                    if (in_array(null, $present, true)) {
+                        $s3unverified = true;
+                    }
+                    if (($present['storagekey'] ?? null) === false) {
+                        $this->mark_not_backed_up((int) $row->id);
+                        $s3missing = true;
+                        continue;
+                    }
+                    $update = ['id' => (int) $row->id];
+                    foreach ($present as $column => $there) {
+                        if ($there === false) {
+                            $update[$column] = null;
+                        }
+                    }
+                    if (count($update) > 1) {
+                        $DB->update_record('presenterai_recording', (object) $update);
+                    }
                     $s3kept = true;
                     continue;
                 }
@@ -312,6 +338,54 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         if ($s3dropped) {
             $this->log(get_string('restore_s3_unreachable', 'mod_presenterai'), backup::LOG_WARNING);
         }
+        if ($s3missing) {
+            $this->log(get_string('restore_s3_missing', 'mod_presenterai'), backup::LOG_WARNING);
+        }
+        if ($s3unverified) {
+            $this->log(get_string('restore_s3_unverified', 'mod_presenterai'), backup::LOG_WARNING);
+        }
+    }
+
+    /**
+     * Whether each S3 object a restored row names is still in the bucket.
+     *
+     * @param \stdClass $row The recording row, with storagekey, deckkey and frameskey.
+     * @param callable $exists Given a key, returns true, false when the object is gone, or null when unknown.
+     * @return array Column => true, false or null, for each column that names a key.
+     */
+    private static function s3_media_present(\stdClass $row, callable $exists): array {
+        $present = [];
+        foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
+            $key = (string) ($row->$column ?? '');
+            if ($key !== '') {
+                $present[$column] = $exists($key);
+            }
+        }
+        return $present;
+    }
+
+    /**
+     * A probe that asks this site's bucket whether a key's object is there.
+     *
+     * With S3 not configured the answer is always unknown, so nothing is dropped.
+     *
+     * @return callable Key => true, false or null.
+     */
+    private static function s3_probe(): callable {
+        $store = null;
+        try {
+            $store = \mod_presenterai\local\storage\store_factory::for_backend(
+                \mod_presenterai\local\storage\store_factory::BACKEND_S3
+            );
+        } catch (\moodle_exception $e) {
+            $store = null;
+        }
+        return function (string $key) use ($store): ?bool {
+            if (!$store instanceof \mod_presenterai\local\storage\s3_store) {
+                return null;
+            }
+            return $store->exists($key);
+        };
     }
 
     /**

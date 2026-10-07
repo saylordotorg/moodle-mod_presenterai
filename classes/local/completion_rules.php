@@ -73,6 +73,49 @@ final class completion_rules {
     }
 
     /**
+     * Recompute the stored minimum-score state for every learner with a score.
+     *
+     * The minimum-score rule reads the grading method, but core only resets
+     * stored completion when the completion settings change. A grading method
+     * change on its own would leave learners stuck in the state the old method
+     * gave them, so the settings save calls this. Only learners with a score row
+     * can have that rule change state, so they're the only ones visited.
+     *
+     * @param \stdClass $instance The presenterai row as it now stands.
+     * @param int $cmid The course module id.
+     * @return void
+     */
+    public static function refresh_minscore_state(\stdClass $instance, int $cmid): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/completionlib.php');
+
+        if ((int) ($instance->completionminscore ?? 0) <= 0) {
+            return;
+        }
+        $course = get_course((int) $instance->course);
+        $cm = get_coursemodule_from_id('presenterai', $cmid, $course->id, false, MUST_EXIST);
+        if ((int) $cm->completion !== COMPLETION_TRACKING_AUTOMATIC) {
+            return;
+        }
+        $completion = new \completion_info($course);
+        if (!$completion->is_enabled($cm)) {
+            return;
+        }
+
+        $rs = $DB->get_recordset_sql(
+            "SELECT DISTINCT r.userid
+               FROM {presenterai_recording} r
+               JOIN {presenterai_score} s ON s.recordingid = r.id
+              WHERE r.presenteraiid = :presenteraiid",
+            ['presenteraiid' => (int) $instance->id]
+        );
+        foreach ($rs as $row) {
+            $completion->update_state($cm, COMPLETION_UNKNOWN, (int) $row->userid);
+        }
+        $rs->close();
+    }
+
+    /**
      * Descriptions of the rules in force, for the course completion settings.
      *
      * @param \cm_info|\stdClass $cm The course module, carrying customdata.

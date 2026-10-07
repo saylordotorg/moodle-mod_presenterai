@@ -18,6 +18,7 @@ namespace mod_presenterai\output;
 
 use mod_presenterai\local\access;
 use mod_presenterai\local\config;
+use mod_presenterai\local\gradebook;
 use mod_presenterai\local\recording_manager;
 use mod_presenterai\local\retention;
 use mod_presenterai\local\storage\store_factory;
@@ -254,9 +255,18 @@ final class view_page implements \renderable, \templatable {
 
         $cleanupenabled = retention::cleanup_task_enabled();
         $s3lifecycle = retention::lifecycle_days(store_factory::BACKEND_S3) > 0;
+        $scorehidden = !empty($rows) && gradebook::hidden_from($this->instance, $this->userid);
         $out = [];
         foreach ($rows as $row) {
-            $out[] = attempt_row::export($row, $this->context, $this->userid, $this->now, $cleanupenabled, $s3lifecycle);
+            $out[] = attempt_row::export(
+                $row,
+                $this->context,
+                $this->userid,
+                $this->now,
+                $cleanupenabled,
+                $s3lifecycle,
+                $scorehidden
+            );
         }
 
         return $out;

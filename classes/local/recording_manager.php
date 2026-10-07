@@ -596,6 +596,9 @@ final class recording_manager {
      * @param int $durationseconds The recorded length the browser reports.
      * @param string $timeline The slide-advance timeline as JSON, or empty.
      * @param string|null $token The page's token from begin(), or null for a server-side caller.
+     * @param bool|null $transitioned Set to true only when this call moved the row out of
+     *                                uploading, so the caller fires the submitted event once
+     *                                even when two requests finalize the same row at once.
      * @return \stdClass The updated row.
      */
     public static function finalize(
@@ -606,8 +609,10 @@ final class recording_manager {
         int $topicid,
         int $durationseconds,
         string $timeline,
-        ?string $token = null
+        ?string $token = null,
+        ?bool &$transitioned = null
     ): \stdClass {
+        $transitioned = false;
         if (self::finalized_already($rec)) {
             return $rec;
         }
@@ -615,8 +620,18 @@ final class recording_manager {
         return self::with_attempt_lock(
             (int) $instance->id,
             (int) $rec->userid,
-            function () use ($rec, $instance, $course, $ctx, $topicid, $durationseconds, $timeline, $token): \stdClass {
-                return self::finalize_locked($rec, $instance, $course, $ctx, $topicid, $durationseconds, $timeline, $token);
+            function () use ($rec, $instance, $course, $ctx, $topicid, $durationseconds, $timeline, $token, &$transitioned) {
+                return self::finalize_locked(
+                    $rec,
+                    $instance,
+                    $course,
+                    $ctx,
+                    $topicid,
+                    $durationseconds,
+                    $timeline,
+                    $token,
+                    $transitioned
+                );
             }
         );
     }
@@ -632,6 +647,7 @@ final class recording_manager {
      * @param int $durationseconds The recorded length the browser reports.
      * @param string $timeline The slide-advance timeline as JSON, or empty.
      * @param string|null $token The page's token, or null for a server-side caller.
+     * @param bool|null $transitioned Set to true when this call made the row uploaded.
      * @return \stdClass The updated row.
      */
     private static function finalize_locked(
@@ -642,7 +658,8 @@ final class recording_manager {
         int $topicid,
         int $durationseconds,
         string $timeline,
-        ?string $token
+        ?string $token,
+        ?bool &$transitioned
     ): \stdClass {
         global $DB;
 
@@ -735,6 +752,7 @@ final class recording_manager {
             'clienttoken' => null,
             'timemodified' => $now,
         ]);
+        $transitioned = true;
 
         // Phase 3: queue \mod_presenterai\task\score_recording here.
 

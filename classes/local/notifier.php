@@ -43,35 +43,46 @@ final class notifier {
         if (!$learner || !empty($learner->deleted) || !empty($learner->suspended)) {
             return false;
         }
+        // A grade the gradebook hides isn't announced. Nothing is sent later
+        // when it's released; the gradebook's own release is the learner's cue.
+        if (gradebook::hidden_from($instance, (int) $learner->id)) {
+            return false;
+        }
 
-        // The plain-text parts get the name unescaped, so '&' doesn't arrive as '&amp;'.
-        $activity = format_string((string) $instance->name, true, ['context' => $ctx, 'escape' => false]);
-        $url = new \moodle_url('/mod/presenterai/view.php', ['id' => $ctx->instanceid]);
-        $a = (object) [
-            'activity' => $activity,
-            'attempt' => (int) $rec->attemptnumber,
-            'url' => $url->out(false),
-        ];
-        // The HTML body puts the link in an attribute, so it gets the escaped forms.
-        $ahtml = clone $a;
-        $ahtml->activity = format_string((string) $instance->name, true, ['context' => $ctx]);
-        $ahtml->url = $url->out(true);
+        // Built in the learner's language, not the grader's.
+        $oldlang = force_current_language((string) ($learner->lang ?? ''));
+        try {
+            // The plain-text parts get the name unescaped, so '&' doesn't arrive as '&amp;'.
+            $activity = format_string((string) $instance->name, true, ['context' => $ctx, 'escape' => false]);
+            $url = new \moodle_url('/mod/presenterai/view.php', ['id' => $ctx->instanceid]);
+            $a = (object) [
+                'activity' => $activity,
+                'attempt' => (int) $rec->attemptnumber,
+                'url' => $url->out(false),
+            ];
+            // The HTML body puts the link in an attribute, so it gets the escaped forms.
+            $ahtml = clone $a;
+            $ahtml->activity = format_string((string) $instance->name, true, ['context' => $ctx]);
+            $ahtml->url = $url->out(true);
 
-        $message = new \core\message\message();
-        $message->component = 'mod_presenterai';
-        $message->name = 'recordingscored';
-        $message->userfrom = \core_user::get_noreply_user();
-        $message->userto = $learner;
-        $message->courseid = (int) $instance->course;
-        $message->notification = 1;
-        $message->contexturl = $url->out(false);
-        $message->contexturlname = $activity;
-        $message->subject = get_string('message_recordingscored_subject', 'mod_presenterai', $a);
-        $message->fullmessage = get_string('message_recordingscored_body', 'mod_presenterai', $a);
-        $message->fullmessageformat = FORMAT_PLAIN;
-        $message->fullmessagehtml = get_string('message_recordingscored_bodyhtml', 'mod_presenterai', $ahtml);
-        $message->smallmessage = get_string('message_recordingscored_small', 'mod_presenterai', $a);
+            $message = new \core\message\message();
+            $message->component = 'mod_presenterai';
+            $message->name = 'recordingscored';
+            $message->userfrom = \core_user::get_noreply_user();
+            $message->userto = $learner;
+            $message->courseid = (int) $instance->course;
+            $message->notification = 1;
+            $message->contexturl = $url->out(false);
+            $message->contexturlname = $activity;
+            $message->subject = get_string('message_recordingscored_subject', 'mod_presenterai', $a);
+            $message->fullmessage = get_string('message_recordingscored_body', 'mod_presenterai', $a);
+            $message->fullmessageformat = FORMAT_PLAIN;
+            $message->fullmessagehtml = get_string('message_recordingscored_bodyhtml', 'mod_presenterai', $ahtml);
+            $message->smallmessage = get_string('message_recordingscored_small', 'mod_presenterai', $a);
 
-        return (bool) message_send($message);
+            return (bool) message_send($message);
+        } finally {
+            force_current_language($oldlang);
+        }
     }
 }

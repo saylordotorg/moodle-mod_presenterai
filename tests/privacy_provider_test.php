@@ -212,6 +212,11 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
             if ($item->get_name() === 'presenterai_recording') {
                 $this->assertArrayHasKey('visualevidence', $item->get_privacy_fields());
                 $this->assertArrayHasKey('deletewarnedat', $item->get_privacy_fields());
+                $this->assertArrayHasKey('visualevidenceat', $item->get_privacy_fields());
+            }
+            if ($item->get_name() === 'presenterai_score') {
+                $this->assertArrayHasKey('legacymeanscore', $item->get_privacy_fields());
+                $this->assertArrayHasKey('legacymeta', $item->get_privacy_fields());
             }
         }
     }
@@ -252,6 +257,17 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
      * @return void
      */
     public function test_export_for_a_learner(): void {
+        global $DB;
+
+        // A score migrated from Soapbox carries the old session's data and mean.
+        $DB->set_field('presenterai_score', 'legacymeanscore', 72, ['recordingid' => $this->alicefs->id, 'origin' => 'ai']);
+        $DB->set_field(
+            'presenterai_score',
+            'legacymeta',
+            '{"wpm":131,"fillers":4}',
+            ['recordingid' => $this->alicefs->id, 'origin' => 'ai']
+        );
+
         $this->export_context_data_for_user((int) $this->alice->id, $this->context, 'mod_presenterai');
         $writer = writer::with_context($this->context);
         $this->assertTrue($writer->has_any_data());
@@ -266,7 +282,15 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
         foreach ($data->scores as $score) {
             $this->assertObjectNotHasProperty('graderid', $score);
             $this->assertCount(2, $score->criteria);
+            if ($score->origin === 'ai') {
+                $this->assertSame(72, $score->legacymeanscore);
+                $this->assertEquals((object) ['wpm' => 131, 'fillers' => 4], $score->legacymeta);
+            } else {
+                $this->assertNull($score->legacymeanscore);
+                $this->assertNull($score->legacymeta);
+            }
         }
+        $this->assertNotNull($data->visualevidenceat);
         $this->assertObjectNotHasProperty('media_note', $data);
 
         $files = $writer->get_files($this->attempt_path($this->alicefs));

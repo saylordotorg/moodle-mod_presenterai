@@ -510,6 +510,29 @@ final class recording_manager_test extends \advanced_testcase {
     }
 
     /**
+     * Only the call that moved the row out of uploading reports the transition.
+     *
+     * The second call is given the row as it was read before the first finalized
+     * it, which is what a racing request holds when it reaches the lock.
+     *
+     * @return void
+     */
+    public function test_finalize_reports_the_transition_once(): void {
+        $rec = $this->begin();
+        $this->send($rec, 'recording', 'abc123');
+        $stale = $this->reload((int) $rec->id);
+
+        $first = null;
+        recording_manager::finalize($stale, $this->instance, $this->course, $this->context, 0, 30, '', null, $first);
+        $this->assertTrue($first);
+
+        $second = null;
+        $done = recording_manager::finalize($stale, $this->instance, $this->course, $this->context, 0, 30, '', null, $second);
+        $this->assertFalse($second);
+        $this->assertSame(recording_manager::STATUS_UPLOADED, $done->status);
+    }
+
+    /**
      * expiresat is written once from the activity's window and a later settings change leaves it alone.
      *
      * @return void

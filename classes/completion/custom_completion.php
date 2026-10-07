@@ -99,9 +99,13 @@ class custom_completion extends \core_completion\activity_custom_completion {
     /**
      * The order rules are shown in.
      *
+     * Core throws when a rule that applies to the activity is missing here, and
+     * the grade rules apply whenever the activity has a grade item, so they're
+     * listed too.
+     *
      * @return string[]
      */
     public function get_sort_order(): array {
-        return ['completionview', 'completionsubmit', 'completionminscore'];
+        return ['completionview', 'completionsubmit', 'completionminscore', 'completionusegrade', 'completionpassgrade'];
     }
 }

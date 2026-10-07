@@ -253,6 +253,34 @@ class s3_store implements store_interface {
     }
 
     /**
+     * Whether the object is in the bucket: true, false, or null when S3 didn't say.
+     *
+     * size() can't tell a deleted object from a bucket that didn't answer, and a
+     * restore needs to, because it drops keys to objects that are gone but must
+     * not drop keys to objects it merely couldn't reach. Only a 404 counts as
+     * gone. A 403 is unknown too: S3 answers 403 for a missing object when the
+     * credentials lack s3:ListBucket.
+     *
+     * @param string $key The stored key.
+     * @return bool|null
+     */
+    public function exists(string $key): ?bool {
+        if ($key === '' || !$this->is_configured()) {
+            return null;
+        }
+        $curl = self::new_curl();
+        $curl->head($this->sign('HEAD', $key, 300));
+        if ($curl->get_errno()) {
+            return null;
+        }
+        $code = (int) ($curl->get_info()['http_code'] ?? 0);
+        if ($code === 200) {
+            return true;
+        }
+        return $code === 404 ? false : null;
+    }
+
+    /**
      * Size of the stored object in bytes, or null if it is gone.
      *
      * A signed HEAD. The method is part of the SigV4 canonical request, so a

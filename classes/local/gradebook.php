@@ -144,8 +144,11 @@ final class gradebook {
             return (int) $aggregate['recordingid'];
         }, $aggregates);
         $scores = score_manager::current_scores($chosenids);
-        [$insql, $params] = $DB->get_in_or_equal(array_values($chosenids), SQL_PARAMS_NAMED, 'rid');
-        $submitted = $DB->get_records_select_menu('presenterai_recording', "id {$insql}", $params, '', 'id, timecreated');
+        $submitted = [];
+        foreach (array_chunk(array_values($chosenids), grader::IN_CHUNK) as $chunk) {
+            [$insql, $params] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'rid');
+            $submitted += $DB->get_records_select_menu('presenterai_recording', "id {$insql}", $params, '', 'id, timecreated');
+        }
 
         $grades = [];
         foreach ($aggregates as $uid => $aggregate) {
@@ -210,6 +213,41 @@ final class gradebook {
     public static function scale_used_anywhere(int $scaleid): bool {
         global $DB;
         return $scaleid > 0 && $DB->record_exists('presenterai', ['grade' => -$scaleid]);
+    }
+
+    /**
+     * Whether the gradebook hides this learner's grade from them.
+     *
+     * A teacher who hides the grade item, sets it hidden until a date, or hides
+     * one learner's grade is holding the result back, and the activity mustn't
+     * show it on its own pages or announce it either. mod_assign makes the same
+     * check. Someone who can see hidden grades sees through it, and an activity
+     * with no grade item has nothing to hide.
+     *
+     * @param \stdClass $instance The presenterai row.
+     * @param int $userid The learner, who is also the one looking.
+     * @return bool
+     */
+    public static function hidden_from(\stdClass $instance, int $userid): bool {
+        global $CFG;
+        require_once($CFG->libdir . '/gradelib.php');
+
+        if ((int) ($instance->grade ?? 0) === 0) {
+            return false;
+        }
+        if (has_capability('moodle/grade:viewhidden', \context_course::instance((int) $instance->course), $userid)) {
+            return false;
+        }
+        $info = grade_get_grades((int) $instance->course, 'mod', 'presenterai', (int) $instance->id, $userid);
+        $item = $info->items[0] ?? null;
+        if (!$item) {
+            return false;
+        }
+        if (!empty($item->hidden)) {
+            return true;
+        }
+        $grade = $item->grades[$userid] ?? null;
+        return $grade !== null && !empty($grade->hidden);
     }
 
     /**

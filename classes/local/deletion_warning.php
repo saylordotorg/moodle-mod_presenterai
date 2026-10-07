@@ -123,40 +123,46 @@ final class deletion_warning {
             return false;
         }
 
-        $ctx = \context_module::instance((int) $cm->id);
-        $url = new \moodle_url('/mod/presenterai/view.php', ['id' => $cm->id]);
-        // The plain-text parts get the name unescaped, so '&' doesn't arrive as '&amp;'.
-        $activity = format_string($instance->name, true, ['context' => $ctx, 'escape' => false]);
+        // Built in the learner's language, not the language cron runs in.
+        $oldlang = force_current_language((string) ($user->lang ?? ''));
+        try {
+            $ctx = \context_module::instance((int) $cm->id);
+            $url = new \moodle_url('/mod/presenterai/view.php', ['id' => $cm->id]);
+            // The plain-text parts get the name unescaped, so '&' doesn't arrive as '&amp;'.
+            $activity = format_string($instance->name, true, ['context' => $ctx, 'escape' => false]);
 
-        $a = (object) [
-            'activity' => $activity,
-            // From the row, in the learner's timezone (D22).
-            'date' => userdate($expiresat, get_string('strftimedatetime', 'langconfig'), $user->timezone ?? 99),
-        ];
-        $downloadkey = access::may_download($rec, $ctx, (int) $rec->userid)
-            ? 'message_deletionwarning_download'
-            : 'message_deletionwarning_nodownload';
-        $downloadtext = get_string($downloadkey, 'mod_presenterai');
+            $a = (object) [
+                'activity' => $activity,
+                // From the row, in the learner's timezone (D22).
+                'date' => userdate($expiresat, get_string('strftimedatetime', 'langconfig'), $user->timezone ?? 99),
+            ];
+            $downloadkey = access::may_download($rec, $ctx, (int) $rec->userid)
+                ? 'message_deletionwarning_download'
+                : 'message_deletionwarning_nodownload';
+            $downloadtext = get_string($downloadkey, 'mod_presenterai');
 
-        $message = new \core\message\message();
-        $message->component = 'mod_presenterai';
-        $message->name = 'deletionwarning';
-        $message->userfrom = \core_user::get_noreply_user();
-        $message->userto = $user;
-        $message->courseid = (int) $instance->course;
-        $message->notification = 1;
-        $message->subject = get_string('message_deletionwarning_subject', 'mod_presenterai', $a);
-        $message->fullmessage = get_string('message_deletionwarning_body', 'mod_presenterai', $a) . "\n\n"
-            . $downloadtext . "\n\n" . $url->out(false);
-        $message->fullmessageformat = FORMAT_PLAIN;
-        $ahtml = clone $a;
-        $ahtml->activity = format_string($instance->name, true, ['context' => $ctx]);
-        $message->fullmessagehtml = get_string('message_deletionwarning_bodyhtml', 'mod_presenterai', $ahtml)
-            . \html_writer::tag('p', s($downloadtext));
-        $message->smallmessage = get_string('message_deletionwarning_small', 'mod_presenterai', $a);
-        $message->contexturl = $url->out(false);
-        $message->contexturlname = $activity;
+            $message = new \core\message\message();
+            $message->component = 'mod_presenterai';
+            $message->name = 'deletionwarning';
+            $message->userfrom = \core_user::get_noreply_user();
+            $message->userto = $user;
+            $message->courseid = (int) $instance->course;
+            $message->notification = 1;
+            $message->subject = get_string('message_deletionwarning_subject', 'mod_presenterai', $a);
+            $message->fullmessage = get_string('message_deletionwarning_body', 'mod_presenterai', $a) . "\n\n"
+                . $downloadtext . "\n\n" . $url->out(false);
+            $message->fullmessageformat = FORMAT_PLAIN;
+            $ahtml = clone $a;
+            $ahtml->activity = format_string($instance->name, true, ['context' => $ctx]);
+            $message->fullmessagehtml = get_string('message_deletionwarning_bodyhtml', 'mod_presenterai', $ahtml)
+                . \html_writer::tag('p', s($downloadtext));
+            $message->smallmessage = get_string('message_deletionwarning_small', 'mod_presenterai', $a);
+            $message->contexturl = $url->out(false);
+            $message->contexturlname = $activity;
 
-        return (bool) message_send($message);
+            return (bool) message_send($message);
+        } finally {
+            force_current_language($oldlang);
+        }
     }
 }

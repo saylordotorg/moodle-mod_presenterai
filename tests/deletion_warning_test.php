@@ -117,6 +117,31 @@ final class deletion_warning_test extends \advanced_testcase {
     }
 
     /**
+     * The message is in the learner's language, not the language cron runs in.
+     *
+     * @return void
+     */
+    public function test_sent_in_the_learner_language(): void {
+        global $DB;
+
+        $this->install_language('xx', ['message_deletionwarning_subject' => 'XX {$a->activity}']);
+        try {
+            $DB->set_field('user', 'lang', 'xx', ['id' => $this->alice->id]);
+            $now = time();
+            $this->recording($now + 2 * DAYSECS);
+
+            $sink = $this->redirectMessages();
+            $this->assertSame(1, deletion_warning::send_due($now));
+            $messages = $sink->get_messages();
+            $this->assertCount(1, $messages);
+            $this->assertSame('XX Pitch practice', $messages[0]->subject);
+            $this->assertSame('en', current_language(), 'The language is put back afterwards.');
+        } finally {
+            $this->remove_language('xx');
+        }
+    }
+
+    /**
      * An activity name with '&' reads as '&' in the plain-text parts and stays escaped in the HTML body.
      *
      * @return void
@@ -251,5 +276,40 @@ final class deletion_warning_test extends \advanced_testcase {
         $this->assertNotFalse($warned);
         $this->assertNotFalse($retention);
         $this->assertLessThan($retention, $warned);
+    }
+
+    /**
+     * Install a one-string language pack, so a message in it can be told from English.
+     *
+     * @param string $lang The language code.
+     * @param array $strings mod_presenterai string id => text.
+     * @return void
+     */
+    private function install_language(string $lang, array $strings): void {
+        global $CFG;
+
+        $dir = $CFG->langotherroot . '/' . $lang;
+        make_writable_directory($dir);
+        file_put_contents($dir . '/langconfig.php', "<?php\n\$string['thislanguage'] = 'Test';\n"
+            . "\$string['parentlanguage'] = '';\n");
+        $php = "<?php\n";
+        foreach ($strings as $id => $text) {
+            $php .= '$string[' . var_export($id, true) . '] = ' . var_export($text, true) . ";\n";
+        }
+        file_put_contents($dir . '/presenterai.php', $php);
+        get_string_manager()->reset_caches();
+    }
+
+    /**
+     * Remove a language pack install_language() added.
+     *
+     * @param string $lang The language code.
+     * @return void
+     */
+    private function remove_language(string $lang): void {
+        global $CFG;
+
+        remove_dir($CFG->langotherroot . '/' . $lang);
+        get_string_manager()->reset_caches();
     }
 }

@@ -186,4 +186,39 @@ final class grader_test extends \advanced_testcase {
             $this->assertNull(grader::aggregate($none, $method));
         }
     }
+
+    /**
+     * More learners than one IN chunk still get every aggregate, from both sides of the split.
+     *
+     * @return void
+     */
+    public function test_aggregate_for_users_across_chunks(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $gen = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $instance = $gen->create_instance(['course' => $course->id, 'gradingmethod' => 'highest']);
+
+        $first = $this->getDataGenerator()->create_user();
+        $last = $this->getDataGenerator()->create_user();
+        foreach ([[$first, 4], [$first, 9], [$last, 6]] as $i => [$user, $points]) {
+            $rec = $gen->create_recording([
+                'presenteraiid' => $instance->id,
+                'userid' => $user->id,
+                'attemptnumber' => $i + 1,
+                'status' => 'scored',
+            ]);
+            $gen->create_score(['recordingid' => $rec->id, 'rawsum' => $points, 'rawmax' => 10]);
+        }
+
+        // The first learner opens the list and the second closes it, with
+        // padding between them, so they fall in different chunks.
+        $padding = range(10000000, 10000000 + grader::IN_CHUNK * 2);
+        $userids = array_merge([(int) $first->id], $padding, [(int) $last->id]);
+        $result = grader::aggregate_for_users($instance, $userids);
+
+        $this->assertCount(count($userids), $result);
+        $this->assertSame(90.0, $result[(int) $first->id]['pct']);
+        $this->assertSame(60.0, $result[(int) $last->id]['pct']);
+        $this->assertNull($result[10000000]);
+    }
 }

@@ -22,6 +22,7 @@ defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->libdir . '/completionlib.php');
+require_once($CFG->dirroot . '/mod/presenterai/lib.php');
 
 /**
  * The two custom completion rules.
@@ -32,6 +33,7 @@ require_once($CFG->libdir . '/completionlib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \mod_presenterai\completion\custom_completion
  * @covers     \mod_presenterai\local\completion_rules
+ * @covers     ::presenterai_update_instance
  */
 final class custom_completion_test extends \advanced_testcase {
     /** @var \stdClass The course, with completion on. */
@@ -179,6 +181,63 @@ final class custom_completion_test extends \advanced_testcase {
     }
 
     /**
+     * Changing the grading method in the settings recomputes the stored minimum-score state.
+     *
+     * Core resets completion only when the completion settings themselves change,
+     * and the grading method isn't one of them.
+     *
+     * @return void
+     */
+    public function test_gradingmethod_change_updates_stored_state(): void {
+        $instance = $this->activity(['completionminscore' => 70, 'grade' => 100, 'gradingmethod' => 'highest']);
+        $this->attempt($instance, 1, 'scored', 8);
+        $this->attempt($instance, 2, 'scored', 5);
+
+        $cm = get_fast_modinfo($this->course->id)->get_cm($instance->cmid);
+        $completion = new \completion_info($this->course);
+        $completion->update_state($cm, COMPLETION_UNKNOWN, (int) $this->learner->id);
+        $this->assertEquals(COMPLETION_COMPLETE, $completion->get_data($cm, false, $this->learner->id)->completionstate);
+
+        presenterai_update_instance((object) [
+            'instance' => $instance->id,
+            'coursemodule' => $instance->cmid,
+            'gradingmethod' => 'latest',
+        ]);
+        $this->assertEquals(COMPLETION_INCOMPLETE, $completion->get_data($cm, false, $this->learner->id)->completionstate);
+
+        presenterai_update_instance((object) [
+            'instance' => $instance->id,
+            'coursemodule' => $instance->cmid,
+            'gradingmethod' => 'highest',
+        ]);
+        $this->assertEquals(COMPLETION_COMPLETE, $completion->get_data($cm, false, $this->learner->id)->completionstate);
+    }
+
+    /**
+     * A custom rule alongside the grade rules renders its completion details.
+     *
+     * Core's cm_completion_details throws when get_sort_order() leaves out a rule
+     * that applies, which would break view.php and the course page.
+     *
+     * @return void
+     */
+    public function test_details_with_grade_rules(): void {
+        $instance = $this->activity([
+            'grade' => 100,
+            'completionsubmit' => 1,
+            'completionminscore' => 50,
+            'completiongradeitemnumber' => 0,
+            'completionpassgrade' => 1,
+        ]);
+        $cm = get_fast_modinfo($this->course->id)->get_cm($instance->cmid);
+        $details = \core_completion\cm_completion_details::get_instance($cm, (int) $this->learner->id)->get_details();
+        $this->assertSame(
+            ['completionsubmit', 'completionminscore', 'completionusegrade', 'completionpassgrade'],
+            array_keys($details)
+        );
+    }
+
+    /**
      * The rules travel in customdata only when completion is automatic and the value is set.
      *
      * @return void
@@ -192,7 +251,10 @@ final class custom_completion_test extends \advanced_testcase {
         $this->assertSame(['completionsubmit'], array_values($completion->get_available_custom_rules()));
         $descriptions = $completion->get_custom_rule_descriptions();
         $this->assertSame(get_string('completiondetail:submit', 'mod_presenterai', 2), $descriptions['completionsubmit']);
-        $this->assertSame(['completionview', 'completionsubmit', 'completionminscore'], $completion->get_sort_order());
+        $this->assertSame(
+            ['completionview', 'completionsubmit', 'completionminscore', 'completionusegrade', 'completionpassgrade'],
+            $completion->get_sort_order()
+        );
         $this->assertSame(['completionsubmit', 'completionminscore'], custom_completion::get_defined_custom_rules());
 
         $this->assertSame(

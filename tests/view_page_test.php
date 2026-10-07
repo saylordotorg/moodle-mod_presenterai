@@ -210,6 +210,43 @@ final class view_page_test extends \advanced_testcase {
     }
 
     /**
+     * A grade item hidden in the gradebook hides the score and feedback in the attempt list too.
+     *
+     * @return void
+     */
+    public function test_hidden_grade_item_hides_score(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/gradelib.php');
+
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student, $teacher] = $this->setup_activity(['grade' => 100]);
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $rec = $generator->create_recording(['presenteraiid' => $instance->id, 'userid' => $student->id,
+            'storagekey' => 'a.webm', 'status' => 'scored']);
+        $generator->create_score(['recordingid' => $rec->id, 'rawsum' => 7, 'rawmax' => 10, 'overallpct' => 70.0,
+            'feedback' => 'Well paced.']);
+
+        $row = $this->export($instance, $course, $context, $student)['attempts']['rows'][0];
+        $this->assertTrue($row['hasscore']);
+        $this->assertTrue($row['hasfeedback']);
+
+        $item = \grade_item::fetch(['itemtype' => 'mod', 'itemmodule' => 'presenterai', 'iteminstance' => $instance->id,
+            'courseid' => $course->id]);
+        $item->set_hidden(1);
+        $row = $this->export($instance, $course, $context, $student)['attempts']['rows'][0];
+        $this->assertFalse($row['hasscore']);
+        $this->assertSame('', $row['score']);
+        $this->assertFalse($row['hasfeedback']);
+        $this->assertSame([], $row['feedback']['criteria']);
+
+        // Hidden until a date that has passed is no longer hidden.
+        $item->set_hidden(time() - 10);
+        $row = $this->export($instance, $course, $context, $student)['attempts']['rows'][0];
+        $this->assertTrue($row['hasscore']);
+    }
+
+    /**
      * The view event is the module's own subclass and can be created and triggered.
      *
      * Phase 0 created the abstract core class directly, which fatals on the

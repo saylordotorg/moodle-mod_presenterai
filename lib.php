@@ -116,6 +116,11 @@ function presenterai_update_instance($data, $mform = null) {
     presenterai_grade_item_update($instance);
     presenterai_update_grades($instance, 0, false);
 
+    // Core resets stored completion only when the completion settings change.
+    if ((string) $existing->gradingmethod !== (string) $instance->gradingmethod) {
+        \mod_presenterai\local\completion_rules::refresh_minscore_state($instance, (int) $data->coursemodule);
+    }
+
     return true;
 }
 

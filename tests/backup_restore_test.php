@@ -537,6 +537,123 @@ final class backup_restore_test extends \advanced_testcase {
     }
 
     /**
+     * A same-site restore drops the S3 keys whose objects are gone, and keeps the rest.
+     *
+     * The recycle bin is the common path: deleting the activity deletes its bucket
+     * objects, and restoring the item brings back rows naming them. A local PHP
+     * server stands in for the bucket, answering 404 for any key with "gone-" in
+     * it and 200 for the others.
+     *
+     * @return void
+     */
+    public function test_same_site_s3_restore_drops_keys_to_deleted_objects(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        [$course, $instance, , $alice] = $this->course_with_learner_work();
+        $plugin = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $prefix = 'presenterai/' . $course->id . '/' . $alice->id . '/';
+        $plugin->create_recording([
+            'presenteraiid' => $instance->id,
+            'userid' => $alice->id,
+            'attemptnumber' => 3,
+            'backend' => 's3',
+            'storagekey' => $prefix . 'gone-recording.webm',
+            'deckkey' => $prefix . 'present-deck.pdf',
+        ]);
+        $plugin->create_recording([
+            'presenteraiid' => $instance->id,
+            'userid' => $alice->id,
+            'attemptnumber' => 4,
+            'backend' => 's3',
+            'storagekey' => $prefix . 'present-recording.webm',
+            'frameskey' => $prefix . 'gone-frames.zip',
+        ]);
+
+        $server = $this->start_fake_bucket();
+        try {
+            $newcourseid = $this->backup_and_restore_with_users($course);
+        } finally {
+            proc_terminate($server);
+            proc_close($server);
+        }
+
+        $restored = $DB->get_record('presenterai', ['course' => $newcourseid], '*', MUST_EXIST);
+        $rows = $DB->get_records(
+            'presenterai_recording',
+            ['presenteraiid' => $restored->id, 'backend' => 's3'],
+            '',
+            'attemptnumber, storagekey, deckkey, frameskey, mediagonereason'
+        );
+
+        $this->assertSame($prefix . 's3-object.webm', $rows[2]->storagekey, 'An object that is there keeps its key.');
+
+        $this->assertNull($rows[3]->storagekey);
+        $this->assertNull($rows[3]->deckkey, 'Without its recording the deck is not an attempt\'s media.');
+        $this->assertSame('notbackedup', $rows[3]->mediagonereason);
+
+        $this->assertSame($prefix . 'present-recording.webm', $rows[4]->storagekey);
+        $this->assertNull($rows[4]->frameskey, 'A key to a deleted object goes.');
+        $this->assertNull($rows[4]->mediagonereason);
+    }
+
+    /**
+     * Start a PHP server that answers S3 HEAD requests, and point the S3 settings at it.
+     *
+     * @return resource The server process.
+     */
+    private function start_fake_bucket() {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/router.php', '<?php
+            if (strpos($_SERVER["REQUEST_URI"], "gone-") !== false) {
+                http_response_code(404);
+            } else {
+                header("Content-Length: 5");
+            }
+        ');
+
+        $socket = stream_socket_server('tcp://127.0.0.1:0');
+        $port = (int) substr(strrchr(stream_socket_get_name($socket, false), ':'), 1);
+        fclose($socket);
+
+        $process = proc_open(
+            [PHP_BINARY, '-S', '127.0.0.1:' . $port, $dir . '/router.php'],
+            [['file', '/dev/null', 'r'], ['file', '/dev/null', 'w'], ['file', '/dev/null', 'w']],
+            $pipes
+        );
+        if (!is_resource($process)) {
+            $this->markTestSkipped('Could not start a local PHP server.');
+        }
+        $ready = false;
+        for ($i = 0; $i < 50 && !$ready; $i++) {
+            $conn = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.1);
+            if ($conn) {
+                fclose($conn);
+                $ready = true;
+            } else {
+                usleep(100000);
+            }
+        }
+        if (!$ready) {
+            proc_terminate($process);
+            proc_close($process);
+            $this->markTestSkipped('The local PHP server did not start.');
+        }
+
+        // Moodle's curl refuses local hosts and unusual ports by default.
+        set_config('curlsecurityblockedhosts', '');
+        set_config('curlsecurityallowedport', '');
+        set_config('s3key', 'AKIAIOSFODNN7EXAMPLE', 'mod_presenterai');
+        set_config('s3secret', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'mod_presenterai');
+        set_config('s3bucket', 'presenterai-test', 'mod_presenterai');
+        set_config('s3region', 'us-east-1', 'mod_presenterai');
+        set_config('s3endpoint', 'http://127.0.0.1:' . $port, 'mod_presenterai');
+        set_config('s3pathstyle', 1, 'mod_presenterai');
+        return $process;
+    }
+
+    /**
      * From another site, S3 attempts arrive without media, because the bucket is not this site's.
      *
      * @return void

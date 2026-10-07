@@ -165,6 +165,9 @@ final class attempt_row {
      * @param int $now The time to compare expiresat against.
      * @param bool $cleanupenabled Whether the cleanup task is enabled.
      * @param bool $s3lifecycle Whether a bucket lifecycle rule is declared for S3.
+     * @param bool $scorehidden Whether the gradebook hides the grade from the viewer
+     *                          (gradebook::hidden_from()), which leaves the score
+     *                          and feedback out of the row.
      * @return array
      */
     public static function export(
@@ -173,7 +176,8 @@ final class attempt_row {
         int $userid,
         int $now,
         bool $cleanupenabled,
-        bool $s3lifecycle = false
+        bool $s3lifecycle = false,
+        bool $scorehidden = false
     ): array {
         $state = self::state($rec, $now, $cleanupenabled, $s3lifecycle);
         $hasmedia = self::has_media($rec);
@@ -188,7 +192,7 @@ final class attempt_row {
         $candownload = $hasmedia && access::may_download($rec, $ctx, $userid);
         $candelete = $hasmedia && access::may_delete($rec, $ctx, $userid);
 
-        $score = score_manager::current_score((int) $rec->id);
+        $score = $scorehidden ? null : score_manager::current_score((int) $rec->id);
         $feedback = $score ? self::feedback($score) : null;
 
         return [

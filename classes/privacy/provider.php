@@ -73,7 +73,7 @@ class provider implements
     public static function get_metadata(collection $collection): collection {
         $recordingfields = [
             'userid', 'topicid', 'attemptnumber', 'mode', 'durationseconds', 'sizebytes', 'status', 'slidetimeline',
-            'transcript', 'visualevidence', 'expiresat', 'mediadeletedat', 'mediagonereason', 'deletewarnedat',
+            'transcript', 'visualevidence', 'visualevidenceat', 'expiresat', 'mediadeletedat', 'mediagonereason', 'deletewarnedat',
             'timecreated',
         ];
         $collection->add_database_table(
@@ -83,7 +83,8 @@ class provider implements
         );
 
         $scorefields = [
-            'userid', 'origin', 'scores', 'rawsum', 'rawmax', 'overallpct', 'feedback', 'tips', 'graderid', 'timecreated',
+            'userid', 'origin', 'scores', 'rawsum', 'rawmax', 'overallpct', 'feedback', 'tips', 'graderid', 'legacymeanscore',
+            'legacymeta', 'timecreated',
         ];
         $collection->add_database_table(
             'presenterai_score',
@@ -337,6 +338,7 @@ class provider implements
             'visualevidence_note' => (string) ($rec->visualevidence ?? '') !== ''
                 ? get_string('privacy:export:visualevidence_note', 'mod_presenterai')
                 : null,
+            'visualevidenceat' => (int) ($rec->visualevidenceat ?? 0) > 0 ? transform::datetime($rec->visualevidenceat) : null,
             'timecreated' => transform::datetime($rec->timecreated),
             'scores' => self::scores_for($rec),
         ];
@@ -365,6 +367,14 @@ class provider implements
         $out = [];
         $scores = $DB->get_records('presenterai_score', ['recordingid' => $rec->id], 'timecreated ASC, id ASC');
         foreach ($scores as $score) {
+            // Only a score migrated from Soapbox has these. legacymeta is that
+            // session's own record, decoded when it's JSON and kept as text when not.
+            $legacy = $score->legacymeta !== null || (int) $score->legacymeanscore > 0;
+            $legacymeta = null;
+            if ($score->legacymeta !== null) {
+                $decoded = json_decode((string) $score->legacymeta);
+                $legacymeta = $decoded !== null ? $decoded : $score->legacymeta;
+            }
             $out[] = (object) [
                 'origin' => $score->origin,
                 'criteria' => self::criteria($score->scores),
@@ -373,6 +383,8 @@ class provider implements
                 'overallpct' => $score->overallpct === null ? null : (float) $score->overallpct,
                 'feedback' => $score->feedback,
                 'tips' => $score->tips,
+                'legacymeanscore' => $legacy ? (int) $score->legacymeanscore : null,
+                'legacymeta' => $legacymeta,
                 'timecreated' => transform::datetime($score->timecreated),
             ];
         }

@@ -45,6 +45,9 @@ final class grader {
     /** @var string The method used when the stored one isn't known. */
     public const DEFAULT_GRADING_METHOD = 'highest';
 
+    /** @var int The most ids put in one IN clause, well under MSSQL's 2100 bound parameters. */
+    public const IN_CHUNK = 1000;
+
     /**
      * Sum the assessed criteria of one score.
      *
@@ -244,15 +247,22 @@ final class grader {
             return $result;
         }
 
-        [$usersql, $params] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'u');
-        $params['presenteraiid'] = (int) $instance->id;
-        $recs = $DB->get_records_select(
-            'presenterai_recording',
-            "presenteraiid = :presenteraiid AND userid {$usersql}",
-            $params,
-            'id ASC',
-            'id, userid, attemptnumber, timecreated'
-        );
+        // Chunked, because a whole-activity regrade asks about every learner
+        // and one bound parameter each would pass MSSQL's 2100 limit.
+        $recs = [];
+        foreach (array_chunk($userids, self::IN_CHUNK) as $chunk) {
+            [$usersql, $params] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            $params['presenteraiid'] = (int) $instance->id;
+            $recs += $DB->get_records_select(
+                'presenterai_recording',
+                "presenteraiid = :presenteraiid AND userid {$usersql}",
+                $params,
+                'id ASC',
+                'id, userid, attemptnumber, timecreated'
+            );
+        }
+        // Each learner's attempts are walked oldest first, whatever chunk they came from.
+        ksort($recs);
         if (empty($recs)) {
             return $result;
         }

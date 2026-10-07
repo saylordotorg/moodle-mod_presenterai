@@ -188,6 +188,69 @@ final class score_manager_test extends \advanced_testcase {
     }
 
     /**
+     * No score-ready message while the grade item is hidden from the learner.
+     *
+     * @return void
+     */
+    public function test_no_message_while_grade_hidden(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/gradelib.php');
+
+        $this->preventResetByRollback();
+        $item = \grade_item::fetch(['itemtype' => 'mod', 'itemmodule' => 'presenterai',
+            'iteminstance' => $this->instance->id, 'courseid' => $this->course->id]);
+        $item->set_hidden(1);
+        $rec = $this->recording();
+        $messages = $this->redirectMessages();
+
+        score_manager::save_teacher_score(
+            $rec,
+            $this->instance,
+            $this->ctx,
+            (int) $this->teacher->id,
+            0,
+            self::criteria(),
+            ''
+        );
+
+        $this->assertCount(0, $messages->get_messages());
+    }
+
+    /**
+     * The score-ready message is in the learner's language, not the grader's.
+     *
+     * @return void
+     */
+    public function test_message_in_the_learner_language(): void {
+        global $DB;
+
+        $this->preventResetByRollback();
+        $this->install_language('xx', ['message_recordingscored_subject' => 'XX {$a->activity}']);
+        try {
+            $DB->set_field('user', 'lang', 'xx', ['id' => $this->learner->id]);
+            $rec = $this->recording();
+            $messages = $this->redirectMessages();
+
+            score_manager::save_teacher_score(
+                $rec,
+                $this->instance,
+                $this->ctx,
+                (int) $this->teacher->id,
+                0,
+                self::criteria(),
+                ''
+            );
+
+            $sent = $messages->get_messages();
+            $this->assertCount(1, $sent);
+            $this->assertSame('XX ' . $this->instance->name, $sent[0]->subject);
+            $this->assertSame('en', current_language(), 'The language is put back afterwards.');
+        } finally {
+            $this->remove_language('xx');
+        }
+    }
+
+    /**
      * An activity name with '&' reads as '&' in the plain-text parts and stays escaped in the HTML body.
      *
      * @return void
@@ -340,5 +403,40 @@ final class score_manager_test extends \advanced_testcase {
             'junk',
             ['feedback' => 'x', 'assessed' => false],
         ])]));
+    }
+
+    /**
+     * Install a one-string language pack, so a message in it can be told from English.
+     *
+     * @param string $lang The language code.
+     * @param array $strings mod_presenterai string id => text.
+     * @return void
+     */
+    private function install_language(string $lang, array $strings): void {
+        global $CFG;
+
+        $dir = $CFG->langotherroot . '/' . $lang;
+        make_writable_directory($dir);
+        file_put_contents($dir . '/langconfig.php', "<?php\n\$string['thislanguage'] = 'Test';\n"
+            . "\$string['parentlanguage'] = '';\n");
+        $php = "<?php\n";
+        foreach ($strings as $id => $text) {
+            $php .= '$string[' . var_export($id, true) . '] = ' . var_export($text, true) . ";\n";
+        }
+        file_put_contents($dir . '/presenterai.php', $php);
+        get_string_manager()->reset_caches();
+    }
+
+    /**
+     * Remove a language pack install_language() added.
+     *
+     * @param string $lang The language code.
+     * @return void
+     */
+    private function remove_language(string $lang): void {
+        global $CFG;
+
+        remove_dir($CFG->langotherroot . '/' . $lang);
+        get_string_manager()->reset_caches();
     }
 }

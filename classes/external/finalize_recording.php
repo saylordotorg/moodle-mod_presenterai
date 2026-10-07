@@ -88,7 +88,7 @@ class finalize_recording extends external_api {
             throw new \moodle_exception('error:recordingnotfound', 'mod_presenterai');
         }
 
-        $wasuploading = ((string) $rec->status === recording_manager::STATUS_UPLOADING);
+        $transitioned = false;
         $rec = recording_manager::finalize(
             $rec,
             $instance,
@@ -97,10 +97,13 @@ class finalize_recording extends external_api {
             (int) $params['topicid'],
             (int) $params['durationseconds'],
             (string) $params['slidetimeline'],
-            (string) $params['attempttoken']
+            (string) $params['attempttoken'],
+            $transitioned
         );
 
-        if ($wasuploading && (string) $rec->status !== recording_manager::STATUS_UPLOADING) {
+        // Only the request that made the transition fires it. Two requests
+        // racing on one row both read it uploading, and only one wins the lock.
+        if ($transitioned) {
             attempt_events::submitted($rec, $course, $cm, $context);
         }
 
