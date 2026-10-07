@@ -143,7 +143,7 @@ final class score_recording_task_test extends \advanced_testcase {
      * @param int $id The recording id.
      * @return string
      */
-    private function status(int $id): string {
+    private function row_status(int $id): string {
         global $DB;
         return (string) $DB->get_field('presenterai_recording', 'status', ['id' => $id], MUST_EXIST);
     }
@@ -166,7 +166,7 @@ final class score_recording_task_test extends \advanced_testcase {
         } catch (ai_exception $e) {
             $this->assertTrue($e->transient);
         }
-        $this->assertSame('scoring', $this->status((int) $rec->id));
+        $this->assertSame('scoring', $this->row_status((int) $rec->id));
         $this->assertSame(0, $DB->count_records('presenterai_score', ['recordingid' => $rec->id]));
     }
 
@@ -184,7 +184,7 @@ final class score_recording_task_test extends \advanced_testcase {
 
         $this->run_task($this->task((int) $rec->id, score_recording::RETRY_UNTIL_DELAY));
 
-        $this->assertSame('failed', $this->status((int) $rec->id));
+        $this->assertSame('failed', $this->row_status((int) $rec->id));
         $this->assertSame(0, $DB->count_records('presenterai_score', ['recordingid' => $rec->id]));
         $this->assertSame(960, score_recording::RETRY_UNTIL_DELAY);
     }
@@ -215,7 +215,7 @@ final class score_recording_task_test extends \advanced_testcase {
 
         $this->run_task($this->task((int) $rec->id, 0));
 
-        $this->assertSame('failed', $this->status((int) $rec->id));
+        $this->assertSame('failed', $this->row_status((int) $rec->id));
     }
 
     /**
@@ -237,7 +237,7 @@ final class score_recording_task_test extends \advanced_testcase {
 
         $this->run_task($this->task((int) $rec->id, 0));
 
-        $this->assertSame('scored', $this->status((int) $rec->id));
+        $this->assertSame('scored', $this->row_status((int) $rec->id));
         $this->assertSame(1, $DB->count_records('presenterai_score', ['recordingid' => $rec->id, 'origin' => 'ai']));
         $grades = grade_get_grades($this->course->id, 'mod', 'presenterai', $this->instance->id, $this->learner->id);
         $this->assertEqualsWithDelta(6.0, (float) $grades->items[0]->grades[$this->learner->id]->grade, 0.001);
