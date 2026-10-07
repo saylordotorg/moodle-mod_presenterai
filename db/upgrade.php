@@ -219,5 +219,16 @@ function xmldb_presenterai_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026100704, 'presenterai');
     }
 
+    if ($oldversion < 2026100705) {
+        // The audio track's declared size, checked when it's committed.
+        $table = new xmldb_table('presenterai_recording');
+        $field = new xmldb_field('audiobytes', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'audiokey');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026100705, 'presenterai');
+    }
+
     return true;
 }

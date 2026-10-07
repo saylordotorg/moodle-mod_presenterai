@@ -87,7 +87,7 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         // would.
         $recordings = new backup_nested_element('recordings');
         $recording = new backup_nested_element('recording', ['id'], [
-            'userid', 'topicid', 'attemptnumber', 'mode', 'backend', 'storagekey', 'deckkey', 'frameskey', 'audiokey',
+            'userid', 'topicid', 'attemptnumber', 'mode', 'backend', 'storagekey', 'deckkey', 'frameskey', 'audiokey', 'audiobytes',
             'slidetimeline', 'visualoptout', 'durationseconds', 'sizebytes', 'status',
             'transcript', 'scoreid', 'expiresat', 'mediadeletedat', 'mediagonereason', 'deletewarnedat',
             'legacyrecid', 'legacyscoreid', 'timecreated', 'timemodified',

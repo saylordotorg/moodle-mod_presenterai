@@ -184,8 +184,18 @@ final class transcription_source {
         if ($path === null && $source === self::SOURCE_AUDIO) {
             // The track is a convenience. If it can't be read, choose again as
             // though there were none, rather than fail an attempt whose
-            // recording is still there.
-            $source = self::choose(false, (string) ($rec->mode ?? 'video'), (int) ($rec->sizebytes ?? 0), $limit, $ffmpeg !== '');
+            // recording is still there. On S3 an unreadable object may only be
+            // unreachable for now, so when nothing else would fit, that's a
+            // network error the task retries, not a permanent too_large.
+            try {
+                $mode = (string) ($rec->mode ?? 'video');
+                $source = self::choose(false, $mode, (int) ($rec->sizebytes ?? 0), $limit, $ffmpeg !== '');
+            } catch (ai_exception $e) {
+                if ((string) $rec->backend === store_factory::BACKEND_S3) {
+                    throw new ai_exception('network', true, 'The audio track could not be fetched from storage.');
+                }
+                throw $e;
+            }
             $key = (string) $rec->storagekey;
             $ext = self::ext_for($key);
             $path = $store->fetch_to_file($key, $ext);
@@ -210,7 +220,20 @@ final class transcription_source {
         // at a known bitrate and cut wherever the limit needs it. A short
         // extraction gives one segment.
         $workdir = make_request_directory();
-        $segments = self::cut($path, $workdir, $limit > 0 ? self::segment_seconds($limit) : 0);
+        try {
+            $segments = self::cut($path, $workdir, $limit > 0 ? self::segment_seconds($limit) : 0);
+        } catch (ai_exception $e) {
+            // An ffmpeg that can't read this file mustn't fail a recording
+            // that would have been sent whole without it.
+            if ($source === self::SOURCE_EXTRACT && $fits) {
+                return [
+                    'files' => [['path' => $path, 'mime' => self::MIMETYPES[$ext]]],
+                    'source' => self::SOURCE_RECORDING,
+                    'workdir' => $workdir,
+                ];
+            }
+            throw $e;
+        }
         foreach ($segments as $segment) {
             if ($limit > 0 && filesize($segment['path']) > $limit) {
                 throw ai_exception::for_reason(ai_exception::TOO_LARGE, 'A segment is still over the limit');

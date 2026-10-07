@@ -574,12 +574,19 @@ final class recording_manager {
         $rec->$column = (string) $target['key'];
         $rec->uploadid = isset($target['uploadid']) ? (string) $target['uploadid'] : null;
         $rec->timemodified = time();
-        $DB->update_record('presenterai_recording', (object) [
+        $update = [
             'id' => $rec->id,
             $column => $rec->$column,
             'uploadid' => $rec->uploadid,
             'timemodified' => $rec->timemodified,
-        ]);
+        ];
+        if ($isaudio) {
+            // Kept so commit_pending_audio() can tell a track that arrived
+            // whole from one whose upload stopped partway.
+            $rec->audiobytes = max(0, $sizebytes);
+            $update['audiobytes'] = $rec->audiobytes;
+        }
+        $DB->update_record('presenterai_recording', (object) $update);
 
         return [
             'method' => (string) $target['method'],
@@ -741,9 +748,12 @@ final class recording_manager {
      * Commit an uploaded audio track into storage, or drop it if it never arrived.
      *
      * The same shape as commit_pending_frames(): idempotent, and a track that
-     * is missing, refused by the antivirus scanner or larger than the
-     * recording's ceiling is deleted and its key cleared without failing the
-     * attempt. The audio track is best effort; without it transcription falls
+     * is missing, refused by the antivirus scanner, larger than the
+     * recording's ceiling or not the size start_upload was told it would be
+     * is deleted and its key cleared without failing the attempt. The size
+     * check matters here as it doesn't for the frames: the browser carries on
+     * to the recording when the track's upload fails partway, and a truncated
+     * track would be transcribed as though the talk ended there. The audio track is best effort; without it transcription falls
      * back to the recording itself (transcription_source).
      *
      * @param \stdClass $rec The recording row. Updated in place as well as in the database.
@@ -778,7 +788,9 @@ final class recording_manager {
             $size = null;
         }
 
-        if ($size !== null && $size <= self::max_media_bytes($course)) {
+        $declared = (int) ($rec->audiobytes ?? 0);
+        $whole = $declared <= 0 || $size === $declared;
+        if ($size !== null && $whole && $size <= self::max_media_bytes($course)) {
             if ($audiouploadid !== '') {
                 $rec->uploadid = null;
                 $DB->set_field('presenterai_recording', 'uploadid', null, ['id' => $rec->id]);

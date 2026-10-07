@@ -291,6 +291,29 @@ final class transcription_source_test extends \advanced_testcase {
     }
 
     /**
+     * An ffmpeg that can't read a video under the limit falls back to sending the video whole.
+     *
+     * @return void
+     */
+    public function test_prepare_sends_the_video_when_ffmpeg_fails(): void {
+        $calls = [];
+        transcription_source::set_test_runner(self::runner([], $calls, 2));
+        $prepared = transcription_source::prepare($this->attempt('a small video'), 100);
+        $this->assertCount(2, $calls, 'Both encodings were not tried.');
+        $this->assertSame('recording', $prepared['source']);
+        $this->assertSame('a small video', file_get_contents($prepared['files'][0]['path']));
+
+        $calls = [];
+        transcription_source::set_test_runner(self::runner([], $calls, 2));
+        try {
+            transcription_source::prepare($this->attempt(str_repeat('v', 500)), 100);
+            $this->fail('A video over the limit was sent when ffmpeg failed.');
+        } catch (ai_exception $e) {
+            $this->assertSame(ai_exception::BAD_RESPONSE, $e->reason);
+        }
+    }
+
+    /**
      * The ffmpeg path setting: empty means none, and a path that isn't an executable file is ignored.
      *
      * @return void

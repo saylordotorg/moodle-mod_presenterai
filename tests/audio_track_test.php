@@ -259,6 +259,27 @@ final class audio_track_test extends \core_privacy\tests\provider_testcase {
     }
 
     /**
+     * A track whose upload stopped partway isn't committed as whole, and the recording goes on.
+     *
+     * @return void
+     */
+    public function test_truncated_track_is_dropped(): void {
+        $rec = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->user->id)['recording'];
+        // Declared at 20 bytes, only 7 arrive, as when a chunk fails and the browser moves on.
+        $target = recording_manager::start_upload($rec, $this->instance, $this->course, $this->context, 'audio', 'ogg', 20);
+        (new fs_store())->accept_chunk($target['uploadid'], 0, $this->stream_of('OggS 12'));
+        $this->assertSame(20, (int) $this->reload((int) $rec->id)->audiobytes);
+
+        $this->send($rec, media_ref::KIND_RECORDING, 'the video bytes');
+        $done = recording_manager::finalize($rec, $this->instance, $this->course, $this->context, 0, 30, '');
+        $this->assertEmpty($done->audiokey, 'A truncated track was kept for transcription.');
+        $this->assertSame('uploaded', $done->status);
+        $this->assertEmpty(
+            get_file_storage()->get_area_files($this->context->id, 'mod_presenterai', 'audio', $done->id, 'id', false)
+        );
+    }
+
+    /**
      * A learner's delete, retention and pruning take the track with the video.
      *
      * @return void
