@@ -172,6 +172,13 @@ Transcription is the one exception and it can't be removed. Core AI has no audio
 
 The settings page says it. The readiness list shows that body language and slide design feedback are off on core, the route's help text says no provider key is used for anything but transcription there, and the vendor fields that can't be used under core are hidden (the OpenAI key stays visible, because transcription uses it).
 
+**D27. A permanent AI failure hands the attempt back to the learner, and a teacher can still grade it.**
+Recorded 7 October 2026 by Tom, confirming what phase 3 built rather than changing it. When scoring fails for good (a bad response, too few spoken criteria assessed, the media gone with no transcript, the retries spent), the scorer sets the attempt to `failed`. `failed` is in `recording_manager::COUNTED_EXCLUDED`, so it doesn't use up one of the learner's attempts and they can record again. That's right: the failure wasn't theirs.
+
+The attempt isn't lost to staff either. The submissions report lists it with its status and a grade link, `grade.php` opens it (`failed` isn't in `access::NOT_GRADABLE`), and a hand grade saved there moves it to `scored`, where it counts toward the attempts and the gradebook like any other. Rescore is the other way back: `grade_page::rescore_state()` offers it on a failed attempt that has a transcript or its media, and the scorer acts on `failed` when it's a rescore. `tests/failed_attempt_test.php` pins all three paths end to end, through the report, the grade form and the queued task.
+
+A consequence worth knowing: a learner whose first attempt failed and who records again can end up with two scored attempts if a teacher later grades the failed one, which can take them past `maxattempts`. That's accepted. The cap stops a learner recording more than they're allowed, not a teacher grading work that was submitted.
+
 ## Part 4: open questions these two decisions raised
 
 These are **new information produced by designing 9.1 and 9.2**, not a reopening of either. D21 and D22 stand as taken. What the design work found is that both of them sit on top of an older assumption nobody has written down as a decision, and on four smaller choices the plan never made. They belong in `IMPLEMENTATION-PLAN.md` section 9 when it is next updated and are numbered to continue it.
