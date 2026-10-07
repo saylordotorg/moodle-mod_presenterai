@@ -152,6 +152,15 @@ Download and deletion are governed separately. `allowlearnerdownload` controls w
 
 ---
 
+**D23. Body language is feedback only by default; an activity can opt in to scoring it.**
+Recorded 6 October 2026 by Tom, settling 9.17. The default is option (b): the two visual criteria produce written feedback, gated by D21, and contribute nothing to `rawsum`, `rawmax`, the gradebook or any outcome. An activity setting, `visualscored`, default 0, lets a teacher score them as designed (option (c)). When it's on, the scoring prompt carries the counterweight the design document describes, so a behaviour that is visibly and permanently absent goes to `assessed = false` rather than to an assessed zero, and an absent `assessed` flag is never defaulted to true. The setting's help text says plainly that a model is judging a body from six stills and what that means for learners with disabilities.
+
+**D24. No body language opt out by default; an activity can allow one.**
+Recorded 6 October 2026 by Tom, settling 9.18. An activity setting, `allowvisualoptout`, default 0. When it's on, the learner sees a checkbox before recording, and ticking it has two effects the recommendation made conditions: the frames are never sampled or uploaded (not uploaded and ignored), and the page says the score is computed over the remaining criteria. It costs no model call and no marks. With the setting off, D17's audio mode remains the only route out.
+
+**D25. English only until the plugin directory submission.**
+Recorded 6 October 2026 by Tom, settling 9.22. Phases 3 and 4 add strings in `lang/en` only. One translation pass into SOLA's 45 other locales happens in phase 5, before the directory submission, once the strings have stopped changing. Privacy strings are translated, not left identical to English, so the parity trap in 9.22 isn't repeated.
+
 ## Part 4: open questions these two decisions raised
 
 These are **new information produced by designing 9.1 and 9.2**, not a reopening of either. D21 and D22 stand as taken. What the design work found is that both of them sit on top of an older assumption nobody has written down as a decision, and on four smaller choices the plan never made. They belong in `IMPLEMENTATION-PLAN.md` section 9 when it is next updated and are numbered to continue it.
