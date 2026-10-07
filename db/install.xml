@@ -85,6 +85,7 @@
         <FIELD NAME="expiresat" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="mediadeletedat" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="mediagonereason" TYPE="char" LENGTH="20" NOTNULL="false" SEQUENCE="false" COMMENT="Why storagekey became null: retention, pruned, manual, learner, missing, notbackedup. Null or empty means no reason recorded. Nullable for the same XMLDB reason as uploadid."/>
+        <FIELD NAME="deletewarnedat" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When the advance deletion message was sent for the current expiresat, 0 if not yet. Reset to 0 when expiresat is rewritten."/>
         <FIELD NAME="legacyrecid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="legacyscoreid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>

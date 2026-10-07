@@ -30,6 +30,7 @@ require_once($CFG->dirroot . '/mod/presenterai/mod_form.php');
  * @category   test
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers     ::presenterai_delete_instance
  * @covers     ::presenterai_get_coursemodule_info
  * @covers     ::presenterai_scale_used
  * @covers     ::presenterai_scale_used_anywhere
@@ -138,6 +139,46 @@ final class lib_test extends \advanced_testcase {
         $submitted->completion = COMPLETION_TRACKING_MANUAL;
         $form->data_postprocessing($submitted);
         $this->assertSame(0, $submitted->completionminscore, 'Manual completion zeroes every rule.');
+    }
+
+    /**
+     * Deleting an activity keeps its spend rows for cost totals but strips the learner from them.
+     *
+     * @return void
+     */
+    public function test_delete_instance_anonymises_aiusage(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $learner = $this->getDataGenerator()->create_user();
+        $doomed = $this->getDataGenerator()->create_module('presenterai', ['course' => $course->id]);
+        $kept = $this->getDataGenerator()->create_module('presenterai', ['course' => $course->id]);
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+
+        $usageids = [];
+        foreach ([$doomed, $kept] as $instance) {
+            $rec = $generator->create_recording(['presenteraiid' => $instance->id, 'userid' => $learner->id]);
+            $usageids[$instance->id] = $DB->insert_record('presenterai_aiusage', (object) [
+                'presenteraiid' => $instance->id,
+                'recordingid' => $rec->id,
+                'userid' => $learner->id,
+                'action' => 'score',
+                'estmicrocents' => 500,
+                'timecreated' => time(),
+            ]);
+        }
+
+        course_delete_module($doomed->cmid);
+
+        $gone = $DB->get_record('presenterai_aiusage', ['id' => $usageids[$doomed->id]], '*', MUST_EXIST);
+        $this->assertSame(0, (int) $gone->userid);
+        $this->assertSame(0, (int) $gone->recordingid);
+        $this->assertSame(500, (int) $gone->estmicrocents);
+        $this->assertFalse($DB->record_exists('presenterai_recording', ['presenteraiid' => $doomed->id]));
+
+        $other = $DB->get_record('presenterai_aiusage', ['id' => $usageids[$kept->id]], '*', MUST_EXIST);
+        $this->assertSame((int) $learner->id, (int) $other->userid);
     }
 
     /**
