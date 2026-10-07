@@ -217,6 +217,181 @@ if ($ADMIN->fulltree) {
         PARAM_INT
     ));
 
+    // AI services. DECISIONS.md D6 and plan section 5: the route chooses the
+    // back end for scoring only; transcription and body language always use
+    // the plugin's own keys below, which is what the route's description says.
+
+    $settings->add(new admin_setting_heading(
+        'mod_presenterai/aiheading',
+        get_string('aiheading', 'mod_presenterai'),
+        get_string('aiheading_desc', 'mod_presenterai')
+    ));
+
+    $routechoices = [];
+    foreach (\mod_presenterai\local\ai\route_resolver::ROUTES as $routename) {
+        $routechoices[$routename] = get_string('airoute_' . $routename, 'mod_presenterai');
+    }
+    $settings->add(new admin_setting_configselect(
+        'mod_presenterai/airoute',
+        get_string('airoute', 'mod_presenterai'),
+        get_string('airoute_desc', 'mod_presenterai'),
+        'auto',
+        $routechoices
+    ));
+
+    // What the current settings resolve to, worked out when the page opens.
+    // It reads stored values, so it reflects a change after the save.
+    $readiness = \mod_presenterai\local\ai\route_resolver::readiness();
+    $settings->add(new admin_setting_description(
+        'mod_presenterai/aireadiness',
+        get_string('aireadiness', 'mod_presenterai'),
+        html_writer::alist(array_map('s', $readiness['messages']))
+    ));
+
+    // Keys are admin_setting_encryptedpassword: stored encrypted with the
+    // site key, read only through local\ai\secrets::get(), never shown back.
+    // Model fields are PARAM_RAW_TRIMMED so a pasted trailing newline is
+    // refused on save rather than sent as part of the model id.
+    $settings->add(new admin_setting_encryptedpassword(
+        'mod_presenterai/claudeapikey',
+        get_string('claudeapikey', 'mod_presenterai'),
+        get_string('claudeapikey_desc', 'mod_presenterai')
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/claudemodel',
+        get_string('claudemodel', 'mod_presenterai'),
+        get_string('claudemodel_desc', 'mod_presenterai'),
+        'claude-sonnet-5-5',
+        PARAM_RAW_TRIMMED
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/claudejudgemodel',
+        get_string('claudejudgemodel', 'mod_presenterai'),
+        get_string('claudejudgemodel_desc', 'mod_presenterai'),
+        'claude-haiku-4-5',
+        PARAM_RAW_TRIMMED
+    ));
+
+    $settings->add(new admin_setting_encryptedpassword(
+        'mod_presenterai/openaiapikey',
+        get_string('openaiapikey', 'mod_presenterai'),
+        get_string('openaiapikey_desc', 'mod_presenterai')
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/openaimodel',
+        get_string('openaimodel', 'mod_presenterai'),
+        get_string('openaimodel_desc', 'mod_presenterai'),
+        'gpt-4o-mini',
+        PARAM_RAW_TRIMMED
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/openaijudgemodel',
+        get_string('openaijudgemodel', 'mod_presenterai'),
+        get_string('openaijudgemodel_desc', 'mod_presenterai'),
+        'gpt-4o-mini',
+        PARAM_RAW_TRIMMED
+    ));
+
+    $settings->add(new admin_setting_encryptedpassword(
+        'mod_presenterai/geminiapikey',
+        get_string('geminiapikey', 'mod_presenterai'),
+        get_string('geminiapikey_desc', 'mod_presenterai')
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/geminimodel',
+        get_string('geminimodel', 'mod_presenterai'),
+        get_string('geminimodel_desc', 'mod_presenterai'),
+        'gemini-2.5-flash',
+        PARAM_RAW_TRIMMED
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/geminijudgemodel',
+        get_string('geminijudgemodel', 'mod_presenterai'),
+        get_string('geminijudgemodel_desc', 'mod_presenterai'),
+        'gemini-2.5-flash',
+        PARAM_RAW_TRIMMED
+    ));
+
+    $settings->add(new \mod_presenterai\admin\setting_endpoint(
+        'mod_presenterai/compatibleendpoint',
+        get_string('compatibleendpoint', 'mod_presenterai'),
+        get_string('compatibleendpoint_desc', 'mod_presenterai')
+    ));
+    $settings->add(new admin_setting_encryptedpassword(
+        'mod_presenterai/compatibleapikey',
+        get_string('compatibleapikey', 'mod_presenterai'),
+        get_string('compatibleapikey_desc', 'mod_presenterai')
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/compatiblemodel',
+        get_string('compatiblemodel', 'mod_presenterai'),
+        get_string('compatiblemodel_desc', 'mod_presenterai'),
+        '',
+        PARAM_RAW_TRIMMED
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/compatiblejudgemodel',
+        get_string('compatiblejudgemodel', 'mod_presenterai'),
+        get_string('compatiblejudgemodel_desc', 'mod_presenterai'),
+        '',
+        PARAM_RAW_TRIMMED
+    ));
+
+    // Each vendor's fields are hidden when the route names a different one.
+    // Under auto and core every keyed vendor can still be used (core never
+    // serves vision or transcription), so nothing is hidden for those.
+    $vendorfields = [
+        'claude' => ['claudeapikey', 'claudemodel', 'claudejudgemodel'],
+        'openai' => ['openaiapikey', 'openaimodel', 'openaijudgemodel'],
+        'gemini' => ['geminiapikey', 'geminimodel', 'geminijudgemodel'],
+        'compatible' => ['compatibleendpoint', 'compatibleapikey', 'compatiblemodel', 'compatiblejudgemodel'],
+    ];
+    foreach ($vendorfields as $vendor => $fields) {
+        $othervendors = array_diff(array_keys($vendorfields), [$vendor]);
+        foreach ($fields as $field) {
+            $settings->hide_if('mod_presenterai/' . $field, 'mod_presenterai/airoute', 'in', implode('|', $othervendors));
+        }
+    }
+
+    // Transcription. Never core AI: core has no audio action (plan 5.1).
+    $settings->add(new admin_setting_heading(
+        'mod_presenterai/sttheading',
+        get_string('sttheading', 'mod_presenterai'),
+        get_string('sttheading_desc', 'mod_presenterai')
+    ));
+    $settings->add(new \mod_presenterai\admin\setting_endpoint(
+        'mod_presenterai/sttendpoint',
+        get_string('sttendpoint', 'mod_presenterai'),
+        get_string('sttendpoint_desc', 'mod_presenterai')
+    ));
+    $settings->add(new admin_setting_encryptedpassword(
+        'mod_presenterai/sttapikey',
+        get_string('sttapikey', 'mod_presenterai'),
+        get_string('sttapikey_desc', 'mod_presenterai')
+    ));
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/sttmodel',
+        get_string('sttmodel', 'mod_presenterai'),
+        get_string('sttmodel_desc', 'mod_presenterai'),
+        'whisper-1',
+        PARAM_RAW_TRIMMED
+    ));
+    $settings->add(new admin_setting_configcheckbox(
+        'mod_presenterai/sttwarm',
+        get_string('sttwarm', 'mod_presenterai'),
+        get_string('sttwarm_desc', 'mod_presenterai'),
+        0
+    ));
+    $settings->hide_if('mod_presenterai/sttwarm', 'mod_presenterai/sttendpoint', 'eq', '');
+
+    $settings->add(new admin_setting_configtextarea(
+        'mod_presenterai/trustedhosts',
+        get_string('trustedhosts', 'mod_presenterai'),
+        get_string('trustedhosts_desc', 'mod_presenterai'),
+        '',
+        PARAM_RAW_TRIMMED
+    ));
+
     // Retention and download.
 
     $settings->add(new admin_setting_heading(
