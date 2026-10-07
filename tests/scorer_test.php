@@ -946,8 +946,9 @@ final class scorer_test extends \advanced_testcase {
     /**
      * On the core route a video attempt with body language and slide design
      * on is scored from the transcript alone: no vision, slide vision or
-     * judge call, nothing withheld, and the learner told the frames weren't
-     * analyzed (D26). Vendor keys set on the site make no difference.
+     * judge call, nothing withheld, and no body language section at all,
+     * since no frames are taken on core (D26). Vendor keys set on the site
+     * make no difference.
      *
      * @return void
      */
@@ -987,7 +988,7 @@ final class scorer_test extends \advanced_testcase {
         $this->assertSame('scored', $after->status);
         $this->assertCount(1, $prompts, 'Only the scoring call went to core.');
         $score = $DB->get_record('presenterai_score', ['recordingid' => $rec->id], '*', MUST_EXIST);
-        $this->assertSame('notanalysed', $score->visualstatus);
+        $this->assertEmpty($score->visualstatus, 'A core attempt says something about body language.');
         $this->assertNull($score->visualsummary);
         $this->assertStringNotContainsString(get_string('feedback_withheld', 'mod_presenterai'), (string) $score->feedback);
         $this->assertGreaterThan(0, (int) $score->rawmax);

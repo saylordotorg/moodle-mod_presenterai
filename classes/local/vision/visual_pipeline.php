@@ -681,13 +681,20 @@ final class visual_pipeline {
     }
 
     /**
-     * Whether this activity takes still frames at all: video vision on and a camera recording.
+     * Whether this activity takes still frames at all: video vision on, a camera recording, and a site that analyzes them.
+     *
+     * On a site whose scoring resolves to Moodle core AI no frames are
+     * analyzed (D26), so none are sampled or uploaded either, and the learner
+     * is told nothing about them: the recorder, the policy callout, the
+     * privacy paragraph and the upload all ask this one question.
      *
      * @param \stdClass $instance The presenterai row.
      * @return bool
      */
     public static function takes_frames(\stdClass $instance): bool {
-        return !empty($instance->videovision) && (string) ($instance->mode ?? 'video') === 'video';
+        return !empty($instance->videovision)
+            && (string) ($instance->mode ?? 'video') === 'video'
+            && !route_resolver::scoring_on_core();
     }
 
     /**

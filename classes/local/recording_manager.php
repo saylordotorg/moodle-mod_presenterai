@@ -835,7 +835,8 @@ final class recording_manager {
     /**
      * Whether this attempt may carry a frame contact sheet at all.
      *
-     * A camera recording on a camera activity with video vision on. The
+     * A camera recording on a camera activity with video vision on, on a
+     * site whose scoring isn't Moodle core AI (D26). The
      * learner's opt out is not checked here, because it is only known at
      * finalize; the browser doesn't sample or send frames when it is ticked,
      * and finalize deletes any that arrived anyway (D24).
@@ -845,8 +846,9 @@ final class recording_manager {
      * @return bool
      */
     public static function frames_wanted(\stdClass $rec, \stdClass $instance): bool {
-        return !empty($instance->videovision)
-            && (string) ($instance->mode ?? 'video') === 'video'
+        // takes_frames() also says no on the core AI route (D26), so a frame
+        // sheet is refused there at start_upload, before a byte is sent.
+        return \mod_presenterai\local\vision\visual_pipeline::takes_frames($instance)
             && (string) ($rec->mode ?? 'video') === 'video';
     }
 
@@ -969,7 +971,9 @@ final class recording_manager {
         // arrived anyway (an old page, a crafted request) are deleted here,
         // before the attempt counts, so nothing can ever read them.
         $optedout = $visualoptout && !empty($instance->allowvisualoptout) && self::frames_wanted($rec, $instance);
-        if ($optedout) {
+        if ($optedout || !self::frames_wanted($rec, $instance)) {
+            // An opted out attempt, or one whose frames nothing will analyze
+            // (the site moved to core AI after the page loaded), keeps none.
             self::discard_frames($rec);
         } else {
             self::commit_pending_frames($rec, $ctx, $course);
