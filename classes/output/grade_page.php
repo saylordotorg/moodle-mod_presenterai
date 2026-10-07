@@ -17,6 +17,8 @@
 namespace mod_presenterai\output;
 
 use mod_presenterai\local\access;
+use mod_presenterai\local\ai\route_resolver;
+use mod_presenterai\local\score_manager;
 
 /**
  * The grading screen for one attempt: the recording, its transcript, the staff
@@ -31,6 +33,13 @@ use mod_presenterai\local\access;
  * prose about a named learner's body, which is why it's escaped and labeled
  * staff only rather than formatted.
  *
+ * "Rescore with AI" is offered only when AI is ready, the viewer may grade
+ * the attempt, no teacher has scored it (a rescore never touches a teacher's
+ * row) and there's something to score from: a stored transcript or the media
+ * to transcribe. With the media gone and no transcript a sentence says so
+ * instead of a button that would fail (design 8.5). grade.php checks the same
+ * rule again before it queues anything.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -38,6 +47,15 @@ use mod_presenterai\local\access;
 final class grade_page implements \renderable, \templatable {
     /** @var string The id of the template's root element, which grading.js is given. */
     public const ROOT_ID = 'mod-presenterai-grade';
+
+    /** @var string Rescore is offered. */
+    public const RESCORE_AVAILABLE = 'available';
+
+    /** @var string Rescore would be offered, but there's no transcript and no media to make one. */
+    public const RESCORE_NOMEDIA = 'nomedia';
+
+    /** @var string Rescore isn't offered and nothing is said about it. */
+    public const RESCORE_HIDDEN = '';
 
     /** @var \stdClass The presenterai row. */
     private \stdClass $instance;
@@ -106,6 +124,7 @@ final class grade_page implements \renderable, \templatable {
         $transcript = trim((string) ($rec->transcript ?? ''));
         $showvisual = access::may_view_visual_evidence($this->context, $this->viewerid);
         $visual = $showvisual ? self::visual_note($rec->visualevidence ?? null) : '';
+        $rescore = self::rescore_state($rec, $this->context, $this->viewerid);
 
         return [
             'rootid' => self::ROOT_ID,
@@ -128,6 +147,10 @@ final class grade_page implements \renderable, \templatable {
             'hasvisual' => $visual !== '',
             'visualevidence' => $visual,
             'visualempty' => get_string('grade_novisual', 'mod_presenterai'),
+            'canrescore' => $rescore === self::RESCORE_AVAILABLE,
+            'rescorenomedia' => $rescore === self::RESCORE_NOMEDIA,
+            'rescoreurl' => (new \moodle_url('/mod/presenterai/grade.php'))->out(false),
+            'sesskey' => sesskey(),
             'form' => $this->formhtml,
             'reporturl' => (new \moodle_url('/mod/presenterai/report.php', ['id' => (int) $this->cm->id]))->out(false),
             // The grading module replaces this with the live total as the grader scores.
@@ -136,14 +159,37 @@ final class grade_page implements \renderable, \templatable {
     }
 
     /**
+     * Whether, and how, the grading screen offers an AI rescore of this attempt.
+     *
+     * @param \stdClass $rec The presenterai_recording row.
+     * @param \context_module $ctx The activity's context.
+     * @param int $userid The grader.
+     * @return string RESCORE_AVAILABLE, RESCORE_NOMEDIA or RESCORE_HIDDEN.
+     */
+    public static function rescore_state(\stdClass $rec, \context_module $ctx, int $userid): string {
+        if (!route_resolver::ai_ready() || !access::may_grade($rec, $ctx, $userid)) {
+            return self::RESCORE_HIDDEN;
+        }
+        if (score_manager::has_teacher_score((int) $rec->id)) {
+            return self::RESCORE_HIDDEN;
+        }
+        if (trim((string) ($rec->transcript ?? '')) === '' && empty($rec->storagekey)) {
+            return self::RESCORE_NOMEDIA;
+        }
+        return self::RESCORE_AVAILABLE;
+    }
+
+    /**
      * The visual evidence note as escaped text, ready for the template.
      *
-     * The column holds either the note itself or a JSON object carrying it
-     * under 'note', depending on what wrote it. Anything else is shown as it
-     * stands, escaped, rather than hidden, so a grader sees what is stored.
+     * The column holds the vision pass's JSON (D18): a note, a confidence and
+     * a count of unusable frames, the last two shown on a line after the note.
+     * A JSON object with only a note, or plain text from an older writer, is
+     * shown as it stands, escaped, rather than hidden, so a grader sees what
+     * is stored.
      *
      * @param string|null $raw The presenterai_recording.visualevidence value.
-     * @return string Escaped text, or '' when there's no note.
+     * @return string Escaped text with line breaks as HTML, or '' when there's no note.
      */
     public static function visual_note(?string $raw): string {
         $raw = trim((string) $raw);
@@ -152,11 +198,22 @@ final class grade_page implements \renderable, \templatable {
         }
 
         $decoded = json_decode($raw, true);
-        if (is_array($decoded) && array_key_exists('note', $decoded) && is_scalar($decoded['note'])) {
-            $note = trim((string) $decoded['note']);
-            return $note === '' ? '' : nl2br(s($note));
+        if (!is_array($decoded) || !array_key_exists('note', $decoded) || !is_scalar($decoded['note'])) {
+            return nl2br(s($raw));
         }
 
-        return nl2br(s($raw));
+        $note = trim((string) $decoded['note']);
+        if ($note === '') {
+            return '';
+        }
+        $confidence = is_scalar($decoded['confidence'] ?? null) ? (string) $decoded['confidence'] : '';
+        if (!in_array($confidence, ['high', 'medium', 'low'], true)) {
+            return nl2br(s($note));
+        }
+        $detail = get_string('scoring_evidencedetail', 'mod_presenterai', (object) [
+            'confidence' => get_string('scoring_confidence_' . $confidence, 'mod_presenterai'),
+            'unusable' => max(0, (int) ($decoded['unusable_frames'] ?? 0)),
+        ]);
+        return nl2br(s($note . "\n\n" . $detail));
     }
 }

@@ -170,6 +170,15 @@ function presenterai_delete_instance($id) {
     $DB->set_field('presenterai_aiusage', 'recordingid', 0, ['presenteraiid' => $id]);
 
     \mod_presenterai\local\topic_manager::delete_all((int) $id);
+
+    // Rubrics defined in this activity's own context go with it. Course and
+    // category rubrics belong to their contexts and stay.
+    $cm = get_coursemodule_from_instance('presenterai', $id, 0, false, IGNORE_MISSING);
+    $modctx = $cm ? \context_module::instance($cm->id, IGNORE_MISSING) : false;
+    if ($modctx) {
+        $DB->delete_records('presenterai_rubric', ['contextid' => $modctx->id]);
+    }
+
     $DB->delete_records('presenterai', ['id' => $id]);
 
     return true;
@@ -388,7 +397,7 @@ function mod_presenterai_get_completion_active_rule_descriptions($cm) {
 }
 
 /**
- * Add the submissions report to the activity's settings navigation.
+ * Add the submissions report and the rubric editor to the activity's settings navigation.
  *
  * @param settings_navigation $settings The settings navigation.
  * @param navigation_node $presenterainode The activity's node.
@@ -407,6 +416,15 @@ function presenterai_extend_settings_navigation(settings_navigation $settings, n
             navigation_node::TYPE_SETTING,
             null,
             'mod_presenterai_submissions'
+        );
+    }
+    if (has_capability('mod/presenterai:managerubrics', $context)) {
+        $presenterainode->add(
+            get_string('rubrics', 'mod_presenterai'),
+            new moodle_url('/mod/presenterai/rubric.php', ['id' => $cm->id]),
+            navigation_node::TYPE_SETTING,
+            null,
+            'mod_presenterai_rubrics'
         );
     }
 }

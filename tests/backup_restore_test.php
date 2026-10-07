@@ -684,4 +684,62 @@ final class backup_restore_test extends \advanced_testcase {
         $this->assertSame($expected, \mod_presenterai\event\recording_deleted::get_objectid_mapping());
         $this->assertSame($expected, \mod_presenterai\event\recording_downloaded::get_objectid_mapping());
     }
+
+    /**
+     * The phase 3 fields come back, and the gate log never travels.
+     *
+     * @return void
+     */
+    public function test_phase3_fields_round_trip_and_gatelog_does_not(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        [$course, $instance, , $alice, , , , , $fsrec] = $this->course_with_learner_work();
+        $DB->update_record('presenterai', (object) [
+            'id' => $instance->id,
+            'videovision' => 1,
+            'visualscored' => 1,
+            'allowvisualoptout' => 1,
+        ]);
+        $DB->set_field('presenterai_recording', 'visualoptout', 1, ['id' => $fsrec->id]);
+        $aiid = (int) $DB->get_field('presenterai_score', 'id', ['recordingid' => $fsrec->id, 'origin' => 'ai']);
+        $DB->update_record('presenterai_score', (object) [
+            'id' => $aiid,
+            'visualsummary' => 'Your hands stayed in view.',
+            'visualstatus' => 'summary',
+            'tips' => json_encode(['Pause between points.']),
+        ]);
+        $DB->insert_record('presenterai_gatelog', (object) [
+            'recordingid' => $fsrec->id,
+            'target' => 'summary',
+            'layer' => 2,
+            'rule' => 'deny_appearance',
+            'rejectedtext' => 'Text the gate refused.',
+            'timecreated' => time(),
+        ]);
+
+        $newcourseid = $this->backup_and_restore_with_users($course);
+
+        $restored = $DB->get_record('presenterai', ['course' => $newcourseid], '*', MUST_EXIST);
+        $this->assertSame(1, (int) $restored->visualscored);
+        $this->assertSame(1, (int) $restored->allowvisualoptout);
+        $newfs = $DB->get_record_select(
+            'presenterai_recording',
+            'presenteraiid = ? AND userid = ? AND backend = ?',
+            [$restored->id, $alice->id, 'fs'],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertSame(1, (int) $newfs->visualoptout);
+        $ai = $DB->get_record('presenterai_score', ['recordingid' => $newfs->id, 'origin' => 'ai'], '*', MUST_EXIST);
+        $this->assertSame('Your hands stayed in view.', $ai->visualsummary);
+        $this->assertSame('summary', $ai->visualstatus);
+        $this->assertSame(['Pause between points.'], json_decode($ai->tips, true));
+        $teacher = $DB->get_record('presenterai_score', ['recordingid' => $newfs->id, 'origin' => 'teacher'], '*', MUST_EXIST);
+        $this->assertSame('', $teacher->visualstatus);
+
+        $this->assertSame(1, $DB->count_records('presenterai_gatelog'), 'The gate log was copied by the restore.');
+        $this->assertFalse($DB->record_exists('presenterai_gatelog', ['recordingid' => $newfs->id]));
+    }
 }

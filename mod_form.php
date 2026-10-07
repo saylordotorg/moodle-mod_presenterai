@@ -17,10 +17,7 @@
 /**
  * Instance settings form for mod_presenterai.
  *
- * Recording, topics, retention, the grade and completion. The AI settings
- * (presentation type, rubric, speaking level, slide and video vision) arrive
- * with the features they configure, so the form never offers a setting that
- * does nothing. Their columns exist and keep their database defaults.
+ * Recording, AI feedback, topics, retention, the grade and completion.
  *
  * The grade is core's modgrade element plus a grading method saying how
  * attempts combine. Outcomes are core's too: declaring FEATURE_GRADE_OUTCOMES
@@ -42,6 +39,7 @@ require_once($CFG->dirroot . '/course/moodleform_mod.php');
 use mod_presenterai\local\config;
 use mod_presenterai\local\grader;
 use mod_presenterai\local\instance_manager;
+use mod_presenterai\local\rubric_manager;
 use mod_presenterai\local\topic_manager;
 
 /**
@@ -74,6 +72,7 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $this->standard_intro_elements();
 
         $this->add_recording_elements();
+        $this->add_ai_elements();
         $this->add_topic_elements();
         $this->add_retention_elements();
 
@@ -107,6 +106,14 @@ class mod_presenterai_mod_form extends moodleform_mod {
                 $defaultvalues['retentionmode'] = 'days';
                 $defaultvalues['retentiondaysvalue'] = $days;
             }
+        }
+
+        // Null columns read as the form's "automatic" and "general" options.
+        if (array_key_exists('rubricid', $defaultvalues)) {
+            $defaultvalues['rubricid'] = (int) $defaultvalues['rubricid'];
+        }
+        if (array_key_exists('speakinglevel', $defaultvalues)) {
+            $defaultvalues['speakinglevel'] = (string) $defaultvalues['speakinglevel'];
         }
 
         // The checkboxes beside the completion numbers aren't columns; they
@@ -323,6 +330,54 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $mform->addElement('advcheckbox', 'slidesenabled', get_string('slidesenabled', 'mod_presenterai'));
         $mform->setDefault('slidesenabled', 0);
         $mform->addHelpButton('slidesenabled', 'slidesenabled', 'mod_presenterai');
+    }
+
+    /**
+     * The AI feedback section: presentation type, speaking level, rubric and slide vision.
+     *
+     * The rubric choice lists active rubrics visible from where the activity
+     * is being created or edited, so a teacher can't pick one from another
+     * course; instance_manager::normalise() checks the choice again.
+     *
+     * @return void
+     */
+    private function add_ai_elements(): void {
+        $mform = $this->_form;
+
+        $mform->addElement('header', 'aiheading_inst', get_string('aiheading_inst', 'mod_presenterai'));
+
+        $mform->addElement('select', 'ptype', get_string('ptype', 'mod_presenterai'), [
+            'informative' => get_string('ptype_informative', 'mod_presenterai'),
+            'persuasive' => get_string('ptype_persuasive', 'mod_presenterai'),
+        ]);
+        $mform->setDefault('ptype', 'informative');
+        $mform->addHelpButton('ptype', 'ptype', 'mod_presenterai');
+
+        // The first option is the empty value, which means general.
+        $levels = ['' => get_string('level_general', 'mod_presenterai')];
+        foreach (rubric_manager::LEVELS as $level) {
+            if ($level !== rubric_manager::LEVEL_GENERAL) {
+                $levels[$level] = get_string('level_' . $level, 'mod_presenterai');
+            }
+        }
+        $mform->addElement('select', 'speakinglevel', get_string('speakinglevel', 'mod_presenterai'), $levels);
+        $mform->setDefault('speakinglevel', '');
+        $mform->addHelpButton('speakinglevel', 'speakinglevel', 'mod_presenterai');
+
+        $rubrics = [0 => get_string('rubricid_auto', 'mod_presenterai')];
+        foreach (rubric_manager::list_active_for_context($this->context) as $rubric) {
+            // Unescaped: the select escapes its option text itself.
+            $rubrics[(int) $rubric->id] = format_string($rubric->title, true, ['context' => $this->context, 'escape' => false]);
+        }
+        $mform->addElement('select', 'rubricid', get_string('rubricid', 'mod_presenterai'), $rubrics);
+        $mform->setType('rubricid', PARAM_INT);
+        $mform->setDefault('rubricid', 0);
+        $mform->addHelpButton('rubricid', 'rubricid', 'mod_presenterai');
+
+        $mform->addElement('advcheckbox', 'slidevision', get_string('slidevision', 'mod_presenterai'));
+        $mform->setDefault('slidevision', 0);
+        $mform->addHelpButton('slidevision', 'slidevision', 'mod_presenterai');
+        $mform->hideIf('slidevision', 'slidesenabled', 'notchecked');
     }
 
     /**

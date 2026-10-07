@@ -207,9 +207,9 @@ final class cleanup_task_test extends \advanced_testcase {
     public function test_pruning(): void {
         global $DB;
 
-        $older = $this->recording($this->alice, ['timecreated' => time() - 3 * DAYSECS]);
-        $newer = $this->recording($this->alice, ['timecreated' => time() - 2 * DAYSECS]);
-        $bobs = $this->recording($this->bob, ['timecreated' => time() - 5 * DAYSECS]);
+        $older = $this->recording($this->alice, ['timecreated' => time() - 3 * DAYSECS, 'status' => 'scored']);
+        $newer = $this->recording($this->alice, ['timecreated' => time() - 2 * DAYSECS, 'status' => 'scored']);
+        $bobs = $this->recording($this->bob, ['timecreated' => time() - 5 * DAYSECS, 'status' => 'scored']);
 
         $this->run_task();
         foreach ([$older, $newer, $bobs] as $rec) {
@@ -226,6 +226,32 @@ final class cleanup_task_test extends \advanced_testcase {
             $this->reload((int) $bobs->id)->storagekey,
             'Another learner\'s only recording was pruned, the shape of Soapbox\'s keyed-by-assignment bug.'
         );
+    }
+
+    /**
+     * Pruning never deletes media that scoring hasn't read yet, but still counts it as the newest.
+     *
+     * @return void
+     */
+    public function test_pruning_never_touches_an_attempt_waiting_to_be_scored(): void {
+        global $DB;
+
+        $uploaded = $this->recording($this->alice, ['timecreated' => time() - 5 * DAYSECS, 'status' => 'uploaded']);
+        $scoring = $this->recording($this->alice, ['timecreated' => time() - 4 * DAYSECS, 'status' => 'scoring']);
+        $scored = $this->recording($this->alice, ['timecreated' => time() - 3 * DAYSECS, 'status' => 'scored']);
+        $failed = $this->recording($this->alice, ['timecreated' => time() - 2 * DAYSECS, 'status' => 'failed']);
+        $newest = $this->recording($this->alice, ['timecreated' => time() - DAYSECS, 'status' => 'uploaded']);
+
+        $DB->set_field('presenterai', 'storedattempts', 1, ['id' => $this->instance->id]);
+        $this->run_task();
+
+        $this->assertNotNull($this->reload((int) $newest->id)->storagekey, 'The newest attempt was pruned.');
+        $this->assertNotNull($this->reload((int) $uploaded->id)->storagekey, 'An attempt waiting to be scored was pruned.');
+        $this->assertNotNull($this->reload((int) $scoring->id)->storagekey, 'An attempt being scored was pruned.');
+        $this->assertNull($this->reload((int) $scored->id)->storagekey, 'A scored older attempt was not pruned.');
+        $this->assertSame('pruned', $this->reload((int) $scored->id)->mediagonereason);
+        $this->assertNull($this->reload((int) $failed->id)->storagekey, 'A failed older attempt was not pruned.');
+        $this->assertSame(['uploaded', 'scoring'], cleanup::PRUNE_PROTECTED);
     }
 
     /**

@@ -40,6 +40,10 @@
  * here, and neither are clienttoken and uploadid, which belong to a page that
  * no longer exists.
  *
+ * presenterai_gatelog is never backed up. It holds text the visual feedback
+ * gate refused to show a learner, kept seven days for staff to tune the gate,
+ * and a copy in a backup file would outlive that clock indefinitely.
+ *
  * @package    mod_presenterai
  * @category   backup
  * @copyright  2026 Saylor Academy
@@ -59,7 +63,7 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         $presenterai = new backup_nested_element('presenterai', ['id'], [
             'name', 'intro', 'introformat', 'ptype', 'mode', 'minseconds', 'maxseconds',
             'maxattempts', 'storedattempts', 'rubricid', 'speakinglevel', 'slidesenabled',
-            'slidevision', 'videovision', 'retentiondays', 'grade', 'gradingmethod',
+            'slidevision', 'videovision', 'visualscored', 'allowvisualoptout', 'retentiondays', 'grade', 'gradingmethod',
             'completionsubmit', 'completionminscore', 'legacyassignid', 'timecreated', 'timemodified',
         ]);
 
@@ -79,7 +83,7 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         $recordings = new backup_nested_element('recordings');
         $recording = new backup_nested_element('recording', ['id'], [
             'userid', 'topicid', 'attemptnumber', 'mode', 'backend', 'storagekey', 'deckkey', 'frameskey',
-            'slidetimeline', 'visualevidence', 'visualevidenceat', 'durationseconds', 'sizebytes', 'status',
+            'slidetimeline', 'visualevidence', 'visualevidenceat', 'visualoptout', 'durationseconds', 'sizebytes', 'status',
             'transcript', 'scoreid', 'expiresat', 'mediadeletedat', 'mediagonereason', 'deletewarnedat',
             'legacyrecid', 'legacyscoreid', 'timecreated', 'timemodified',
         ]);
@@ -88,7 +92,7 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         $scores = new backup_nested_element('scores');
         $score = new backup_nested_element('score', ['id'], [
             'userid', 'rubricid', 'origin', 'scores', 'rawsum', 'rawmax', 'overallpct', 'scoreprovenance',
-            'feedback', 'tips', 'legacymeanscore', 'legacymeta', 'graderid', 'timecreated',
+            'feedback', 'tips', 'visualsummary', 'visualstatus', 'legacymeanscore', 'legacymeta', 'graderid', 'timecreated',
         ]);
 
         $presenterai->add_child($topics);

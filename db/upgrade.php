@@ -96,5 +96,55 @@ function xmldb_presenterai_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026100602, 'presenterai');
     }
 
+    if ($oldversion < 2026100700) {
+        // Phase 3: D23 visualscored and D24 allowvisualoptout on the activity,
+        // the learner's opt out on the attempt, the gated learner summary and
+        // its status on the score, and the staff only gate rejection log.
+        $table = new xmldb_table('presenterai');
+        $fields = [
+            new xmldb_field('visualscored', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'videovision'),
+            new xmldb_field('allowvisualoptout', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'visualscored'),
+        ];
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+
+        $table = new xmldb_table('presenterai_recording');
+        $field = new xmldb_field('visualoptout', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'visualevidenceat');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $table = new xmldb_table('presenterai_score');
+        $fields = [
+            new xmldb_field('visualsummary', XMLDB_TYPE_TEXT, null, null, null, null, null, 'tips'),
+            new xmldb_field('visualstatus', XMLDB_TYPE_CHAR, '16', null, XMLDB_NOTNULL, null, '', 'visualsummary'),
+        ];
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+
+        $table = new xmldb_table('presenterai_gatelog');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('recordingid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('target', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('layer', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('rule', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('rejectedtext', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_key('recordingid', XMLDB_KEY_FOREIGN, ['recordingid'], 'presenterai_recording', ['id']);
+            $table->add_index('timecreated', XMLDB_INDEX_NOTUNIQUE, ['timecreated']);
+            $dbman->create_table($table);
+        }
+
+        upgrade_mod_savepoint(true, 2026100700, 'presenterai');
+    }
+
     return true;
 }

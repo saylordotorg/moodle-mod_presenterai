@@ -46,6 +46,9 @@ final class instance_manager {
     /** @var string[] Recording modes an activity may use. */
     public const MODES = ['video', 'audio'];
 
+    /** @var string[] Presentation types, the default first. */
+    public const PTYPES = ['informative', 'persuasive'];
+
     /** @var int retentiondays value meaning "use the site setting" (db/install.xml default). */
     public const RETENTION_SITE = -1;
 
@@ -111,6 +114,30 @@ final class instance_manager {
             $data->videovision = empty($data->videovision) ? 0 : 1;
         }
 
+        // The presentation type and speaking level steer the scoring prompt.
+        // An unknown value falls back rather than reaching the prompt.
+        if (property_exists($data, 'ptype')) {
+            $data->ptype = in_array($data->ptype, self::PTYPES, true) ? $data->ptype : self::PTYPES[0];
+        }
+        if (property_exists($data, 'speakinglevel')) {
+            $level = trim((string) $data->speakinglevel);
+            $data->speakinglevel = in_array($level, rubric_manager::LEVELS, true) && $level !== rubric_manager::LEVEL_GENERAL
+                ? $level
+                : null;
+        }
+        // 0 means automatic, stored as null. A chosen rubric must be active and
+        // visible from this activity, so an id from another course is dropped.
+        if (property_exists($data, 'rubricid')) {
+            $rubricid = (int) $data->rubricid;
+            $data->rubricid = null;
+            if ($rubricid > 0) {
+                $ctx = self::rubric_context($data, $existing);
+                if ($ctx && rubric_manager::is_selectable($rubricid, $ctx)) {
+                    $data->rubricid = $rubricid;
+                }
+            }
+        }
+
         // The grade itself is left as given: core's modgrade element has
         // already turned the form's type, points and scale into one value.
         if (property_exists($data, 'gradingmethod')) {
@@ -131,6 +158,27 @@ final class instance_manager {
         unset($data->retentionmode, $data->retentiondaysvalue);
 
         return $data;
+    }
+
+    /**
+     * The context a chosen rubric must be visible from: the activity's, or its course's before it exists.
+     *
+     * @param \stdClass $data Instance data carrying coursemodule and/or course.
+     * @param \stdClass|null $existing The stored row when updating.
+     * @return \context|null
+     */
+    private static function rubric_context(\stdClass $data, ?\stdClass $existing): ?\context {
+        if (!empty($data->coursemodule)) {
+            $ctx = \context_module::instance((int) $data->coursemodule, IGNORE_MISSING);
+            if ($ctx) {
+                return $ctx;
+            }
+        }
+        $courseid = (int) ($data->course ?? ($existing->course ?? 0));
+        if ($courseid > 0) {
+            return \context_course::instance($courseid, IGNORE_MISSING) ?: null;
+        }
+        return null;
     }
 
     /**
