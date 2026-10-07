@@ -135,7 +135,7 @@ function xmldb_presenterai_upgrade($oldversion) {
             $table->add_field('recordingid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
             $table->add_field('target', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
             $table->add_field('layer', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
-            $table->add_field('rule', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('gaterule', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
             $table->add_field('rejectedtext', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
             $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
             $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
@@ -145,6 +145,19 @@ function xmldb_presenterai_upgrade($oldversion) {
         }
 
         upgrade_mod_savepoint(true, 2026100700, 'presenterai');
+    }
+
+    if ($oldversion < 2026100701) {
+        // The gate log's old column name, rule, is a reserved word on SQL Server,
+        // where an unquoted insert or select of it is a syntax error. Sites that ran an
+        // earlier build of the 2026100700 step have the old name.
+        $table = new xmldb_table('presenterai_gatelog');
+        $field = new xmldb_field('rule', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null, 'layer');
+        if ($dbman->table_exists($table) && $dbman->field_exists($table, $field)) {
+            $dbman->rename_field($table, $field, 'gaterule');
+        }
+
+        upgrade_mod_savepoint(true, 2026100701, 'presenterai');
     }
 
     return true;

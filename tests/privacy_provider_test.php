@@ -430,14 +430,15 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
         $this->assertArrayHasKey('visualstatus', $items['presenterai_score']->get_privacy_fields());
         $this->assertArrayHasKey('presenterai_gatelog', $items);
         $this->assertEqualsCanonicalizing(
-            ['recordingid', 'target', 'layer', 'rule', 'rejectedtext', 'timecreated'],
+            ['recordingid', 'target', 'layer', 'gaterule', 'rejectedtext', 'timecreated'],
             array_keys($items['presenterai_gatelog']->get_privacy_fields())
         );
         $this->assertArrayHasKey('aiservice', $items);
         $this->assertEqualsCanonicalizing(
-            ['audio', 'transcript', 'frames', 'feedback'],
+            ['audio', 'transcript', 'frames', 'slides', 'feedback'],
             array_keys($items['aiservice']->get_privacy_fields())
         );
+        $this->assertArrayHasKey('core_ai', $items);
     }
 
     /**
@@ -453,7 +454,7 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
             'origin' => 'ai']);
         $DB->set_field('presenterai_score', 'visualstatus', 'summary', ['recordingid' => $this->alicefs->id, 'origin' => 'ai']);
         $DB->insert_record('presenterai_gatelog', (object) [
-            'recordingid' => $this->alicefs->id, 'target' => 'summary', 'layer' => 2, 'rule' => 'clothing',
+            'recordingid' => $this->alicefs->id, 'target' => 'summary', 'layer' => 2, 'gaterule' => 'clothing',
             'rejectedtext' => 'You wore a dark shirt.', 'timecreated' => time(),
         ]);
 
@@ -479,7 +480,7 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
 
         foreach ([$this->alicefs, $this->bobfs] as $rec) {
             $DB->insert_record('presenterai_gatelog', (object) [
-                'recordingid' => $rec->id, 'target' => 'summary', 'layer' => 4, 'rule' => 'judge',
+                'recordingid' => $rec->id, 'target' => 'summary', 'layer' => 4, 'gaterule' => 'judge',
                 'rejectedtext' => 'withheld for ' . $rec->userid, 'timecreated' => time(),
             ]);
         }

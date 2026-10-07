@@ -157,7 +157,7 @@ final class expire_visual_data_task_test extends \advanced_testcase {
         $rec = $this->noted(1);
         foreach ([8, 6] as $days) {
             $DB->insert_record('presenterai_gatelog', (object) [
-                'recordingid' => $rec->id, 'target' => 'summary', 'layer' => 2, 'rule' => 'appearance',
+                'recordingid' => $rec->id, 'target' => 'summary', 'layer' => 2, 'gaterule' => 'appearance',
                 'rejectedtext' => "{$days} days old", 'timecreated' => time() - $days * DAYSECS,
             ]);
         }

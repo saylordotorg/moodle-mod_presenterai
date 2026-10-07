@@ -60,6 +60,9 @@ final class scorer {
     /** @var int Seconds the scoring call may take. */
     public const TIMEOUT = 120;
 
+    /** @var int Times a rate limited attempt is queued again after its retries run out, before it fails. */
+    public const MAX_DEFERRALS = 3;
+
     /** @var string[] MIME types for the recording extensions, for the transcription upload. */
     private const MIMETYPES = [
         'webm' => 'video/webm',
@@ -80,9 +83,10 @@ final class scorer {
      * @param int $recordingid The recording id.
      * @param bool $mayretry Whether a transient failure should be thrown for the task to retry.
      * @param bool $rescore Whether this was asked for from the grading screen.
+     * @param int $deferrals How many times a rate limit has already deferred this attempt.
      * @return void
      */
-    public static function score(int $recordingid, bool $mayretry, bool $rescore = false): void {
+    public static function score(int $recordingid, bool $mayretry, bool $rescore = false, int $deferrals = 0): void {
         try {
             [$rec, $instance, $course, , $ctx] = recording_manager::load($recordingid);
         } catch (\moodle_exception $e) {
@@ -115,13 +119,29 @@ final class scorer {
         try {
             self::run($rec, $instance, $course, $ctx, $mayretry);
         } catch (judge_unavailable_exception $e) {
-            if ($mayretry) {
+            // The visual pipeline fails closed by itself on an outage a retry
+            // can't fix, so this is a transient one, or a stray throw.
+            if ($mayretry && $e->transient) {
                 throw $e;
             }
             self::fail($rec, 'judge_unavailable');
         } catch (ai_exception $e) {
             if ($mayretry && $e->transient) {
                 throw $e;
+            }
+            if ($e->reason === ai_exception::RATE_LIMITED && $deferrals < self::MAX_DEFERRALS) {
+                // The backoff (about 31 minutes) is shorter than the scoring
+                // window (an hour), so failing here would fail an attempt the
+                // limiter would have let through later. Queue it again for
+                // when the window ends; the row stays 'scoring'.
+                \mod_presenterai\task\score_recording::queue(
+                    $recordingid,
+                    $rescore,
+                    time() + max(60, $e->retryafter),
+                    $deferrals + 1
+                );
+                mtrace('PresenterAI scoring: recording ' . (int) $rec->id . ' is rate limited; queued again.');
+                return;
             }
             self::fail($rec, $e->reason);
         } catch (\Throwable $e) {
@@ -174,7 +194,18 @@ final class scorer {
         $visualblock = '';
         if ($evidenceok) {
             $visualscored = (int) ($instance->visualscored ?? 0) === 1;
-            $visualblock = visual_pipeline::prompt_block($evidence, $visualscored, visual_pipeline::language_name($userid));
+            $visualnames = [];
+            foreach ($prompted as $criterion) {
+                if (!empty($criterion['visual'])) {
+                    $visualnames[] = (string) $criterion['name'];
+                }
+            }
+            $visualblock = visual_pipeline::prompt_block(
+                $evidence,
+                $visualscored,
+                visual_pipeline::language_name($userid),
+                $visualnames
+            );
         }
 
         $prompt = scoring_prompt::build([
@@ -195,7 +226,7 @@ final class scorer {
             throw new ai_exception('not_configured', false);
         }
         if (rate_limiter::hit('score', $userid, rate_limiter::SCORE_MAX, rate_limiter::SCORE_WINDOW)) {
-            throw new ai_exception('rate_limited', true);
+            throw self::rate_limited('score', $userid, rate_limiter::SCORE_WINDOW);
         }
 
         $opts = [
@@ -223,11 +254,25 @@ final class scorer {
         if (empty($criteria)) {
             throw new ai_exception('bad_response', false, 'The scoring response named no rubric criterion.');
         }
+        if (!self::enough_spoken_assessed($criteria)) {
+            // Most likely the learner's own words told the model to drop their
+            // weak criteria from the denominator. A teacher can grade it by hand.
+            throw new ai_exception('too_few_assessed', false, 'The scoring response left too few spoken criteria assessed.');
+        }
 
         $summary = isset($decoded['visual_summary']) && is_scalar($decoded['visual_summary'])
             ? (string) $decoded['visual_summary']
             : '';
-        $out = visual_pipeline::finalise($criteria, $summary, $evidence, $rec, $instance, $ctx, $mayretry);
+        $overall = isset($decoded['overall']) && is_scalar($decoded['overall']) ? trim((string) $decoded['overall']) : '';
+        $tips = [];
+        foreach ((array) ($decoded['tips'] ?? []) as $tip) {
+            if (is_scalar($tip) && trim((string) $tip) !== '') {
+                $tips[] = trim((string) $tip);
+            }
+        }
+        // The pipeline gates every learner facing string while the prompt
+        // carried the raw note, not only the visual ones (D21).
+        $out = visual_pipeline::finalise($criteria, $summary, $evidence, $rec, $instance, $ctx, $mayretry, $overall, $tips);
         // The pipeline may rewrite feedback and assessed. The allowlist and the
         // rubric's flags are applied again, so nothing it returns can widen them.
         $criteria = self::reapply_rubric((array) ($out['criteria'] ?? []), $prompted);
@@ -235,17 +280,12 @@ final class scorer {
             throw new ai_exception('bad_response', false, 'No criterion survived the visual feedback gate.');
         }
 
-        $feedback = isset($decoded['overall']) && is_scalar($decoded['overall']) ? trim((string) $decoded['overall']) : '';
+        $feedback = (string) ($out['overall'] ?? '');
         $visionnote = trim((string) $slides['visionnote']);
         if ($visionnote !== '') {
             $feedback = trim($feedback . "\n\n" . get_string('slide_design_note', 'mod_presenterai') . ' ' . $visionnote);
         }
-        $tips = [];
-        foreach ((array) ($decoded['tips'] ?? []) as $tip) {
-            if (is_scalar($tip) && trim((string) $tip) !== '') {
-                $tips[] = trim((string) $tip);
-            }
-        }
+        $tips = array_values(array_map('strval', (array) ($out['tips'] ?? [])));
 
         $summaryout = $out['visualsummary'] ?? null;
         score_manager::save_ai_score(
@@ -317,6 +357,35 @@ final class scorer {
     }
 
     /**
+     * Whether enough of the spoken criteria were assessed for the score to stand.
+     *
+     * The assessed only denominator means every criterion the model marks
+     * "could not judge" leaves rawmax, so a learner who talks the model into
+     * marking their weak criteria unassessed gets a higher percentage. Spoken
+     * criteria are judged from a transcript at least 40 characters long, so
+     * the model has little honest reason to drop many of them. At most half
+     * (rounded down) may go; more than that fails the attempt, for a teacher
+     * to grade, rather than letting the model shrink the denominator.
+     *
+     * @param array $criteria The allowlisted criteria.
+     * @return bool
+     */
+    public static function enough_spoken_assessed(array $criteria): bool {
+        $spoken = 0;
+        $unassessed = 0;
+        foreach ($criteria as $criterion) {
+            if (!empty($criterion['visual'])) {
+                continue;
+            }
+            $spoken++;
+            if (empty($criterion['assessed'])) {
+                $unassessed++;
+            }
+        }
+        return $unassessed <= intdiv($spoken, 2);
+    }
+
+    /**
      * Re-apply the allowlist and the rubric's maxima and flags to the pipeline's output.
      *
      * @param array $criteria The criteria visual_pipeline::finalise() returned.
@@ -378,7 +447,7 @@ final class scorer {
         }
         $userid = (int) $rec->userid;
         if (rate_limiter::hit('transcribe', $userid, rate_limiter::TRANSCRIBE_MAX, rate_limiter::TRANSCRIBE_WINDOW)) {
-            throw new ai_exception('rate_limited', true);
+            throw self::rate_limited('transcribe', $userid, rate_limiter::TRANSCRIBE_WINDOW);
         }
 
         $key = (string) $rec->storagekey;
@@ -502,6 +571,20 @@ final class scorer {
             'timemodified' => time(),
         ]);
         $rec->status = $status;
+    }
+
+    /**
+     * The rate_limited exception for a bucket, carrying how long its window has left.
+     *
+     * @param string $bucket The limiter bucket.
+     * @param int $userid The learner.
+     * @param int $window The bucket's window, seconds.
+     * @return ai_exception
+     */
+    private static function rate_limited(string $bucket, int $userid, int $window): ai_exception {
+        $e = ai_exception::for_reason(ai_exception::RATE_LIMITED, 'Over the ' . $bucket . ' limit.');
+        $e->retryafter = rate_limiter::seconds_until_reset($bucket, $userid, $window);
+        return $e;
     }
 
     /**

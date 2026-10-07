@@ -46,7 +46,7 @@ final class gatelog_page_test extends \advanced_testcase {
         ]);
         foreach ($rows as [$days, $text]) {
             $DB->insert_record('presenterai_gatelog', (object) [
-                'recordingid' => $rec->id, 'target' => 'summary', 'layer' => 2, 'rule' => 'clothing',
+                'recordingid' => $rec->id, 'target' => 'summary', 'layer' => 2, 'gaterule' => 'clothing',
                 'rejectedtext' => $text, 'timecreated' => time() - (int) round($days * DAYSECS),
             ]);
         }

@@ -100,7 +100,8 @@ final class ai_stt_client_test extends \advanced_testcase {
             [200, 'garbage', ai_exception::BAD_RESPONSE, false],
             [429, '{"error":{"message":"slow"}}', ai_exception::HTTP_429, true],
             [502, '', ai_exception::HTTP_5XX, true],
-            [413, '{"error":{"message":"too large for sk-stt-key"}}', ai_exception::HTTP_4XX, false],
+            [413, '{"error":{"message":"too large for sk-stt-key"}}', ai_exception::TOO_LARGE, false],
+            [400, '{"error":{"message":"bad"}}', ai_exception::HTTP_4XX, false],
         ];
         foreach ($cases as [$status, $body, $reason, $transient]) {
             http_client::set_test_handler(fn() => ['status' => $status, 'body' => $body]);
@@ -127,6 +128,49 @@ final class ai_stt_client_test extends \advanced_testcase {
         } catch (ai_exception $e) {
             $this->assertSame(ai_exception::UNSAFE_ENDPOINT, $e->reason);
         }
+    }
+
+    /**
+     * A file over OpenAI's 25 MB limit is refused before it's uploaded; a self hosted endpoint takes it.
+     *
+     * @return void
+     */
+    public function test_openai_size_limit(): void {
+        $this->resetAfterTest();
+        $path = make_request_directory() . '/big.webm';
+        $handle = fopen($path, 'w');
+        ftruncate($handle, stt_client::OPENAI_MAX_BYTES + 1);
+        fclose($handle);
+        http_client::set_test_handler(fn() => ['status' => 200, 'body' => '{"text":"hello"}']);
+
+        try {
+            (new stt_client(stt_client::OPENAI_ENDPOINT, 'sk-stt-key'))->transcribe($path, 'video/webm');
+            $this->fail('An oversized file was sent to OpenAI.');
+        } catch (ai_exception $e) {
+            $this->assertSame(ai_exception::TOO_LARGE, $e->reason);
+            $this->assertFalse($e->transient);
+        }
+        $this->assertSame([], http_client::last_requests());
+
+        $client = new stt_client('https://stt.example.com/v1/audio/transcriptions', '');
+        $this->assertSame('hello', $client->transcribe($path, 'video/webm')['text']);
+    }
+
+    /**
+     * The longest recording that fits under the limit follows the quality preset.
+     *
+     * @return void
+     */
+    public function test_openai_max_seconds(): void {
+        $this->resetAfterTest();
+        set_config('quality', 'standard_480p', 'mod_presenterai');
+        $standard = stt_client::openai_max_seconds('video');
+        // 540 kbps with 15 percent headroom is about 77.6 KB a second.
+        $this->assertGreaterThan(300, $standard);
+        $this->assertLessThan(400, $standard);
+        set_config('quality', 'high_720p', 'mod_presenterai');
+        $this->assertLessThan($standard, stt_client::openai_max_seconds('video'));
+        $this->assertGreaterThan(stt_client::openai_max_seconds('video'), stt_client::openai_max_seconds('audio'));
     }
 
     /**

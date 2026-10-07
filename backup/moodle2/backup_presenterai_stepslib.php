@@ -78,12 +78,16 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
             'type', 'title', 'criteria', 'active', 'legacyrubricid', 'timecreated', 'timemodified',
         ]);
 
-        // Every recording column except id, presenteraiid (the parent), and the
-        // two that belong to an upload page: clienttoken and uploadid.
+        // Every recording column except id, presenteraiid (the parent), the two
+        // that belong to an upload page (clienttoken and uploadid), and the raw
+        // body language note (visualevidence and visualevidenceat). The note is
+        // kept for staff on the visualdatadays clock (D5), and a copy in a
+        // backup file would outlive that clock indefinitely, as the gate log
+        // would.
         $recordings = new backup_nested_element('recordings');
         $recording = new backup_nested_element('recording', ['id'], [
             'userid', 'topicid', 'attemptnumber', 'mode', 'backend', 'storagekey', 'deckkey', 'frameskey',
-            'slidetimeline', 'visualevidence', 'visualevidenceat', 'visualoptout', 'durationseconds', 'sizebytes', 'status',
+            'slidetimeline', 'visualoptout', 'durationseconds', 'sizebytes', 'status',
             'transcript', 'scoreid', 'expiresat', 'mediadeletedat', 'mediagonereason', 'deletewarnedat',
             'legacyrecid', 'legacyscoreid', 'timecreated', 'timemodified',
         ]);

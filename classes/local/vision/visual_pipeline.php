@@ -241,14 +241,20 @@ final class visual_pipeline {
      * @param array $evidence An evidence() result.
      * @param bool $visualscored Whether the activity counts the visual criteria (D23).
      * @param string $languagename The English name of the learner's language, language_name().
+     * @param string[] $visualnames The names of the visual criteria written into the prompt.
      * @return string
      */
-    public static function prompt_block(array $evidence, bool $visualscored, string $languagename): string {
+    public static function prompt_block(
+        array $evidence,
+        bool $visualscored,
+        string $languagename,
+        array $visualnames = []
+    ): string {
         if (($evidence['state'] ?? '') !== self::EVIDENCE_OK || trim((string) ($evidence['note'] ?? '')) === '') {
             return '';
         }
 
-        return visual_prompts::scoring_block((string) $evidence['note'], $visualscored, $languagename);
+        return visual_prompts::scoring_block((string) $evidence['note'], $visualscored, $languagename, $visualnames);
     }
 
     /**
@@ -321,10 +327,19 @@ final class visual_pipeline {
      * visual_summary_rejected and is written, with its text, to the staff only
      * gatelog. Rejections are never retried.
      *
+     * The scoring prompt carried the raw note, so the rest of the reply is
+     * gated too, in the gate's spoken mode: the overall comment, each tip and
+     * every other criterion's feedback (D21). A rejected tip is dropped; a
+     * rejected overall comment or spoken criterion comment is replaced by
+     * feedback_withheld, and the spoken criterion keeps its score, because
+     * the score is about what was said.
+     *
      * A judge outage is not a verdict. It fires visual_summary_judge_unavailable
-     * and, while the task may still retry, throws judge_unavailable_exception so
-     * it does. Out of retries it fails closed: the template, every visual
-     * criterion withheld and unassessed, and a gatelog row for each string.
+     * and, while the task may still retry and the outage is transient, throws
+     * judge_unavailable_exception so it does. Out of retries, or for an outage
+     * a retry can't fix, it fails closed: the template, every visual
+     * criterion withheld and unassessed, every spoken string that would have
+     * gone to the judge withheld, and a gatelog row for each.
      *
      * @param array $criteria The scored criteria in the B2 shape.
      * @param string $summary The model's visual_summary, possibly empty.
@@ -333,8 +348,11 @@ final class visual_pipeline {
      * @param \stdClass $instance The presenterai row.
      * @param \context_module $ctx The module context.
      * @param bool $mayretry Whether the scoring task will retry a transient failure.
-     * @return array ['criteria' => array, 'visualsummary' => string|null, 'visualstatus' => string]
-     * @throws judge_unavailable_exception On a judge outage while $mayretry.
+     * @param string $overall The model's overall comment.
+     * @param string[] $tips The model's tips.
+     * @return array ['criteria' => array, 'visualsummary' => string|null, 'visualstatus' => string,
+     *     'overall' => string, 'tips' => string[]]
+     * @throws judge_unavailable_exception On a transient judge outage while $mayretry.
      */
     public static function finalise(
         array $criteria,
@@ -343,25 +361,74 @@ final class visual_pipeline {
         \stdClass $rec,
         \stdClass $instance,
         \context_module $ctx,
-        bool $mayretry
+        bool $mayretry,
+        string $overall = '',
+        array $tips = []
     ): array {
         $criteria = array_values($criteria);
+        $overall = trim($overall);
+        $cleantips = [];
+        foreach ($tips as $tip) {
+            if (is_scalar($tip) && trim((string) $tip) !== '') {
+                $cleantips[] = trim((string) $tip);
+            }
+        }
+        $tips = $cleantips;
         if (($evidence['state'] ?? '') !== self::EVIDENCE_OK) {
-            return ['criteria' => $criteria, 'visualsummary' => null, 'visualstatus' => self::status_for($evidence)];
+            return [
+                'criteria' => $criteria,
+                'visualsummary' => null,
+                'visualstatus' => self::status_for($evidence),
+                'overall' => $overall,
+                'tips' => $tips,
+            ];
         }
 
+        $summary = trim($summary);
+        // Each item: the gate's target, text and mode, and what it is in this reply.
+        $texts = [['target' => summary_gate::TARGET_SUMMARY, 'text' => $summary, 'kind' => 'summary', 'index' => 0]];
         $visualidx = [];
         foreach ($criteria as $i => $criterion) {
             if (self::is_visual_criterion($criterion)) {
                 $criteria[$i]['visual'] = true;
                 $visualidx[] = $i;
+                $texts[] = [
+                    'target' => (string) $criterion['name'],
+                    'text' => trim((string) ($criterion['feedback'] ?? '')),
+                    'kind' => 'visual',
+                    'index' => $i,
+                ];
             }
         }
-
-        $summary = trim($summary);
-        $texts = [['target' => summary_gate::TARGET_SUMMARY, 'text' => $summary]];
-        foreach ($visualidx as $i) {
-            $texts[] = ['target' => (string) $criteria[$i]['name'], 'text' => trim((string) ($criteria[$i]['feedback'] ?? ''))];
+        foreach ($criteria as $i => $criterion) {
+            $feedback = trim((string) ($criterion['feedback'] ?? ''));
+            if (!in_array($i, $visualidx, true) && $feedback !== '') {
+                $texts[] = [
+                    'target' => (string) $criterion['name'],
+                    'text' => $feedback,
+                    'mode' => summary_gate::MODE_SPOKEN,
+                    'kind' => 'criterion',
+                    'index' => $i,
+                ];
+            }
+        }
+        if ($overall !== '') {
+            $texts[] = [
+                'target' => summary_gate::TARGET_OVERALL,
+                'text' => $overall,
+                'mode' => summary_gate::MODE_SPOKEN,
+                'kind' => 'overall',
+                'index' => 0,
+            ];
+        }
+        foreach ($tips as $j => $tip) {
+            $texts[] = [
+                'target' => summary_gate::TARGET_TIP,
+                'text' => $tip,
+                'mode' => summary_gate::MODE_SPOKEN,
+                'kind' => 'tip',
+                'index' => $j,
+            ];
         }
 
         $names = [];
@@ -378,54 +445,76 @@ final class visual_pipeline {
             'userid' => (int) $rec->userid,
         ];
 
+        $gateitems = array_map(fn($item) => array_intersect_key($item, array_flip(['target', 'text', 'mode'])), $texts);
         try {
-            $results = summary_gate::check_batch($texts, $context);
+            $results = summary_gate::check_batch($gateitems, $context);
         } catch (judge_unavailable_exception $e) {
             visual_summary_judge_unavailable::create_from_recording($rec, $ctx, ['reason' => $e->reason])->trigger();
-            if ($mayretry) {
+            if ($mayretry && $e->transient) {
                 throw $e;
             }
-            return self::fail_closed($criteria, $visualidx, $texts, $rec);
+            return self::fail_closed($criteria, $texts, $gateitems, $context, $rec, $summary, $overall, $tips);
         }
 
-        $summarypassed = false;
+        $rejected = [];
         foreach ($results as $pos => $result) {
-            $target = (string) $texts[$pos]['target'];
-            if ($pos === 0) {
-                $summarypassed = $result['pass'] && $summary !== '';
-            }
             if ($result['pass']) {
                 continue;
             }
-            $text = (string) $texts[$pos]['text'];
-            self::log_rejection($rec, $ctx, $target, (int) $result['layer'], (string) $result['rule'], $text);
-            if ($pos > 0) {
-                self::withhold($criteria[$visualidx[$pos - 1]]);
-            }
+            $item = $texts[$pos];
+            self::log_rejection(
+                $rec,
+                $ctx,
+                (string) $item['target'],
+                (int) $result['layer'],
+                (string) $result['rule'],
+                (string) $item['text']
+            );
+            $rejected[] = $pos;
         }
+        $summarypassed = $summary !== '' && !in_array(0, $rejected, true);
 
-        if ($summarypassed) {
-            return ['criteria' => $criteria, 'visualsummary' => $summary, 'visualstatus' => self::STATUS_SUMMARY];
-        }
-
-        return [
-            'criteria' => $criteria,
-            'visualsummary' => fallback_template::build($criteria),
-            'visualstatus' => self::STATUS_FALLBACK,
-        ];
+        return self::apply_rejections($criteria, $texts, $rejected, $summarypassed ? $summary : null, $overall, $tips);
     }
 
     /**
-     * The fail closed result after a judge outage with no retries left.
+     * The fail closed result after a judge outage that won't be retried.
+     *
+     * Every visual string is withheld, as is every spoken string the
+     * deterministic layers reject or that would have gone to the judge. Each
+     * gets a layer 0 gatelog row; no rejection events fire, because nothing
+     * was judged.
      *
      * @param array $criteria The criteria.
-     * @param int[] $visualidx Positions of the visual criteria.
-     * @param array $texts The batch that was being gated.
+     * @param array $texts The batch with its kinds, as finalise() built it.
+     * @param array $gateitems The same batch as the gate takes it.
+     * @param array $context The gate context.
      * @param \stdClass $rec The recording row.
+     * @param string $summary The summary.
+     * @param string $overall The overall comment.
+     * @param string[] $tips The tips.
      * @return array As finalise().
      */
-    private static function fail_closed(array $criteria, array $visualidx, array $texts, \stdClass $rec): array {
-        foreach ($texts as $item) {
+    private static function fail_closed(
+        array $criteria,
+        array $texts,
+        array $gateitems,
+        array $context,
+        \stdClass $rec,
+        string $summary,
+        string $overall,
+        array $tips
+    ): array {
+        $deterministic = summary_gate::check_batch($gateitems, ['judge' => false] + $context);
+        $list = summary_gate::denylist_class((string) $context['lang']);
+        $withheld = [];
+        foreach ($texts as $pos => $item) {
+            $spoken = ($item['mode'] ?? '') === summary_gate::MODE_SPOKEN;
+            $harmless = $deterministic[$pos]['pass'] && !summary_gate::mentions_body_language((string) $item['text'], $list);
+            if ($spoken && $harmless) {
+                continue;
+            }
+            $withheld[] = $pos;
             if (trim((string) $item['text']) !== '') {
                 self::gatelog(
                     $rec,
@@ -436,14 +525,70 @@ final class visual_pipeline {
                 );
             }
         }
-        foreach ($visualidx as $i) {
-            self::withhold($criteria[$i]);
+
+        return self::apply_rejections($criteria, $texts, $withheld, null, $overall, $tips);
+    }
+
+    /**
+     * Apply the gate's rejections to the reply and say what the learner sees.
+     *
+     * @param array $criteria The criteria, with visual flags set.
+     * @param array $texts The batch with its kinds.
+     * @param int[] $rejected Positions in $texts that were rejected or withheld.
+     * @param string|null $summary The summary when it passed, or null for the template.
+     * @param string $overall The overall comment.
+     * @param string[] $tips The tips.
+     * @return array As finalise().
+     */
+    private static function apply_rejections(
+        array $criteria,
+        array $texts,
+        array $rejected,
+        ?string $summary,
+        string $overall,
+        array $tips
+    ): array {
+        $droptips = [];
+        foreach ($rejected as $pos) {
+            $item = $texts[$pos];
+            switch ($item['kind']) {
+                case 'visual':
+                    self::withhold($criteria[$item['index']]);
+                    break;
+                case 'criterion':
+                    $criteria[$item['index']]['feedback'] = get_string('feedback_withheld', 'mod_presenterai');
+                    break;
+                case 'overall':
+                    $overall = get_string('feedback_withheld', 'mod_presenterai');
+                    break;
+                case 'tip':
+                    $droptips[(int) $item['index']] = true;
+                    break;
+            }
+        }
+        $keptips = [];
+        foreach ($tips as $j => $tip) {
+            if (!isset($droptips[$j])) {
+                $keptips[] = $tip;
+            }
+        }
+
+        if ($summary !== null) {
+            return [
+                'criteria' => $criteria,
+                'visualsummary' => $summary,
+                'visualstatus' => self::STATUS_SUMMARY,
+                'overall' => $overall,
+                'tips' => $keptips,
+            ];
         }
 
         return [
             'criteria' => $criteria,
             'visualsummary' => fallback_template::build($criteria),
             'visualstatus' => self::STATUS_FALLBACK,
+            'overall' => $overall,
+            'tips' => $keptips,
         ];
     }
 
@@ -502,7 +647,7 @@ final class visual_pipeline {
             'recordingid' => (int) $rec->id,
             'target' => \core_text::substr($target, 0, 255),
             'layer' => $layer,
-            'rule' => \core_text::substr($rule, 0, 64),
+            'gaterule' => \core_text::substr($rule, 0, 64),
             'rejectedtext' => $text,
             'timecreated' => time(),
         ]);

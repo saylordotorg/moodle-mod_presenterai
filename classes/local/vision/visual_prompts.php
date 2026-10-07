@@ -126,25 +126,47 @@ PROMPT;
      * (DECISIONS.md 9.17). In its place: when the activity scores body
      * language, the D23 counterweight; when it doesn't, the feedback only rule.
      *
+     * Both rules name the visual criteria. A teacher can flag any criterion as
+     * visual under any name, and there may be one or three of them, so "the
+     * visual criteria" or "these two" leaves the model to guess which rubric
+     * lines the counterweight covers, and a guess that misses "Stage presence"
+     * is an assessed zero for a learner who can't stand in frame.
+     *
+     * The block also keeps body language in the two places the D21 gate
+     * checks: the summary and the visual criteria's feedback.
+     *
      * @param string $note The vision pass's note.
      * @param bool $visualscored Whether the activity counts the visual criteria (D23).
      * @param string $languagename The English name of the learner's language.
+     * @param string[] $visualnames The names of the visual criteria in the prompt's rubric; [] for the seed names.
      * @return string
      */
-    public static function scoring_block(string $note, bool $visualscored, string $languagename): string {
+    public static function scoring_block(string $note, bool $visualscored, string $languagename, array $visualnames = []): string {
         $evidence = "VISUAL EVIDENCE (a description of still frames sampled from the recording, not continuous video):\n"
             . \core_text::substr(trim($note), 0, self::MAX_EVIDENCE_CHARS);
 
+        $visualnames = array_values(array_filter(array_map('trim', array_map('strval', $visualnames)), 'strlen'));
+        if (empty($visualnames)) {
+            $visualnames = visual_pipeline::VISUAL_CRITERION_NAMES;
+        }
+        $quoted = implode(', ', array_map(fn($name) => '"' . $name . '"', $visualnames));
+        $which = count($visualnames) === 1
+            ? 'The visual criterion is ' . $quoted . '.'
+            : 'The visual criteria are ' . $quoted . '.';
+
         if ($visualscored) {
-            $rule = 'Score the visual criteria from this evidence ONLY. If the evidence does not let you judge a '
+            $rule = $which . ' Score the visual criteria from this evidence ONLY. If the evidence does not let you judge a '
                 . 'criterion, set its assessed field to false and its score to 0; never guess. If a behaviour could '
                 . 'not have been shown because of how the speaker is seated, positioned or framed, or because of '
                 . 'anything the speaker cannot change about themselves, set assessed to false. Score 0 with assessed '
                 . 'true only when the behaviour was clearly possible for this speaker in these frames and was absent.';
         } else {
-            $rule = 'These two criteria are feedback only for this activity and do not affect the learner\'s score. '
+            $rule = $which . ' They are feedback only for this activity and do not affect the learner\'s score. '
                 . 'Still give each a score and an assessed flag, and write feedback the learner can act on.';
         }
+        $rule .= ' Write about body language (hands, arms, posture, stance, movement, gaze, framing and lighting) only '
+            . 'in the visual criteria\'s feedback and in visual_summary, never in the overall comment, the tips or any '
+            . 'other criterion\'s feedback.';
 
         return $evidence . "\n\n" . $rule . "\n\n" . self::summary($languagename);
     }

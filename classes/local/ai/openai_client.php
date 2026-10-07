@@ -27,6 +27,14 @@ namespace mod_presenterai\local\ai;
  * The GPT-5 and o1, o3 and o4 families reject max_tokens and temperature, so
  * they get max_completion_tokens and no temperature.
  *
+ * Thinking models spend output tokens on reasoning before they write a word,
+ * and the budgets here are small (the judge has 400). So a reasoning model
+ * is asked to think little (reasoning_effort) and its token ceiling is raised
+ * by REASONING_HEADROOM, and a reply cut off by the ceiling (finish_reason
+ * length) is reported as truncated rather than as a bad reply. That covers
+ * GPT-5 and the o3 and o4 families here, and Gemini 2.5 and later on the
+ * gemini route, where Google maps reasoning_effort to its thinking budget.
+ *
  * A compatible endpoint may be entered as an API base (https://host/v1) or as
  * the full chat completions URL; both work. Its key is optional, because a
  * self hosted server on a trusted host often has none.
@@ -38,6 +46,9 @@ namespace mod_presenterai\local\ai;
 class openai_client implements client_interface {
     /** @var string The default API base. */
     public const DEFAULT_BASE = 'https://api.openai.com/v1';
+
+    /** @var int Output tokens added to a reasoning model's ceiling, for its thinking. */
+    public const REASONING_HEADROOM = 8192;
 
     /** @var string The API key. */
     protected string $apikey;
@@ -95,6 +106,22 @@ class openai_client implements client_interface {
     }
 
     /**
+     * The reasoning_effort to send for this client's model, or '' to send none.
+     *
+     * 'low' rather than 'minimal' or 'none': every reasoning model OpenAI
+     * offers takes 'low', and o1 takes none of them, so it gets nothing.
+     *
+     * @return string
+     */
+    protected function reasoning_effort(): string {
+        $model = strtolower($this->model);
+        if (str_starts_with($model, 'gpt-5') || preg_match('/^o(?:3|4)(?:[-.]|$)/', $model) === 1) {
+            return 'low';
+        }
+        return '';
+    }
+
+    /**
      * The chat completions URL.
      *
      * @return string
@@ -149,8 +176,17 @@ class openai_client implements client_interface {
         }
 
         $message = $data['choices'][0]['message'];
-        if (!empty($message['refusal']) || ($data['choices'][0]['finish_reason'] ?? '') === 'content_filter') {
+        $finish = (string) ($data['choices'][0]['finish_reason'] ?? '');
+        if (!empty($message['refusal']) || $finish === 'content_filter') {
             throw ai_exception::for_reason(ai_exception::REFUSAL, ucfirst($this->routename) . ' declined the request');
+        }
+        if ($finish === 'length') {
+            // Thinking, or a long answer, used the whole budget: what came back is
+            // empty or cut off, and parsing it would only report a bad reply.
+            throw ai_exception::for_reason(
+                ai_exception::TRUNCATED,
+                ucfirst($this->routename) . ' stopped at its output token limit (' . $this->model . ')'
+            );
         }
         if (!isset($message['content']) || !is_string($message['content']) || $message['content'] === '') {
             throw ai_exception::for_reason(ai_exception::BAD_RESPONSE, 'No content in the response');
@@ -190,7 +226,15 @@ class openai_client implements client_interface {
 
         $body = ['model' => $this->model, 'messages' => $messages];
         $reasoning = self::uses_max_completion_tokens($this->model);
-        $body[$reasoning ? 'max_completion_tokens' : 'max_tokens'] = (int) ($opts['max_tokens'] ?? 4096);
+        $effort = $this->reasoning_effort();
+        $maxtokens = (int) ($opts['max_tokens'] ?? 4096);
+        if ($effort !== '' || $reasoning) {
+            $maxtokens += self::REASONING_HEADROOM;
+        }
+        $body[$reasoning ? 'max_completion_tokens' : 'max_tokens'] = $maxtokens;
+        if ($effort !== '') {
+            $body['reasoning_effort'] = $effort;
+        }
         if (!$reasoning && isset($opts['temperature'])) {
             $body['temperature'] = (float) $opts['temperature'];
         }
@@ -221,8 +265,21 @@ class openai_client implements client_interface {
         if (empty($data['usage']) || !is_array($data['usage'])) {
             return;
         }
-        $this->usage['prompttokens'] += (int) ($data['usage']['prompt_tokens'] ?? 0);
-        $this->usage['completiontokens'] += (int) ($data['usage']['completion_tokens'] ?? 0);
+        $usage = $data['usage'];
+        $prompt = (int) ($usage['prompt_tokens'] ?? 0);
+        $completion = (int) ($usage['completion_tokens'] ?? 0);
+        $reasoning = (int) ($usage['completion_tokens_details']['reasoning_tokens'] ?? 0);
+        // Thinking is billed as output. OpenAI counts it inside
+        // completion_tokens; Google's compatibility endpoint has not reliably
+        // done so (SOLA measured 0.35M logged against 1.78M billed). Rather
+        // than guess by vendor, total_tokens says which: when it is the sum
+        // of all three, completion_tokens left the thinking out.
+        $separate = isset($usage['total_tokens']) && (int) $usage['total_tokens'] >= $prompt + $completion + $reasoning;
+        if ($reasoning > 0 && $separate) {
+            $completion += $reasoning;
+        }
+        $this->usage['prompttokens'] += $prompt;
+        $this->usage['completiontokens'] += $completion;
     }
 
     /**

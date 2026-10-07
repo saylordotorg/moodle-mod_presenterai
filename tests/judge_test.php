@@ -101,11 +101,37 @@ final class judge_test extends \advanced_testcase {
             $this->fail('A failed judge call was taken as a verdict.');
         } catch (judge_unavailable_exception $e) {
             $this->assertSame('http_429', $e->reason);
+            $this->assertTrue($e->transient);
             $this->assertSame('error:judgeunavailable', $e->errorcode);
         }
         $row = $DB->get_record('presenterai_aiusage', ['recordingid' => 6], '*', MUST_EXIST);
         $this->assertSame('judge', $row->action);
         $this->assertSame(7, (int) $row->userid);
+    }
+
+    /**
+     * A permanent failure, such as a 404 for a model id that doesn't exist, isn't transient.
+     *
+     * @return void
+     */
+    public function test_permanent_failure_is_not_transient(): void {
+        $this->resetAfterTest();
+        foreach (['http_4xx', 'refusal', 'not_configured'] as $reason) {
+            $client = video_vision_test::fake_client([ai_exception::for_reason($reason)]);
+            try {
+                judge::verdicts(['one'], $client);
+                $this->fail('A failed judge call was taken as a verdict.');
+            } catch (judge_unavailable_exception $e) {
+                $this->assertSame($reason, $e->reason);
+                $this->assertFalse($e->transient, $reason);
+            }
+        }
+        try {
+            judge::verdicts(['one'], video_vision_test::fake_client(['All of these look fine.']));
+            $this->fail('An unparseable reply was taken as a verdict.');
+        } catch (judge_unavailable_exception $e) {
+            $this->assertFalse($e->transient);
+        }
     }
 
     /**

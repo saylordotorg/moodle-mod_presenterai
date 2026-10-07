@@ -69,6 +69,30 @@ final class ai_http_client_test extends \advanced_testcase {
     }
 
     /**
+     * Redirects are never followed, so the SSRF check and the pin can't be bypassed by a 3xx.
+     *
+     * @return void
+     */
+    public function test_redirects_never_followed(): void {
+        $this->resetAfterTest();
+        $options = http_client::curl_options('https://api.example.com/x', 30, 5);
+        $this->assertSame(0, $options['CURLOPT_FOLLOWLOCATION']);
+        $this->assertSame(0, $options['CURLOPT_MAXREDIRS']);
+        $this->assertSame(30, $options['CURLOPT_TIMEOUT']);
+        $this->assertSame(5, $options['CURLOPT_CONNECTTIMEOUT']);
+
+        http_client::set_test_handler(fn() => ['status' => 307, 'body' => '']);
+        $result = http_client::get('https://api.example.com/x');
+        $this->assertSame(0, http_client::last_requests()[0]['options']['CURLOPT_FOLLOWLOCATION']);
+        try {
+            http_client::raise_for_status($result['status']);
+            $this->fail('A redirect was treated as success.');
+        } catch (ai_exception $e) {
+            $this->assertSame(ai_exception::HTTP_4XX, $e->reason);
+        }
+    }
+
+    /**
      * An unsafe endpoint is refused before the handler is ever called.
      *
      * @dataProvider unsafe_urls

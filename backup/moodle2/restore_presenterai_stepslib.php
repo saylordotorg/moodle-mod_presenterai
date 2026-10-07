@@ -177,6 +177,10 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         $data->clienttoken = null;
         $data->uploadid = null;
         $data->visualoptout = (int) ($data->visualoptout ?? 0);
+        // Backups made before the raw note was left out still carry it. It
+        // never comes back: its visualdatadays clock ran on the source site.
+        $data->visualevidence = null;
+        $data->visualevidenceat = 0;
         $oldscoreid = (int) ($data->scoreid ?? 0);
         $data->scoreid = null;
 
@@ -207,10 +211,40 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         $data->userid = $userid;
         $data->visualstatus = (string) ($data->visualstatus ?? '');
         $data->graderid = !empty($data->graderid) ? ($this->get_mappingid('user', $data->graderid) ?: 0) : 0;
-        $data->rubricid = !empty($data->rubricid) ? ($this->get_mappingid('presenterai_rubric', $data->rubricid) ?: 0) : 0;
+        $data->rubricid = $this->restored_rubricid((int) ($data->rubricid ?? 0)) ?? 0;
 
         $newid = $DB->insert_record('presenterai_score', $data);
         $this->set_mapping('presenterai_score', $oldid, $newid);
+    }
+
+    /**
+     * The id a backed up rubric reference should have in the restored activity, or null.
+     *
+     * A rubric backed up with the activity has a mapping. A course level rubric
+     * isn't in the activity's backup, but on the same site, when the restored
+     * activity can still reach it (a duplicate, or a restore into the same
+     * course), the reference is kept: without it the activity would silently
+     * fall back to whichever rubric resolve() finds and score against a rubric
+     * the teacher didn't choose.
+     *
+     * @param int $oldid The rubric id in the backup.
+     * @return int|null
+     */
+    private function restored_rubricid(int $oldid): ?int {
+        if ($oldid <= 0) {
+            return null;
+        }
+        $mapped = $this->get_mappingid('presenterai_rubric', $oldid);
+        if ($mapped) {
+            return (int) $mapped;
+        }
+        if ($this->task->is_samesite()) {
+            $context = \context::instance_by_id($this->task->get_contextid(), IGNORE_MISSING);
+            if ($context && \mod_presenterai\local\rubric_manager::is_selectable($oldid, $context)) {
+                return $oldid;
+            }
+        }
+        return null;
     }
 
     /**
@@ -228,7 +262,7 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         }
 
         if ($this->oldrubricid > 0) {
-            $rubricid = $this->get_mappingid('presenterai_rubric', $this->oldrubricid);
+            $rubricid = $this->restored_rubricid($this->oldrubricid);
             if ($rubricid) {
                 $DB->set_field('presenterai', 'rubricid', $rubricid, ['id' => $this->task->get_activityid()]);
             }

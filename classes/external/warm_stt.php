@@ -21,6 +21,7 @@ use core_external\external_function_parameters;
 use core_external\external_single_structure;
 use core_external\external_value;
 use mod_presenterai\local\ai\http_client;
+use mod_presenterai\local\ai\rate_limiter;
 use mod_presenterai\local\ai\stt_client;
 
 /**
@@ -35,11 +36,19 @@ use mod_presenterai\local\ai\stt_client;
  * every error is swallowed: warming is never worth failing a request for.
  * Nothing about the endpoint or its key goes back to the browser.
  *
+ * One ping a minute for the whole site is enough to keep a server awake, so
+ * any call after that inside the minute returns warmed false without
+ * sending anything. That keeps a scripted learner calling this in a loop from
+ * tying up PHP workers on blocking pings or hammering the server.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class warm_stt extends external_api {
+    /** @var int Seconds between pings, site wide. */
+    public const INTERVAL = 60;
+
     /**
      * Describe the parameters.
      *
@@ -65,6 +74,10 @@ class warm_stt extends external_api {
         require_capability('mod/presenterai:submit', $context);
 
         if (!stt_client::warm_enabled()) {
+            return ['warmed' => false];
+        }
+        // User 0 is the site wide bucket: one ping per interval, whoever asks.
+        if (rate_limiter::hit('warm_stt', 0, 1, self::INTERVAL)) {
             return ['warmed' => false];
         }
         $endpoint = trim((string) get_config('mod_presenterai', 'sttendpoint'));

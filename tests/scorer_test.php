@@ -297,12 +297,13 @@ final class scorer_test extends \advanced_testcase {
      * @param int $recordingid The recording.
      * @param bool $mayretry Whether transient failures throw.
      * @param bool $rescore Whether this is a rescore.
+     * @param int $deferrals Rate limit deferrals so far.
      * @return string What it printed.
      */
-    private function score(int $recordingid, bool $mayretry = true, bool $rescore = false): string {
+    private function score(int $recordingid, bool $mayretry = true, bool $rescore = false, int $deferrals = 0): string {
         ob_start();
         try {
-            scorer::score($recordingid, $mayretry, $rescore);
+            scorer::score($recordingid, $mayretry, $rescore, $deferrals);
         } finally {
             $out = (string) ob_get_clean();
         }
@@ -361,9 +362,10 @@ final class scorer_test extends \advanced_testcase {
 
         // The request: system and user split, contextid and userid always, the schema when supported.
         [$system, $user, $opts] = $client->calls[0];
-        $this->assertSame('Produce the feedback JSON now.', $user);
+        $this->assertStringEndsWith('Produce the feedback JSON now.', $user);
         $this->assertStringContainsString('RUBRIC:', $system);
-        $this->assertStringContainsString(self::TRANSCRIPT, $system);
+        $this->assertStringContainsString("<transcript>\n" . self::TRANSCRIPT . "\n</transcript>", $user);
+        $this->assertStringNotContainsString(self::TRANSCRIPT, $system);
         $this->assertSame((int) $this->ctx->id, $opts['contextid']);
         $this->assertSame((int) $this->learner->id, $opts['userid']);
         $this->assertSame('presentation_feedback', $opts['schema']['name']);
@@ -438,6 +440,47 @@ final class scorer_test extends \advanced_testcase {
         $this->assertEqualsWithDelta(100.0, (float) $score->overallpct, 0.001);
         $stored = score_manager::decode_criteria($score);
         $this->assertFalse($stored[4]['assessed']);
+    }
+
+    /**
+     * A reply that drops most spoken criteria from the denominator fails for a teacher, not a 100 percent.
+     *
+     * A learner who tells the model, in their talk or on a slide, to mark
+     * every criterion but Content as not assessed would otherwise get full
+     * marks on Content alone.
+     *
+     * @return void
+     */
+    public function test_too_few_spoken_assessed_fails(): void {
+        global $DB;
+
+        $scores = [];
+        foreach (rubric_manager::DEFAULT_CRITERIA as $criterion) {
+            $scores[$criterion['name']] = [0, false];
+        }
+        $first = rubric_manager::DEFAULT_CRITERIA[0]['name'];
+        $scores[$first] = [5, true];
+        route_resolver::set_test_stt(self::fake_stt([]));
+        route_resolver::set_test_client(route_resolver::PURPOSE_SCORE, self::fake_client([self::answer($scores)]));
+        $rec = $this->recording_with_media(['transcript' => self::TRANSCRIPT]);
+
+        $out = $this->score((int) $rec->id);
+
+        $this->assertSame('failed', $this->reload((int) $rec->id)->status);
+        $this->assertStringContainsString('too_few_assessed', $out);
+        $this->assertFalse($DB->record_exists('presenterai_score', ['recordingid' => $rec->id]));
+
+        // At most half, rounded down, may leave.
+        $five = array_fill(0, 5, ['assessed' => true, 'visual' => false]);
+        $this->assertTrue(scorer::enough_spoken_assessed($five));
+        $five[0]['assessed'] = $five[1]['assessed'] = false;
+        $this->assertTrue(scorer::enough_spoken_assessed($five));
+        $five[2]['assessed'] = false;
+        $this->assertFalse(scorer::enough_spoken_assessed($five));
+        // Visual criteria are outside the count (D23 has its own rules for them).
+        $five[] = ['assessed' => false, 'visual' => true];
+        $five[2]['assessed'] = true;
+        $this->assertTrue(scorer::enough_spoken_assessed($five));
     }
 
     /**
@@ -641,6 +684,59 @@ final class scorer_test extends \advanced_testcase {
         }
         $this->assertCount(0, $stt->calls);
         $this->assertSame('scoring', $this->reload((int) $rec->id)->status);
+    }
+
+    /**
+     * Rate limited with the backoff spent: queued again for when the window ends, never failed, and never counted.
+     *
+     * @return void
+     */
+    public function test_rate_limited_without_retry_is_deferred_not_failed(): void {
+        global $DB;
+
+        route_resolver::set_test_stt(self::fake_stt([]));
+        $client = self::fake_client([self::default_answer()]);
+        route_resolver::set_test_client(route_resolver::PURPOSE_SCORE, $client);
+        $rec = $this->recording_with_media(['transcript' => self::TRANSCRIPT]);
+        $userid = (int) $this->learner->id;
+        $start = time();
+        rate_limiter::set_test_now($start);
+        try {
+            for ($i = 0; $i < rate_limiter::SCORE_MAX; $i++) {
+                rate_limiter::hit('score', $userid, rate_limiter::SCORE_MAX, rate_limiter::SCORE_WINDOW);
+            }
+            // A run about 31 minutes in, with no retries left.
+            rate_limiter::set_test_now($start + 1860);
+            $DB->delete_records('task_adhoc', ['classname' => '\\mod_presenterai\\task\\score_recording']);
+            $this->score((int) $rec->id, false);
+
+            $this->assertSame('scoring', $this->reload((int) $rec->id)->status, 'A rate limited attempt was failed.');
+            $this->assertCount(0, $client->calls);
+            $tasks = \core\task\manager::get_adhoc_tasks('\\mod_presenterai\\task\\score_recording');
+            $this->assertCount(1, $tasks);
+            $task = reset($tasks);
+            $this->assertSame(1, (int) $task->get_custom_data()->deferrals);
+            $this->assertGreaterThanOrEqual(time() + 60, (int) $task->get_next_run_time());
+
+            // The refused call wasn't counted: once the window ends the learner has the full allowance.
+            $this->assertSame(
+                rate_limiter::SCORE_WINDOW - 1860,
+                rate_limiter::seconds_until_reset('score', $userid, rate_limiter::SCORE_WINDOW)
+            );
+            rate_limiter::set_test_now($start + rate_limiter::SCORE_WINDOW);
+            $this->score((int) $rec->id, false, false, 1);
+            $this->assertSame('scored', $this->reload((int) $rec->id)->status);
+
+            // Out of deferrals, a rate limit fails the row as before.
+            $other = $this->recording_with_media(['transcript' => self::TRANSCRIPT, 'attemptnumber' => 2]);
+            for ($i = 0; $i < rate_limiter::SCORE_MAX; $i++) {
+                rate_limiter::hit('score', $userid, rate_limiter::SCORE_MAX, rate_limiter::SCORE_WINDOW);
+            }
+            $this->score((int) $other->id, false, false, scorer::MAX_DEFERRALS);
+            $this->assertSame('failed', $this->reload((int) $other->id)->status);
+        } finally {
+            rate_limiter::set_test_now(null);
+        }
     }
 
     /**

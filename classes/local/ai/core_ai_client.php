@@ -50,8 +50,12 @@ class core_ai_client implements client_interface {
     /** @var string The model name recorded for core AI calls. */
     public const MODEL = 'core_ai';
 
-    /** @var string The core action class. */
-    private const ACTION = '\\core_ai\\aiactions\\generate_text';
+    /**
+     * @var string The core action class, with no leading backslash. Core's
+     * manager matches it with in_array() against generate_text::class, which
+     * has none, so a leading one makes every provider look unable to run it.
+     */
+    public const ACTION = 'core_ai\\aiactions\\generate_text';
 
     /** @var string The core manager class. */
     private const MANAGER = '\\core_ai\\manager';
@@ -248,7 +252,7 @@ class core_ai_client implements client_interface {
                 $type = $param->getType();
                 $typename = $type instanceof \ReflectionNamedType ? $type->getName() : '';
                 if ($typename === 'string') {
-                    $args[] = ltrim(self::ACTION, '\\');
+                    $args[] = self::ACTION;
                 } else if ($typename === 'int') {
                     $args[] = $contextid;
                 } else if ($typename !== '' && is_a(\context::class, $typename, true)) {

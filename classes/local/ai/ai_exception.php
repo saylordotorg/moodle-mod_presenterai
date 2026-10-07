@@ -67,6 +67,12 @@ class ai_exception extends \moodle_exception {
     /** @var string Moodle core AI is missing, disabled, or has no provider. */
     public const CORE_DISABLED = 'core_disabled';
 
+    /** @var string The upload is over the service's size limit (HTTP 413, or caught before sending). */
+    public const TOO_LARGE = 'too_large';
+
+    /** @var string The reply hit its output token limit before it finished. */
+    public const TRUNCATED = 'truncated';
+
     /** @var string[] The reasons worth retrying. */
     public const TRANSIENT_REASONS = [
         self::RATE_LIMITED, self::HTTP_429, self::HTTP_5XX, self::TIMEOUT, self::NETWORK,
@@ -77,6 +83,9 @@ class ai_exception extends \moodle_exception {
 
     /** @var bool Whether the same call may succeed later. */
     public readonly bool $transient;
+
+    /** @var int For rate_limited: seconds until the limiter's window ends, 0 when unknown. */
+    public int $retryafter = 0;
 
     /**
      * Build the exception.

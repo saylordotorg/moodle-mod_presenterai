@@ -216,6 +216,13 @@ class route_resolver {
         if ($scoring !== null && $stt === null) {
             $messages[] = get_string('aireadiness_blocked', 'mod_presenterai');
         }
+        if ($stt !== null && $stt->route() === 'openai') {
+            // OpenAI takes at most 25 MB, and the whole recording is sent.
+            $fits = stt_client::openai_max_seconds('video');
+            if ($fits < \mod_presenterai\local\config::max_recording_seconds()) {
+                $messages[] = get_string('aireadiness_sttsizelimit', 'mod_presenterai', (int) floor($fits / 60));
+            }
+        }
 
         return [
             'scoring' => $scoring !== null,

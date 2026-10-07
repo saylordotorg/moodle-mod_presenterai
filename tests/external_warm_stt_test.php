@@ -19,6 +19,7 @@ namespace mod_presenterai;
 use core_external\external_api;
 use mod_presenterai\external\warm_stt;
 use mod_presenterai\local\ai\http_client;
+use mod_presenterai\local\ai\rate_limiter;
 
 /**
  * The warm up ping: off by default, a GET to the server base when on,
@@ -105,6 +106,33 @@ final class external_warm_stt_test extends \advanced_testcase {
         $this->assertSame(4, $requests[0]['options']['timeout']);
         $this->assertSame(3, $requests[0]['options']['connecttimeout']);
         $this->assertSame([], $requests[0]['headers']);
+    }
+
+    /**
+     * Only one ping a minute for the whole site, whoever asks.
+     *
+     * @return void
+     */
+    public function test_throttled_site_wide(): void {
+        set_config('sttwarm', 1, 'mod_presenterai');
+        set_config('sttendpoint', 'https://stt.example.com/v1/audio/transcriptions', 'mod_presenterai');
+        $other = $this->getDataGenerator()->create_and_enrol($this->course, 'student');
+        $now = time();
+        rate_limiter::set_test_now($now);
+        try {
+            $this->setUser($this->learner);
+            $this->assertSame(['warmed' => true], $this->call());
+            $this->assertSame(['warmed' => false], $this->call());
+            $this->setUser($other);
+            $this->assertSame(['warmed' => false], $this->call());
+            $this->assertCount(1, http_client::last_requests());
+
+            rate_limiter::set_test_now($now + warm_stt::INTERVAL);
+            $this->assertSame(['warmed' => true], $this->call());
+            $this->assertCount(2, http_client::last_requests());
+        } finally {
+            rate_limiter::set_test_now(null);
+        }
     }
 
     /**

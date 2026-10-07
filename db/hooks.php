@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Plugin version and other meta-data.
+ * Hook callbacks.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -24,15 +24,9 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'mod_presenterai';
-$plugin->version   = 2026100701;
-$plugin->release   = '0.4.0-dev';
-$plugin->maturity  = MATURITY_ALPHA;
-
-// Moodle 4.5. Both Saylor production sites run 4.5.13+, verified 2026-09-20, so
-// a higher floor would put the plugin out of reach of the only sites that run
-// it. The core AI subsystem exists on 4.5 with a static API and changes to an
-// instance API on 5.x; the adapter carries that branch rather than the floor
-// being raised to avoid it. See docs/IMPLEMENTATION-PLAN.md section 5.
-$plugin->requires  = 2024100700;
-$plugin->supported = [405, 502];
+$callbacks = [
+    [
+        'hook' => \core_course\hook\before_course_deleted::class,
+        'callback' => [\mod_presenterai\local\hook_callbacks::class, 'before_course_deleted'],
+    ],
+];

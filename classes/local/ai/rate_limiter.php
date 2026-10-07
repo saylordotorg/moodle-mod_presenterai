@@ -31,6 +31,10 @@ namespace mod_presenterai\local\ai;
  * ttl (db/caches.php) must be at least the longest window or an entry would
  * expire mid window and silently reset the count.
  *
+ * A refused call isn't counted. Counting it would let a task that retries
+ * while limited keep pushing its own count up, so the window it waits for
+ * would never come.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -67,7 +71,7 @@ class rate_limiter {
      * @return bool True when this call is over the limit.
      */
     public static function hit(string $bucket, int $userid, int $max, int $windowseconds): bool {
-        $key = preg_replace('/[^a-zA-Z0-9_]/', '_', $bucket) . '_' . $userid;
+        $key = self::key($bucket, $userid);
         try {
             $factory = \core\lock\lock_config::get_lock_factory('mod_presenterai_ratelimit');
         } catch (\Throwable $e) {
@@ -104,6 +108,34 @@ class rate_limiter {
     }
 
     /**
+     * Seconds until a user's window for a bucket ends and calls are allowed again.
+     *
+     * @param string $bucket The bucket, as passed to hit().
+     * @param int $userid The user.
+     * @param int $windowseconds The window.
+     * @return int 0 when no window is open.
+     */
+    public static function seconds_until_reset(string $bucket, int $userid, int $windowseconds): int {
+        $data = \cache::make('mod_presenterai', 'ratelimit')->get(self::key($bucket, $userid));
+        if (!is_array($data) || !isset($data['start'])) {
+            return 0;
+        }
+        $now = self::$testnow ?? time();
+        return max(0, (int) $data['start'] + $windowseconds - $now);
+    }
+
+    /**
+     * The cache key for a bucket and user.
+     *
+     * @param string $bucket The bucket.
+     * @param int $userid The user.
+     * @return string
+     */
+    private static function key(string $bucket, int $userid): string {
+        return preg_replace('/[^a-zA-Z0-9_]/', '_', $bucket) . '_' . $userid;
+    }
+
+    /**
      * The fixed window count itself.
      *
      * @param string $key The cache key.
@@ -118,8 +150,12 @@ class rate_limiter {
         if (!is_array($data) || !isset($data['start'], $data['count']) || ($now - (int) $data['start']) >= $windowseconds) {
             $data = ['start' => $now, 'count' => 0];
         }
+        if ((int) $data['count'] >= $max) {
+            // Over: refused, and not counted.
+            return true;
+        }
         $data['count'] = (int) $data['count'] + 1;
         $cache->set($key, $data);
-        return $data['count'] > $max;
+        return false;
     }
 }

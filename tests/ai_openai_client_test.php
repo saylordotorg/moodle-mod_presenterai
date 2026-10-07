@@ -118,10 +118,19 @@ final class ai_openai_client_test extends \advanced_testcase {
     public function test_reasoning_models(): void {
         foreach (['gpt-5', 'gpt-5-mini', 'o1', 'o3-mini', 'o4-mini'] as $model) {
             $body = (new openai_client(self::KEY, $model))->build_body('s', 'u', ['max_tokens' => 700, 'temperature' => 0.4]);
-            $this->assertSame(700, $body['max_completion_tokens'], $model);
+            // The ceiling is raised so thinking can't use up the whole budget.
+            $this->assertSame(700 + openai_client::REASONING_HEADROOM, $body['max_completion_tokens'], $model);
             $this->assertArrayNotHasKey('max_tokens', $body, $model);
             $this->assertArrayNotHasKey('temperature', $body, $model);
+            if ($model === 'o1') {
+                $this->assertArrayNotHasKey('reasoning_effort', $body, $model);
+            } else {
+                $this->assertSame('low', $body['reasoning_effort'], $model);
+            }
         }
+        $plain = (new openai_client(self::KEY, 'gpt-4o-mini'))->build_body('s', 'u', ['max_tokens' => 700]);
+        $this->assertSame(700, $plain['max_tokens']);
+        $this->assertArrayNotHasKey('reasoning_effort', $plain);
         $this->assertFalse(openai_client::uses_max_completion_tokens('gpt-4o-mini'));
         $this->assertFalse(openai_client::uses_max_completion_tokens('omni-model'));
         $body = (new openai_client(self::KEY, 'gpt-4o-mini'))->build_body('s', 'u', []);
@@ -197,5 +206,53 @@ final class ai_openai_client_test extends \advanced_testcase {
         // The openai route without a key is not configured.
         $this->expectException(ai_exception::class);
         (new openai_client('', 'gpt-4o-mini'))->generate_text('s', 'u');
+    }
+
+    /**
+     * A reply stopped by the token limit is truncated, not a bad reply, and its spend is kept.
+     *
+     * @return void
+     */
+    public function test_length_finish_is_truncated(): void {
+        $this->resetAfterTest();
+        http_client::set_test_handler(fn() => ['status' => 200, 'body' => json_encode([
+            'model' => 'gpt-5-mini',
+            'choices' => [['index' => 0, 'finish_reason' => 'length', 'message' => ['role' => 'assistant', 'content' => '']]],
+            'usage' => [
+                'prompt_tokens' => 900, 'completion_tokens' => 8800, 'total_tokens' => 9700,
+                'completion_tokens_details' => ['reasoning_tokens' => 8800],
+            ],
+        ])]);
+        $client = new openai_client(self::KEY, 'gpt-5-mini');
+        try {
+            $client->generate_text('s', 'u', ['max_tokens' => 600]);
+            $this->fail('A cut off reply was returned.');
+        } catch (ai_exception $e) {
+            $this->assertSame(ai_exception::TRUNCATED, $e->reason);
+            $this->assertFalse($e->transient);
+        }
+        // OpenAI counts thinking inside completion_tokens: no double count.
+        $this->assertSame(8800, $client->last_usage()['completiontokens']);
+    }
+
+    /**
+     * Thinking reported outside completion_tokens, as Google's endpoint does, is added to it.
+     *
+     * @return void
+     */
+    public function test_thinking_outside_completion_tokens_is_counted(): void {
+        $this->resetAfterTest();
+        http_client::set_test_handler(fn() => ['status' => 200, 'body' => json_encode([
+            'model' => 'gemini-2.5-flash',
+            'choices' => [['index' => 0, 'finish_reason' => 'stop', 'message' => ['role' => 'assistant', 'content' => '{}']]],
+            'usage' => [
+                'prompt_tokens' => 1000, 'completion_tokens' => 200, 'total_tokens' => 1700,
+                'completion_tokens_details' => ['reasoning_tokens' => 500],
+            ],
+        ])]);
+        $client = new \mod_presenterai\local\ai\gemini_client(self::KEY, 'gemini-2.5-flash');
+        $client->generate_text('s', 'u');
+        $this->assertSame(1000, $client->last_usage()['prompttokens']);
+        $this->assertSame(700, $client->last_usage()['completiontokens']);
     }
 }

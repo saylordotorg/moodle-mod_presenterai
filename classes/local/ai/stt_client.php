@@ -42,6 +42,13 @@ class stt_client implements stt_interface {
     /** @var int Seconds allowed for one transcription. */
     public const TIMEOUT = 300;
 
+    /**
+     * @var int The largest upload OpenAI's transcription endpoint takes, 25 MB.
+     * The whole recording is sent, video included, so a long video at a high
+     * quality preset goes over it.
+     */
+    public const OPENAI_MAX_BYTES = 26214400;
+
     /** @var string The endpoint. */
     private string $endpoint;
 
@@ -62,6 +69,17 @@ class stt_client implements stt_interface {
         $this->endpoint = trim($endpoint);
         $this->apikey = trim($apikey);
         $this->model = trim($model) !== '' ? trim($model) : self::DEFAULT_MODEL;
+    }
+
+    /**
+     * The longest recording, in seconds, that fits under OpenAI's upload limit at the site's quality.
+     *
+     * @param string $mode 'video' or 'audio'.
+     * @return int
+     */
+    public static function openai_max_seconds(string $mode): int {
+        $persecond = max(1, \mod_presenterai\local\config::estimated_bytes($mode, 1000) / 1000);
+        return (int) floor(self::OPENAI_MAX_BYTES / $persecond);
     }
 
     /**
@@ -89,6 +107,13 @@ class stt_client implements stt_interface {
         }
         if (!is_readable($filepath) || filesize($filepath) === 0) {
             throw ai_exception::for_reason(ai_exception::BAD_RESPONSE, 'The recording file is missing or empty');
+        }
+        if ($this->route() === 'openai' && filesize($filepath) > self::OPENAI_MAX_BYTES) {
+            // OpenAI answers 413 to this anyway; refusing here saves the upload.
+            throw ai_exception::for_reason(
+                ai_exception::TOO_LARGE,
+                'The recording is ' . filesize($filepath) . ' bytes, over OpenAI\'s 25 MB transcription limit'
+            );
         }
         $headers = [];
         if ($this->apikey !== '') {

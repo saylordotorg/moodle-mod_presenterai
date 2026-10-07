@@ -217,6 +217,29 @@ final class ai_route_resolver_test extends \advanced_testcase {
     }
 
     /**
+     * Readiness warns when OpenAI transcription can't take the longest recording the site allows.
+     *
+     * @return void
+     */
+    public function test_readiness_warns_about_openai_size_limit(): void {
+        set_config('openaiapikey', 'o', 'mod_presenterai');
+        set_config('quality', 'high_720p', 'mod_presenterai');
+        set_config('maxrecordingseconds', 720, 'mod_presenterai');
+        $minutes = (int) floor(stt_client::openai_max_seconds('video') / 60);
+        $warning = get_string('aireadiness_sttsizelimit', 'mod_presenterai', $minutes);
+        $this->assertContains($warning, route_resolver::readiness()['messages']);
+
+        // A self hosted endpoint has no such limit.
+        set_config('sttendpoint', 'https://stt.example.com/v1/audio/transcriptions', 'mod_presenterai');
+        $this->assertNotContains($warning, route_resolver::readiness()['messages']);
+
+        // Nor does a short enough maximum on OpenAI.
+        set_config('sttendpoint', '', 'mod_presenterai');
+        set_config('maxrecordingseconds', 60, 'mod_presenterai');
+        $this->assertNotContains($warning, route_resolver::readiness()['messages']);
+    }
+
+    /**
      * accepts_recordings is false only with scoring and no transcription.
      *
      * @return void

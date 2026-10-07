@@ -65,4 +65,19 @@ final class ai_gemini_client_test extends \advanced_testcase {
         $this->assertSame('gemini', $client->last_usage()['provider']);
         $this->assertTrue($client->supports_images());
     }
+
+    /**
+     * Thinking Gemini models are asked to think little and given room for it; older ones aren't.
+     *
+     * @return void
+     */
+    public function test_thinking_control(): void {
+        $body = (new gemini_client('k', 'gemini-2.5-flash'))->build_body('s', 'u', ['max_tokens' => 400]);
+        $this->assertSame('low', $body['reasoning_effort']);
+        $this->assertSame(400 + gemini_client::REASONING_HEADROOM, $body['max_tokens']);
+
+        $body = (new gemini_client('k', 'gemini-2.0-flash'))->build_body('s', 'u', ['max_tokens' => 400]);
+        $this->assertArrayNotHasKey('reasoning_effort', $body);
+        $this->assertSame(400, $body['max_tokens']);
+    }
 }

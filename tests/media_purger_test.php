@@ -380,7 +380,7 @@ final class media_purger_test extends \advanced_testcase {
         $bobrec = $this->fs_recording($this->bob);
         foreach ([$alicerec, $bobrec] as $rec) {
             $DB->insert_record('presenterai_gatelog', (object) [
-                'recordingid' => $rec->id, 'target' => 'summary', 'layer' => 2, 'rule' => 'appearance',
+                'recordingid' => $rec->id, 'target' => 'summary', 'layer' => 2, 'gaterule' => 'appearance',
                 'rejectedtext' => 'about ' . $rec->userid, 'timecreated' => time(),
             ]);
         }

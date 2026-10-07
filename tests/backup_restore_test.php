@@ -703,6 +703,8 @@ final class backup_restore_test extends \advanced_testcase {
             'allowvisualoptout' => 1,
         ]);
         $DB->set_field('presenterai_recording', 'visualoptout', 1, ['id' => $fsrec->id]);
+        $DB->set_field('presenterai_recording', 'visualevidence', '{"note":"Hands below the desk."}', ['id' => $fsrec->id]);
+        $DB->set_field('presenterai_recording', 'visualevidenceat', time(), ['id' => $fsrec->id]);
         $aiid = (int) $DB->get_field('presenterai_score', 'id', ['recordingid' => $fsrec->id, 'origin' => 'ai']);
         $DB->update_record('presenterai_score', (object) [
             'id' => $aiid,
@@ -714,7 +716,7 @@ final class backup_restore_test extends \advanced_testcase {
             'recordingid' => $fsrec->id,
             'target' => 'summary',
             'layer' => 2,
-            'rule' => 'deny_appearance',
+            'gaterule' => 'deny_appearance',
             'rejectedtext' => 'Text the gate refused.',
             'timecreated' => time(),
         ]);
@@ -732,6 +734,8 @@ final class backup_restore_test extends \advanced_testcase {
             MUST_EXIST
         );
         $this->assertSame(1, (int) $newfs->visualoptout);
+        $this->assertNull($newfs->visualevidence, 'The raw body language note outlived its clock in a backup.');
+        $this->assertSame(0, (int) $newfs->visualevidenceat);
         $ai = $DB->get_record('presenterai_score', ['recordingid' => $newfs->id, 'origin' => 'ai'], '*', MUST_EXIST);
         $this->assertSame('Your hands stayed in view.', $ai->visualsummary);
         $this->assertSame('summary', $ai->visualstatus);
@@ -741,5 +745,40 @@ final class backup_restore_test extends \advanced_testcase {
 
         $this->assertSame(1, $DB->count_records('presenterai_gatelog'), 'The gate log was copied by the restore.');
         $this->assertFalse($DB->record_exists('presenterai_gatelog', ['recordingid' => $newfs->id]));
+    }
+
+    /**
+     * Duplicating an activity that chose a course level rubric keeps that choice.
+     *
+     * The course rubric isn't in the activity's backup, so there is no
+     * mapping for it. Without the same site fallback the copy would resolve
+     * to the newest course rubric instead, a rubric the teacher didn't choose.
+     *
+     * @return void
+     */
+    public function test_duplicate_keeps_course_level_rubric(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/course/lib.php');
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $CFG->backup_file_logger_level = backup::LOG_NONE;
+
+        $course = $this->getDataGenerator()->create_course();
+        $coursectx = \context_course::instance($course->id);
+        $criteria = [['name' => 'Content', 'description' => 'What was said.', 'max_score' => 5, 'visual' => false]];
+        $chosen = \mod_presenterai\local\rubric_manager::create((int) $coursectx->id, 'speech', 'Chosen B', $criteria);
+        $this->waitForSecond();
+        $newer = \mod_presenterai\local\rubric_manager::create((int) $coursectx->id, 'speech', 'Newer A', $criteria);
+        $instance = $this->getDataGenerator()->create_module('presenterai', ['course' => $course->id, 'rubricid' => $chosen]);
+        $this->assertSame($chosen, (int) $DB->get_field('presenterai', 'rubricid', ['id' => $instance->id]));
+
+        $cm = get_coursemodule_from_id('presenterai', $instance->cmid, 0, false, MUST_EXIST);
+        $newcm = duplicate_module($course, $cm);
+
+        $copy = $DB->get_record('presenterai', ['id' => $newcm->instance], '*', MUST_EXIST);
+        $this->assertSame($chosen, (int) $copy->rubricid);
+        $resolved = \mod_presenterai\local\rubric_manager::resolve($copy, \context_module::instance($newcm->id));
+        $this->assertSame($chosen, (int) $resolved['rubricid']);
+        $this->assertNotSame($newer, (int) $resolved['rubricid']);
     }
 }

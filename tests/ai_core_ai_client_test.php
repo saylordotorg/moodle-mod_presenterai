@@ -184,4 +184,25 @@ final class ai_core_ai_client_test extends \advanced_testcase {
             $this->assertFalse($e->transient);
         }
     }
+
+    /**
+     * With a configured, enabled core provider, the real manager says generate_text is available.
+     *
+     * The action name core is asked about must match generate_text::class
+     * exactly, with no leading backslash, or in_array() in core's manager
+     * finds no provider and the core route never works.
+     *
+     * @return void
+     */
+    public function test_real_manager_with_configured_provider(): void {
+        $this->resetAfterTest();
+        $this->assertSame(\core_ai\aiactions\generate_text::class, core_ai_client::ACTION);
+        if (core_ai_client::api_generation() !== '4.5') {
+            $this->markTestSkipped('Provider set up here is the 4.5 one.');
+        }
+        set_config('apikey', 'test-key', 'aiprovider_openai');
+        \core\plugininfo\aiprovider::enable_plugin('openai', 1);
+
+        $this->assertTrue(core_ai_client::is_available());
+    }
 }

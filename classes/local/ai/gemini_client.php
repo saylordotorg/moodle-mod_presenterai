@@ -47,4 +47,15 @@ class gemini_client extends openai_client {
     public function __construct(string $apikey, string $model, string $baseurl = self::GEMINI_BASE) {
         parent::__construct($apikey, $model, $baseurl, 'gemini');
     }
+
+    /**
+     * Gemini 2.5 and later think by default, and thinking counts against the
+     * output limit, so they are asked to think little. Earlier models don't
+     * think and get nothing.
+     *
+     * @return string
+     */
+    protected function reasoning_effort(): string {
+        return preg_match('/^(?:models\/)?gemini-(?:2\.5|[3-9])/', strtolower($this->model)) === 1 ? 'low' : '';
+    }
 }

@@ -67,7 +67,7 @@ final class gatelog_page implements \renderable, \templatable {
         $since = $this->now - expire_visual_data::GATELOG_DAYS * DAYSECS;
         $total = $DB->count_records_select('presenterai_gatelog', 'timecreated >= :since', ['since' => $since]);
 
-        $sql = "SELECT g.id, g.recordingid, g.target, g.layer, g.rule, g.rejectedtext, g.timecreated,
+        $sql = "SELECT g.id, g.recordingid, g.target, g.layer, g.gaterule, g.rejectedtext, g.timecreated,
                        p.id AS presenteraiid, p.name AS activityname, p.course AS courseid
                   FROM {presenterai_gatelog} g
              LEFT JOIN {presenterai_recording} r ON r.id = g.recordingid
@@ -132,11 +132,11 @@ final class gatelog_page implements \renderable, \templatable {
             'activity' => $activityname,
             'activityurl' => $activityurl,
             'hasactivityurl' => $activityurl !== '',
-            'target' => $record->target === 'summary'
-                ? get_string('gatelog_target_summary', 'mod_presenterai')
+            'target' => in_array($record->target, ['summary', 'overall', 'tip'], true)
+                ? get_string('gatelog_target_' . $record->target, 'mod_presenterai')
                 : (string) $record->target,
             'layer' => get_string('gatelog_layer_' . self::layer_key((int) $record->layer), 'mod_presenterai'),
-            'rule' => (string) $record->rule,
+            'rule' => (string) $record->gaterule,
             'text' => (string) $record->rejectedtext,
         ];
     }

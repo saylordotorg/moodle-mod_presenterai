@@ -36,7 +36,9 @@ use mod_presenterai\local\ai\usage;
  *
  * A missing verdict is a rejection: a judge that skipped an item has not
  * passed it. No client, an ai_exception or an unparseable reply is an outage,
- * not a verdict, and throws judge_unavailable_exception (design 4.7).
+ * not a verdict, and throws judge_unavailable_exception (design 4.7), which
+ * carries the ai_exception's transient flag: only a transient outage is worth
+ * rerunning the scoring task for.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -46,7 +48,7 @@ final class judge {
     /** @var int Output budget: about 40 tokens a verdict, with room to spare. */
     private const MAX_TOKENS = 400;
 
-    /** @var int Longest rule kept, the width of presenterai_gatelog.rule. */
+    /** @var int Longest rule kept, the width of presenterai_gatelog.gaterule. */
     private const RULE_MAX = 64;
 
     /**
@@ -69,9 +71,10 @@ final class judge {
                 'max_tokens' => self::MAX_TOKENS,
             ]);
         } catch (\mod_presenterai\local\ai\ai_exception $e) {
-            throw new judge_unavailable_exception($e->reason, get_class($e));
+            throw new judge_unavailable_exception($e->reason, get_class($e), $e->transient);
         } catch (\Throwable $e) {
-            throw new judge_unavailable_exception('network', get_class($e));
+            // Not an AI call failure but a fault here, which a retry won't fix.
+            throw new judge_unavailable_exception('error', get_class($e), false);
         } finally {
             // Spend is recorded whether or not the call succeeded: a refused or
             // failed call can still have cost tokens.

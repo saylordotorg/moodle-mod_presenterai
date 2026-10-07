@@ -111,8 +111,8 @@ class http_client {
      * Throw the ai_exception an HTTP status calls for, or return on 2xx.
      *
      * 429 is http_429 and 500 to 599 (Anthropic's 529 overloaded among them)
-     * is http_5xx, both transient; any other status is http_4xx, which is
-     * not. A transport level status of 0 is a network failure.
+     * is http_5xx, both transient; 413 is too_large and any other status is
+     * http_4xx, neither of which is. A transport level status of 0 is a network failure.
      *
      * @param int $status The HTTP status.
      * @param string $debuginfo The provider's error message; never a key.
@@ -126,6 +126,9 @@ class http_client {
         $detail = 'HTTP ' . $status . ($debuginfo !== '' ? ': ' . $debuginfo : '');
         if ($status === 429) {
             throw ai_exception::for_reason(ai_exception::HTTP_429, $detail);
+        }
+        if ($status === 413) {
+            throw ai_exception::for_reason(ai_exception::TOO_LARGE, $detail);
         }
         if ($status >= 500 && $status <= 599) {
             throw ai_exception::for_reason(ai_exception::HTTP_5XX, $detail);
@@ -161,7 +164,7 @@ class http_client {
 
         if (self::$testhandler !== null) {
             $options = ['method' => $method, 'timeout' => $timeout, 'connecttimeout' => $connecttimeout]
-                + security::pin_options($url);
+                + self::curl_options($url, $timeout, $connecttimeout);
             self::$requests[] = ['url' => $url, 'headers' => $headers, 'body' => $body, 'options' => $options];
             $result = (array) (self::$testhandler)($url, $headers, $body, $options);
             return self::finish(
@@ -176,10 +179,7 @@ class http_client {
         require_once($CFG->libdir . '/filelib.php');
         $curl = new \curl();
         $curl->setHeader($headers);
-        $curlopts = [
-            'CURLOPT_TIMEOUT' => $timeout,
-            'CURLOPT_CONNECTTIMEOUT' => $connecttimeout,
-        ] + security::pin_options($url);
+        $curlopts = self::curl_options($url, $timeout, $connecttimeout);
 
         $response = $method === 'GET' ? $curl->get($url, [], $curlopts) : $curl->post($url, $body, $curlopts);
         $info = $curl->get_info();
@@ -190,6 +190,30 @@ class http_client {
             is_string($response) ? $response : '',
             $url
         );
+    }
+
+    /**
+     * The curl options every request is sent with.
+     *
+     * Redirects are never followed. The SSRF check and the DNS pin cover the
+     * URL that was validated, and Moodle's curl class follows a redirect by
+     * itself, checking the new host only against core's own blocked list,
+     * which leaves out ranges D20 refuses (100.64.0.0/10, fc00::/7 and most
+     * of 169.254.0.0/16) and keeps headers such as x-api-key. No provider API
+     * needs a redirect, so a 3xx surfaces as an error instead.
+     *
+     * @param string $url The endpoint, already checked.
+     * @param int $timeout Request timeout, seconds.
+     * @param int $connecttimeout Connect timeout, seconds.
+     * @return array Moodle curl option names => values.
+     */
+    public static function curl_options(string $url, int $timeout, int $connecttimeout): array {
+        return [
+            'CURLOPT_TIMEOUT' => $timeout,
+            'CURLOPT_CONNECTTIMEOUT' => $connecttimeout,
+            'CURLOPT_FOLLOWLOCATION' => 0,
+            'CURLOPT_MAXREDIRS' => 0,
+        ] + security::pin_options($url);
     }
 
     /**

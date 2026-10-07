@@ -110,13 +110,19 @@ class provider implements
         // the learner, through recordingid.
         $collection->add_database_table(
             'presenterai_gatelog',
-            self::field_strings('presenterai_gatelog', ['recordingid', 'target', 'layer', 'rule', 'rejectedtext', 'timecreated']),
+            self::field_strings(
+                'presenterai_gatelog',
+                ['recordingid', 'target', 'layer', 'gaterule', 'rejectedtext', 'timecreated']
+            ),
             'privacy:metadata:presenterai_gatelog'
         );
 
         $collection->add_subsystem_link('core_files', [], 'privacy:metadata:core_files');
         $collection->add_subsystem_link('core_message', [], 'privacy:metadata:core_message');
         $collection->add_subsystem_link('core_grades', [], 'privacy:metadata:core_grades');
+        // When the scoring route is Moodle's own AI subsystem, the transcript
+        // and the scoring prompt go through it, and core keeps its own record.
+        $collection->add_subsystem_link('core_ai', [], 'privacy:metadata:core_ai');
 
         $collection->add_external_location_link('s3', [
             'media' => 'privacy:metadata:s3:media',
@@ -130,6 +136,7 @@ class provider implements
             'audio' => 'privacy:metadata:aiservice:audio',
             'transcript' => 'privacy:metadata:aiservice:transcript',
             'frames' => 'privacy:metadata:aiservice:frames',
+            'slides' => 'privacy:metadata:aiservice:slides',
             'feedback' => 'privacy:metadata:aiservice:feedback',
         ], 'privacy:metadata:aiservice');
 
@@ -434,7 +441,7 @@ class provider implements
             $out[] = (object) [
                 'target' => $row->target,
                 'layer' => (int) $row->layer,
-                'rule' => $row->rule,
+                'rule' => $row->gaterule,
                 'rejectedtext' => $row->rejectedtext,
                 'timecreated' => transform::datetime($row->timecreated),
             ];

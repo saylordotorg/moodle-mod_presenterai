@@ -192,7 +192,7 @@
         <FIELD NAME="recordingid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
         <FIELD NAME="target" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="summary, or the criterion name whose feedback was rejected."/>
         <FIELD NAME="layer" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 copy or length, 2 deny list, 3 anchor, 4 judge, 0 judge unavailable."/>
-        <FIELD NAME="rule" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="gaterule" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The rule that rejected it. Not rule, which SQL Server reserves."/>
         <FIELD NAME="rejectedtext" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
       </FIELDS>

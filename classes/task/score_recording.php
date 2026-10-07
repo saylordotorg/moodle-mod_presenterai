@@ -23,7 +23,9 @@ namespace mod_presenterai\task;
  * Scoring never runs in a web request (D6): core AI sets no timeout on its
  * request path, and a model call can take a minute.
  *
- * Custom data: {recordingid: int, rescore: bool}.
+ * Custom data: {recordingid: int, rescore: bool}, plus deferrals: int on a
+ * task the scorer queued again because PresenterAI's own rate limiter was
+ * still refusing it when the backoff ran out.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -41,12 +43,21 @@ class score_recording extends \core\task\adhoc_task {
      *
      * @param int $recordingid The recording id.
      * @param bool $rescore Whether this is a rescore from the grading screen.
+     * @param int $runat When to run, a timestamp; 0 for as soon as possible.
+     * @param int $deferrals How many times a rate limit has already deferred this attempt.
      * @return void
      */
-    public static function queue(int $recordingid, bool $rescore = false): void {
+    public static function queue(int $recordingid, bool $rescore = false, int $runat = 0, int $deferrals = 0): void {
         $task = new self();
         $task->set_component('mod_presenterai');
-        $task->set_custom_data(['recordingid' => $recordingid, 'rescore' => $rescore]);
+        $data = ['recordingid' => $recordingid, 'rescore' => $rescore];
+        if ($deferrals > 0) {
+            $data['deferrals'] = $deferrals;
+        }
+        $task->set_custom_data($data);
+        if ($runat > 0) {
+            $task->set_next_run_time($runat);
+        }
         \core\task\manager::queue_adhoc_task($task, true);
     }
 
@@ -78,6 +89,6 @@ class score_recording extends \core\task\adhoc_task {
             return;
         }
         $mayretry = $this->get_fail_delay() < self::RETRY_UNTIL_DELAY;
-        \mod_presenterai\local\scorer::score($recordingid, $mayretry, !empty($data->rescore));
+        \mod_presenterai\local\scorer::score($recordingid, $mayretry, !empty($data->rescore), (int) ($data->deferrals ?? 0));
     }
 }

@@ -50,6 +50,16 @@ use mod_presenterai\local\ai\route_resolver;
  * An empty summary is not a rejection: it is how the model declines under a
  * strict schema, and the caller shows the fallback template for it.
  *
+ * Spoken mode. When there is usable evidence the scoring prompt carries the
+ * raw note, so the model can write about a body anywhere in its reply: the
+ * overall comment, a tip, or the feedback of a criterion that isn't visual.
+ * Those strings are about content and delivery and can't be held to layers
+ * 2 and 3 as they stand (the hard list has words like "tense" and "watch",
+ * and nothing about content names an observable), so an item marked
+ * 'mode' => 'spoken' gets the copy detector, and only when it mentions an
+ * observable (it is talking about body language) the hard deny list and the
+ * judge. Without a word list for the language only the copy detector runs.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -57,6 +67,15 @@ use mod_presenterai\local\ai\route_resolver;
 final class summary_gate {
     /** @var string The target name of the summary in a batch. */
     public const TARGET_SUMMARY = 'summary';
+
+    /** @var string The target name of the overall comment. */
+    public const TARGET_OVERALL = 'overall';
+
+    /** @var string The target name of a tip. */
+    public const TARGET_TIP = 'tip';
+
+    /** @var string The mode of an item that isn't body language feedback but may stray into it. */
+    public const MODE_SPOKEN = 'spoken';
 
     /** @var int Layer of a judge outage, as presenterai_gatelog records it. */
     public const LAYER_UNAVAILABLE = 0;
@@ -82,7 +101,8 @@ final class summary_gate {
     /**
      * Check a batch of strings for one attempt.
      *
-     * @param array $texts List of ['target' => 'summary' or a criterion name, 'text' => string].
+     * @param array $texts List of ['target' => 'summary' or a criterion name, 'text' => string], and
+     *     optionally 'mode' => MODE_SPOKEN for a string that isn't body language feedback (see the class comment).
      * @param array $context ['note' => the raw vision note, 'lang' => the generation language code,
      *     'criterionnames' => every criterion name written into the scoring prompt,
      *     'judge' => whether to run layer 4, and optionally 'presenteraiid', 'recordingid',
@@ -106,9 +126,14 @@ final class summary_gate {
                 $results[$i] = ['pass' => true, 'layer' => 0, 'rule' => 'empty'];
                 continue;
             }
-            $verdict = self::deterministic($text, $shingles, $list, $names);
+            if (($item['mode'] ?? '') === self::MODE_SPOKEN) {
+                [$verdict, $judge] = self::spoken($text, $shingles, $list);
+            } else {
+                $verdict = self::deterministic($text, $shingles, $list, $names);
+                $judge = true;
+            }
             $results[$i] = $verdict ?? ['pass' => true, 'layer' => 0, 'rule' => ''];
-            if ($verdict === null) {
+            if ($verdict === null && $judge) {
                 $forjudge[$i] = $text;
             }
         }
@@ -180,6 +205,42 @@ final class summary_gate {
         }
 
         return null;
+    }
+
+    /**
+     * The checks for a spoken mode string.
+     *
+     * @param string $text The string, trimmed and not empty.
+     * @param array $shingles The note's 8 word shingles, as keys.
+     * @param string|null $list The deny list class for the language, or null.
+     * @return array [rejection array or null, whether a string that passed goes to the judge]
+     */
+    private static function spoken(string $text, array $shingles, ?string $list): array {
+        foreach (array_keys(self::shingles($text)) as $shingle) {
+            if (isset($shingles[$shingle])) {
+                return [['pass' => false, 'layer' => self::LAYER_FORM, 'rule' => 'copy'], false];
+            }
+        }
+        if (!self::mentions_body_language($text, $list)) {
+            return [null, false];
+        }
+        foreach ($list::hard() as $category => $terms) {
+            if (self::find_term($text, $terms) !== null) {
+                return [['pass' => false, 'layer' => self::LAYER_DENY, 'rule' => (string) $category], false];
+            }
+        }
+        return [null, true];
+    }
+
+    /**
+     * Whether a string names an observable, which is to say talks about body language.
+     *
+     * @param string $text The string.
+     * @param string|null $list The deny list class for its language, or null, in which case nothing can be told.
+     * @return bool
+     */
+    public static function mentions_body_language(string $text, ?string $list): bool {
+        return $list !== null && self::find_term($text, $list::observables()) !== null;
     }
 
     /**

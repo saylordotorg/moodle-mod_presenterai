@@ -364,7 +364,9 @@ final class visual_pipeline_test extends \advanced_testcase {
         $feedbackonly = visual_pipeline::prompt_block($ok, false, 'Spanish');
         $this->assertStringContainsString("VISUAL EVIDENCE (a description of still frames sampled from the recording, "
             . "not continuous video):\n" . self::NOTE, $feedbackonly);
-        $this->assertStringContainsString('These two criteria are feedback only for this activity', $feedbackonly);
+        $this->assertStringContainsString('The visual criteria are "Body Language & Gestures", '
+            . '"Eye Contact & Camera Presence". They are feedback only for this activity', $feedbackonly);
+        $this->assertStringContainsString('never in the overall comment, the tips or any other criterion', $feedbackonly);
         $this->assertStringNotContainsString('clearly possible for this speaker', $feedbackonly);
         $this->assertStringContainsString('Write it in Spanish.', $feedbackonly);
         $this->assertStringContainsString('VISUAL SUMMARY.', $feedbackonly);
@@ -375,6 +377,14 @@ final class visual_pipeline_test extends \advanced_testcase {
         // SOLA's load bearing sentence pointed the wrong way (DECISIONS.md 9.17).
         $this->assertStringNotContainsString('means you could see the behaviour and it was absent', $scored);
         $this->assertStringNotContainsString('feedback only for this activity', $scored);
+
+        // A custom visual criterion is named, so the counterweight reaches it.
+        $custom = visual_pipeline::prompt_block($ok, true, 'English', ['Stage presence']);
+        $this->assertStringContainsString('The visual criterion is "Stage presence". Score the visual criteria', $custom);
+        $this->assertStringNotContainsString('Body Language & Gestures', $custom);
+        $three = visual_pipeline::prompt_block($ok, false, 'English', ['Stage presence', 'Gesture', 'Gaze']);
+        $this->assertStringContainsString('The visual criteria are "Stage presence", "Gesture", "Gaze". They are', $three);
+        $this->assertStringNotContainsString('These two criteria', $three);
     }
 
     /**
@@ -477,6 +487,88 @@ final class visual_pipeline_test extends \advanced_testcase {
     }
 
     /**
+     * D21 reaches past the visual strings: the overall comment, the tips and spoken criteria are gated too.
+     *
+     * The prompt carried the raw note, so the model can write about a body in
+     * any field. Content prose with no body language passes untouched and
+     * never reaches the judge; a body language deny hit is replaced, a copied
+     * note is dropped, and a clean body language tip goes to the judge.
+     *
+     * @return void
+     */
+    public function test_overall_tips_and_spoken_feedback_are_gated(): void {
+        global $DB;
+
+        $judge = $this->passing_judge(4);
+        $rec = $this->recording();
+        $summary = 'Your hands stayed below the desk in most frames, so your gestures were hard to see.';
+        $criteria = $this->criteria('Your hands stayed low, so gestures did not register.', 'You looked at the camera lens.');
+        $criteria[0]['feedback'] = 'Your posture looked nervous while you spoke.';
+        $overall = 'You came across as tense, and your shoulders stayed hunched.';
+        $tips = [
+            'Slow down in the second half.',
+            'In four of the six frames the hands rest flat on the desk.',
+            'Keep your hands above the desk so gestures can be seen.',
+        ];
+
+        $sink = $this->redirectEvents();
+        $result = visual_pipeline::finalise(
+            $criteria,
+            $summary,
+            $this->ok(),
+            $rec,
+            $this->instance,
+            $this->context,
+            true,
+            $overall,
+            $tips
+        );
+
+        $withheld = get_string('feedback_withheld', 'mod_presenterai');
+        $this->assertSame($withheld, $result['overall']);
+        $this->assertSame($withheld, $result['criteria'][0]['feedback']);
+        $this->assertTrue($result['criteria'][0]['assessed'], 'A spoken criterion lost its score over its wording.');
+        $this->assertSame(4, $result['criteria'][0]['score']);
+        $this->assertSame([$tips[0], $tips[2]], $result['tips']);
+        $this->assertSame(visual_pipeline::STATUS_SUMMARY, $result['visualstatus']);
+
+        $events = array_values(array_filter(
+            $sink->get_events(),
+            fn($event) => $event instanceof \mod_presenterai\event\visual_summary_rejected
+        ));
+        $this->assertCount(3, $events);
+        $this->assertEqualsCanonicalizing(['Vocal Delivery', 'overall', 'tip'], array_map(fn($e) => $e->other['target'], $events));
+        $this->assertSame(3, $DB->count_records('presenterai_gatelog', ['recordingid' => $rec->id]));
+
+        // Only the summary, the two visual strings and the body language tip were judged.
+        $this->assertCount(1, $judge->calls);
+        $this->assertStringContainsString('4. ' . $tips[2], $judge->calls[0]['user']);
+        $this->assertStringNotContainsString($tips[0], $judge->calls[0]['user']);
+    }
+
+    /**
+     * Without usable evidence the overall comment and tips come back as they went in.
+     *
+     * @return void
+     */
+    public function test_overall_and_tips_untouched_without_evidence(): void {
+        $rec = $this->recording();
+        $result = visual_pipeline::finalise(
+            $this->criteria('a', 'b'),
+            '',
+            ['state' => 'unusable'],
+            $rec,
+            $this->instance,
+            $this->context,
+            true,
+            ' Well organised. ',
+            ['Slow down.', '', 'Look up.']
+        );
+        $this->assertSame('Well organised.', $result['overall']);
+        $this->assertSame(['Slow down.', 'Look up.'], $result['tips']);
+    }
+
+    /**
      * D21: a deny list hit in a visual criterion's feedback withholds it, unassesses it, fires the event and logs the text.
      *
      * @return void
@@ -513,7 +605,7 @@ final class visual_pipeline_test extends \advanced_testcase {
         $this->assertSame($leak, $row->rejectedtext);
         $this->assertSame('Body Language & Gestures', $row->target);
         $this->assertSame(2, (int) $row->layer);
-        $this->assertSame('clothing', $row->rule);
+        $this->assertSame('clothing', $row->gaterule);
     }
 
     /**
@@ -642,6 +734,38 @@ final class visual_pipeline_test extends \advanced_testcase {
     }
 
     /**
+     * A judge failure a retry can't fix fails closed at once, even while retries remain.
+     *
+     * @return void
+     */
+    public function test_permanent_judge_failure_fails_closed_without_retrying(): void {
+        global $DB;
+
+        route_resolver::set_test_client(
+            route_resolver::PURPOSE_JUDGE,
+            video_vision_test::fake_client([ai_exception::for_reason('http_4xx', 'HTTP 404: no such model')])
+        );
+        $rec = $this->recording();
+        $criteria = $this->criteria('Your hands stayed low, so gestures did not register.', 'You looked at the camera lens.');
+
+        $result = visual_pipeline::finalise(
+            $criteria,
+            'Your hands stayed low.',
+            $this->ok(),
+            $rec,
+            $this->instance,
+            $this->context,
+            true
+        );
+
+        $this->assertSame(visual_pipeline::STATUS_FALLBACK, $result['visualstatus']);
+        foreach ([1, 2] as $i) {
+            $this->assertFalse($result['criteria'][$i]['assessed']);
+        }
+        $this->assertGreaterThan(0, $DB->count_records('presenterai_gatelog', ['recordingid' => $rec->id]));
+    }
+
+    /**
      * Out of retries the gate fails closed: the template, every visual criterion withheld, layer 0 log rows.
      *
      * @return void
@@ -679,7 +803,7 @@ final class visual_pipeline_test extends \advanced_testcase {
         $this->assertCount(3, $rows);
         foreach ($rows as $row) {
             $this->assertSame(0, (int) $row->layer);
-            $this->assertSame('judge_unavailable', $row->rule);
+            $this->assertSame('judge_unavailable', $row->gaterule);
         }
     }
 
