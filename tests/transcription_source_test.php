@@ -197,6 +197,22 @@ final class transcription_source_test extends \advanced_testcase {
     }
 
     /**
+     * A track whose file can't be read is passed over for the recording, rather than failing the attempt.
+     *
+     * @return void
+     */
+    public function test_prepare_falls_back_when_the_track_is_missing(): void {
+        global $DB;
+
+        $rec = $this->attempt('the video');
+        $DB->set_field('presenterai_recording', 'audiokey', 'no-such-track.ogg', ['id' => $rec->id]);
+        $rec->audiokey = 'no-such-track.ogg';
+        $prepared = transcription_source::prepare($rec, 100);
+        $this->assertSame('recording', $prepared['source']);
+        $this->assertSame('the video', file_get_contents($prepared['files'][0]['path']));
+    }
+
+    /**
      * prepare() without ffmpeg: a video under the limit goes whole; one over it, or a track over it, is too large.
      *
      * @return void

@@ -177,9 +177,19 @@ final class transcription_source {
         $hasaudio = !empty($rec->audiokey);
         $source = self::choose($hasaudio, (string) ($rec->mode ?? 'video'), (int) ($rec->sizebytes ?? 0), $limit, $ffmpeg !== '');
 
+        $store = store_factory::for_recording($rec);
         $key = $source === self::SOURCE_AUDIO ? (string) $rec->audiokey : (string) $rec->storagekey;
         $ext = self::ext_for($key);
-        $path = store_factory::for_recording($rec)->fetch_to_file($key, $ext);
+        $path = $store->fetch_to_file($key, $ext);
+        if ($path === null && $source === self::SOURCE_AUDIO) {
+            // The track is a convenience. If it can't be read, choose again as
+            // though there were none, rather than fail an attempt whose
+            // recording is still there.
+            $source = self::choose(false, (string) ($rec->mode ?? 'video'), (int) ($rec->sizebytes ?? 0), $limit, $ffmpeg !== '');
+            $key = (string) $rec->storagekey;
+            $ext = self::ext_for($key);
+            $path = $store->fetch_to_file($key, $ext);
+        }
         if ($path === null) {
             // On S3 this is a download that can fail for a while; the retry rule decides.
             throw new ai_exception('network', true, 'The recording could not be fetched from storage.');
