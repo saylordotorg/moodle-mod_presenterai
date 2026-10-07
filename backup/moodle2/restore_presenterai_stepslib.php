@@ -93,6 +93,11 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
 
         $data = (object) $data;
         $data->course = $this->get_courseid();
+        // A backup from before phase 3 has neither; the database defaults would
+        // apply anyway, and saying so here keeps a later NOT NULL change honest.
+        $data->visualscored = (int) ($data->visualscored ?? 0);
+        $data->allowvisualoptout = (int) ($data->allowvisualoptout ?? 0);
+        $data->reviewbeforerelease = (int) ($data->reviewbeforerelease ?? 0);
 
         // The rubric rows are restored after this one, so the reference is
         // remembered and set in after_execute(), once the mapping exists. A
@@ -172,6 +177,11 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         // Both belong to a browser page on the source course, not to this one.
         $data->clienttoken = null;
         $data->uploadid = null;
+        $data->visualoptout = (int) ($data->visualoptout ?? 0);
+        // Backups made before the raw note was left out still carry it. It
+        // never comes back: its visualdatadays clock ran on the source site.
+        $data->visualevidence = null;
+        $data->visualevidenceat = 0;
         $oldscoreid = (int) ($data->scoreid ?? 0);
         $data->scoreid = null;
 
@@ -200,11 +210,45 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         }
         $data->recordingid = $recordingid;
         $data->userid = $userid;
+        $data->visualstatus = (string) ($data->visualstatus ?? '');
+        // A backup from before D28 has no flag, and every score in it had been
+        // shown. A held score stays held: restoring doesn't review it.
+        $data->released = (int) ($data->released ?? 1) === 0 ? 0 : 1;
         $data->graderid = !empty($data->graderid) ? ($this->get_mappingid('user', $data->graderid) ?: 0) : 0;
-        $data->rubricid = !empty($data->rubricid) ? ($this->get_mappingid('presenterai_rubric', $data->rubricid) ?: 0) : 0;
+        $data->rubricid = $this->restored_rubricid((int) ($data->rubricid ?? 0)) ?? 0;
 
         $newid = $DB->insert_record('presenterai_score', $data);
         $this->set_mapping('presenterai_score', $oldid, $newid);
+    }
+
+    /**
+     * The id a backed up rubric reference should have in the restored activity, or null.
+     *
+     * A rubric backed up with the activity has a mapping. A course level rubric
+     * isn't in the activity's backup, but on the same site, when the restored
+     * activity can still reach it (a duplicate, or a restore into the same
+     * course), the reference is kept: without it the activity would silently
+     * fall back to whichever rubric resolve() finds and score against a rubric
+     * the teacher didn't choose.
+     *
+     * @param int $oldid The rubric id in the backup.
+     * @return int|null
+     */
+    private function restored_rubricid(int $oldid): ?int {
+        if ($oldid <= 0) {
+            return null;
+        }
+        $mapped = $this->get_mappingid('presenterai_rubric', $oldid);
+        if ($mapped) {
+            return (int) $mapped;
+        }
+        if ($this->task->is_samesite()) {
+            $context = \context::instance_by_id($this->task->get_contextid(), IGNORE_MISSING);
+            if ($context && \mod_presenterai\local\rubric_manager::is_selectable($oldid, $context)) {
+                return $oldid;
+            }
+        }
+        return null;
     }
 
     /**
@@ -217,12 +261,12 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
 
         $this->add_related_files('mod_presenterai', 'intro', null);
         $this->add_related_files('mod_presenterai', 'topicfile', 'presenterai_topic');
-        foreach (['recording', 'deck', 'frames'] as $area) {
+        foreach (\mod_presenterai\local\storage\media_ref::KINDS as $area) {
             $this->add_related_files('mod_presenterai', $area, 'presenterai_recording');
         }
 
         if ($this->oldrubricid > 0) {
-            $rubricid = $this->get_mappingid('presenterai_rubric', $this->oldrubricid);
+            $rubricid = $this->restored_rubricid($this->oldrubricid);
             if ($rubricid) {
                 $DB->set_field('presenterai', 'rubricid', $rubricid, ['id' => $this->task->get_activityid()]);
             }
@@ -264,10 +308,11 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         [$insql, $params] = $DB->get_in_or_equal(array_keys($this->oldscoreids), SQL_PARAMS_NAMED, 'rid');
         $rows = $DB->get_records_select(
             'presenterai_recording',
-            "id {$insql} AND (storagekey IS NOT NULL OR deckkey IS NOT NULL OR frameskey IS NOT NULL)",
+            "id {$insql} AND (storagekey IS NOT NULL OR deckkey IS NOT NULL OR frameskey IS NOT NULL
+                OR audiokey IS NOT NULL)",
             $params,
             'id',
-            'id, backend, storagekey, deckkey, frameskey'
+            'id, backend, storagekey, deckkey, frameskey, audiokey'
         );
         foreach ($rows as $row) {
             if ((string) $row->backend === 's3') {
@@ -300,7 +345,7 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
 
             // The File API: whatever arrived gets a key no other row has.
             $update = ['id' => (int) $row->id];
-            $areas = ['storagekey' => 'recording', 'deckkey' => 'deck', 'frameskey' => 'frames'];
+            $areas = ['storagekey' => 'recording', 'deckkey' => 'deck', 'frameskey' => 'frames', 'audiokey' => 'audio'];
             $recordingarrived = false;
             foreach ($areas as $column => $area) {
                 $key = (string) ($row->$column ?? '');
@@ -321,8 +366,9 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
             }
 
             if (!$recordingarrived) {
-                // Without the recording the deck and frames are not an attempt's
-                // media, so they go too, rather than sit in an area nothing reads.
+                // Without the recording the deck, frames and audio track are not
+                // an attempt's media, so they go too, rather than sit in an area
+                // nothing reads.
                 foreach ($areas as $area) {
                     $fs->delete_area_files($contextid, 'mod_presenterai', $area, (int) $row->id);
                 }
@@ -349,13 +395,13 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
     /**
      * Whether each S3 object a restored row names is still in the bucket.
      *
-     * @param \stdClass $row The recording row, with storagekey, deckkey and frameskey.
+     * @param \stdClass $row The recording row, with storagekey, deckkey, frameskey and audiokey.
      * @param callable $exists Given a key, returns true, false when the object is gone, or null when unknown.
      * @return array Column => true, false or null, for each column that names a key.
      */
     private static function s3_media_present(\stdClass $row, callable $exists): array {
         $present = [];
-        foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
+        foreach (\mod_presenterai\local\recording_manager::MEDIA_COLUMNS as $column) {
             $key = (string) ($row->$column ?? '');
             if ($key !== '') {
                 $present[$column] = $exists($key);
@@ -406,6 +452,7 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
             'storagekey' => null,
             'deckkey' => null,
             'frameskey' => null,
+            'audiokey' => null,
             'mediadeletedat' => time(),
             'mediagonereason' => 'notbackedup',
             'visualevidence' => null,

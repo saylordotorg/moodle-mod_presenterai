@@ -1,0 +1,118 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/rubrics
+
+    The rubric list on rubric.php: every rubric the activity can see, nearest
+    context first, which is the order automatic resolution walks. Rubrics the
+    viewer may change carry Edit and Delete links, each with an aria-label
+    naming its rubric. Delete opens a confirmation page; the deletion itself
+    is a POST from there.
+
+    Context variables required for this template:
+    * hasrubrics - Whether there is any rubric to list.
+    * rows - List of rows: title (HTML from format_string), type, where, active,
+      criteriacount, editable, editurl, editaria, deleteurl, deletearia.
+    * canaddmodule - Whether the viewer may add a rubric to this activity.
+    * addmoduleurl - The URL that adds one.
+    * canaddcourse - Whether the viewer may add a rubric to this course.
+    * addcourseurl - The URL that adds one.
+
+    Example context (json):
+    {
+        "hasrubrics": true,
+        "rows": [
+            {
+                "title": "Capstone presentation",
+                "type": "Video",
+                "where": "This activity",
+                "active": "Yes",
+                "criteriacount": 7,
+                "editable": true,
+                "editurl": "https://example.com/mod/presenterai/rubric.php?id=12&action=edit&rubricid=3",
+                "editaria": "Edit the rubric Capstone presentation",
+                "deleteurl": "https://example.com/mod/presenterai/rubric.php?id=12&action=delete&rubricid=3",
+                "deletearia": "Delete the rubric Capstone presentation"
+            },
+            {
+                "title": "Faculty speaking rubric",
+                "type": "Speech",
+                "where": "Category: Languages",
+                "active": "Yes",
+                "criteriacount": 5,
+                "editable": false,
+                "editurl": "",
+                "editaria": "Edit the rubric Faculty speaking rubric",
+                "deleteurl": "",
+                "deletearia": "Delete the rubric Faculty speaking rubric"
+            }
+        ],
+        "canaddmodule": true,
+        "addmoduleurl": "https://example.com/mod/presenterai/rubric.php?id=12&action=edit&level=module",
+        "canaddcourse": false,
+        "addcourseurl": "https://example.com/mod/presenterai/rubric.php?id=12&action=edit&level=course"
+    }
+}}
+<div class="mod-presenterai-rubrics">
+    <p>{{#str}}rubrics_intro, mod_presenterai{{/str}}</p>
+    <div class="mb-3">
+        {{#canaddmodule}}
+        <a class="btn btn-primary" href="{{addmoduleurl}}">{{#str}}rubricadd, mod_presenterai{{/str}}</a>
+        {{/canaddmodule}}
+        {{#canaddcourse}}
+        <a class="btn btn-secondary" href="{{addcourseurl}}">{{#str}}rubricaddcourse, mod_presenterai{{/str}}</a>
+        {{/canaddcourse}}
+    </div>
+    {{#hasrubrics}}
+    <table class="generaltable mod-presenterai-rubrics-table">
+        <caption>{{#str}}rubriccaption, mod_presenterai{{/str}}</caption>
+        <thead>
+            <tr>
+                <th scope="col">{{#str}}rubrictitle, mod_presenterai{{/str}}</th>
+                <th scope="col">{{#str}}rubrictype, mod_presenterai{{/str}}</th>
+                <th scope="col">{{#str}}rubricwhere, mod_presenterai{{/str}}</th>
+                <th scope="col">{{#str}}rubricactive, mod_presenterai{{/str}}</th>
+                <th scope="col">{{#str}}rubriccriteriacount, mod_presenterai{{/str}}</th>
+                <th scope="col">{{#str}}actions{{/str}}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#rows}}
+            <tr>
+                <th scope="row">{{{title}}}</th>
+                <td>{{type}}</td>
+                <td>{{where}}</td>
+                <td>{{active}}</td>
+                <td>{{criteriacount}}</td>
+                <td>
+                    {{#editable}}
+                    <a href="{{editurl}}" aria-label="{{editaria}}">{{#str}}rubricedit, mod_presenterai{{/str}}</a>
+                    <a class="ml-2" href="{{deleteurl}}" aria-label="{{deletearia}}">{{#str}}rubricdelete, mod_presenterai{{/str}}</a>
+                    {{/editable}}
+                    {{^editable}}
+                    {{#str}}rubricreadonly, mod_presenterai{{/str}}
+                    {{/editable}}
+                </td>
+            </tr>
+            {{/rows}}
+        </tbody>
+    </table>
+    {{/hasrubrics}}
+    {{^hasrubrics}}
+    <p class="mod-presenterai-placeholder">{{#str}}rubricnone, mod_presenterai{{/str}}</p>
+    {{/hasrubrics}}
+</div>

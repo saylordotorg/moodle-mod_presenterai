@@ -303,4 +303,107 @@ final class view_page_test extends \advanced_testcase {
         $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/view', $data);
         $this->assertStringNotContainsString(get_string('viewsubmissions', 'mod_presenterai'), $html);
     }
+
+    /**
+     * The disclosure, the opt out and their config keys render only where frames are taken (D17, D24).
+     *
+     * @return array
+     */
+    public static function visual_combinations(): array {
+        return [
+            'vision off' => ['video', 0, 0, false, false],
+            'vision off, opt out set but meaningless' => ['video', 0, 1, false, false],
+            'vision on, no opt out' => ['video', 1, 0, true, false],
+            'vision on, opt out' => ['video', 1, 1, true, true],
+            'audio, everything set' => ['audio', 1, 1, false, false],
+        ];
+    }
+
+    /**
+     * Each combination renders the disclosure and the opt out, or doesn't.
+     *
+     * @dataProvider visual_combinations
+     * @param string $mode The activity mode.
+     * @param int $videovision The videovision field.
+     * @param int $allowoptout The allowvisualoptout field.
+     * @param bool $disclosure Whether the disclosure must render.
+     * @param bool $optout Whether the opt out must render.
+     * @return void
+     */
+    public function test_visual_disclosure_and_optout(
+        string $mode,
+        int $videovision,
+        int $allowoptout,
+        bool $disclosure,
+        bool $optout
+    ): void {
+        global $DB, $OUTPUT;
+
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student] = $this->setup_activity(['mode' => $mode]);
+        // Straight to the row, so normalise() can't tidy the combination away.
+        $DB->update_record('presenterai', (object) [
+            'id' => $instance->id, 'mode' => $mode, 'videovision' => $videovision, 'allowvisualoptout' => $allowoptout,
+        ]);
+
+        $data = $this->export($instance, $course, $context, $student);
+
+        $this->assertSame($disclosure, $data['recorder']['visualdisclosure']);
+        $this->assertSame($optout, $data['recorder']['visualoptout']);
+        $this->assertSame($disclosure ? 1 : 0, $data['config']['videovision']);
+        $this->assertSame($optout ? 1 : 0, $data['config']['allowvisualoptout']);
+
+        $html = $OUTPUT->render_from_template('mod_presenterai/view', $data);
+        $note = get_string('visualoptout_note', 'mod_presenterai');
+        $hasnote = str_contains($html, $note) || str_contains($html, s($note));
+        $this->assertSame($optout, $hasnote, 'The opt out note rendered in the wrong case.');
+        $this->assertSame($optout, str_contains($html, 'data-region="visualoptout"'));
+        $disclosuretext = get_string('visual_disclosure', 'mod_presenterai');
+        $this->assertSame(
+            $disclosure,
+            str_contains($html, $disclosuretext) || str_contains($html, s($disclosuretext)),
+            'The still frames disclosure rendered in the wrong case.'
+        );
+        $this->assertStringContainsString('data-videovision="' . ($disclosure ? 1 : 0) . '"', $html);
+    }
+
+    /**
+     * The speech to text warm up flag comes from the site setting.
+     *
+     * @return void
+     */
+    public function test_warmstt_config(): void {
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student] = $this->setup_activity();
+
+        $this->assertSame(0, $this->export($instance, $course, $context, $student)['config']['warmstt']);
+        set_config('sttwarm', 1, 'mod_presenterai');
+        $this->assertSame(1, $this->export($instance, $course, $context, $student)['config']['warmstt']);
+    }
+
+    /**
+     * A camera activity asks the browser for a separate audio track; an audio only one doesn't record twice.
+     *
+     * @return void
+     */
+    public function test_audiotrack_config(): void {
+        global $PAGE;
+
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student] = $this->setup_activity(['mode' => 'video']);
+        $config = $this->export($instance, $course, $context, $student)['config'];
+        $this->assertSame(1, $config['audiotrack']);
+        $this->assertSame(\mod_presenterai\local\transcription_source::AUDIO_TRACK_KBPS, $config['audiotrackkbps']);
+        $html = $PAGE->get_renderer('core')->render_from_template(
+            'mod_presenterai/view',
+            $this->export($instance, $course, $context, $student)
+        );
+        $this->assertStringContainsString('data-audiotrack="1"', $html);
+
+        [$course, $instance, $context, $student] = $this->setup_activity(['mode' => 'audio']);
+        $this->assertSame(0, $this->export($instance, $course, $context, $student)['config']['audiotrack']);
+    }
 }

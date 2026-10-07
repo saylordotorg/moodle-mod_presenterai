@@ -52,6 +52,49 @@ final class grader_test extends \advanced_testcase {
     }
 
     /**
+     * D23: a criterion marked counts false is in neither sum, assessed or not, and an absent flag counts.
+     *
+     * @return void
+     */
+    public function test_sums_skip_feedback_only_criteria(): void {
+        $speech = [
+            ['score' => 4, 'max_score' => 5, 'assessed' => true, 'visual' => false, 'counts' => true],
+            ['score' => 3, 'max_score' => 5, 'assessed' => true],
+        ];
+        $visual = function (bool $counts, bool $assessed): array {
+            return [
+                ['score' => 5, 'max_score' => 5, 'assessed' => $assessed, 'visual' => true, 'counts' => $counts],
+                ['score' => 1, 'max_score' => 5, 'assessed' => true, 'visual' => true, 'counts' => $counts],
+            ];
+        };
+
+        // Feedback only, the default: two scored visual criteria change neither sum.
+        $this->assertSame(
+            ['rawsum' => 7, 'rawmax' => 10, 'assessed' => 2],
+            grader::sums(array_merge($speech, $visual(false, true)))
+        );
+        // Scored: both are in.
+        $this->assertSame(
+            ['rawsum' => 13, 'rawmax' => 20, 'assessed' => 4],
+            grader::sums(array_merge($speech, $visual(true, true)))
+        );
+        // An unassessed visual criterion is out either way.
+        $this->assertSame(
+            ['rawsum' => 8, 'rawmax' => 15, 'assessed' => 3],
+            grader::sums(array_merge($speech, $visual(true, false)))
+        );
+        $this->assertSame(
+            ['rawsum' => 7, 'rawmax' => 10, 'assessed' => 2],
+            grader::sums(array_merge($speech, $visual(false, false)))
+        );
+
+        // Nothing that counts and is assessed: rawmax 0 and no percentage, not zero percent.
+        $sums = grader::sums($visual(false, true));
+        $this->assertSame(0, $sums['rawmax']);
+        $this->assertNull(grader::percent($sums['rawsum'], $sums['rawmax']));
+    }
+
+    /**
      * Nothing assessed is no number, not zero.
      *
      * @return void

@@ -24,6 +24,9 @@ namespace mod_presenterai\local;
  * message will carry AI scores in phase 3, and it promises nothing about what
  * happens next (DECISIONS.md, "there is no teacher").
  *
+ * On an activity that holds AI feedback for a teacher's review (D28) it's
+ * sent when the attempt is released, not when the AI scores it.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later

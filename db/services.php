@@ -72,4 +72,11 @@ $functions = [
         // mod/presenterai:deleteanyrecording for anyone else's.
         'capabilities' => '',
     ],
+    'mod_presenterai_warm_stt' => [
+        'classname' => 'mod_presenterai\external\warm_stt',
+        'description' => 'Wake a self hosted transcription server when a recording starts.',
+        'type' => 'read',
+        'ajax' => true,
+        'capabilities' => 'mod/presenterai:submit',
+    ],
 ];

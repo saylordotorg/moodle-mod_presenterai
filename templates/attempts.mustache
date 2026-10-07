@@ -34,15 +34,26 @@
     attempt has none yet. A row with a score is followed by a row holding a
     Feedback disclosure, whose summary carries an aria-label naming the
     attempt's date for the same reason as the Watch control. Each criterion
-    says what it scored out of its maximum, or that it wasn't assessed.
+    says what it scored out of its maximum, or that it wasn't assessed, and a
+    criterion that doesn't count toward the score says so in words (D23).
+
+    An attempt whose AI feedback is held for a teacher's review (D28) has
+    inreview set: its status reads Awaiting review, the Score cell carries
+    reviewnote instead of a number, and there's no Feedback row at all.
+
+    The body language section shows the gated summary or the sentence for why
+    there isn't one (design 6, 9.6). It is rendered only when it has text, so
+    the learner never sees an empty visual panel, and it never shows the raw
+    note.
 
     Context variables required for this template:
     * hasattempts - Whether there are any rows.
     * showdownloadoffnote - Whether to render the download-off note.
     * rows - List of attempt_row::export() results, including:
-      hasscore, score, hasfeedback, feedbackaria and
-      feedback (criteria: list of name (HTML from format_string), scoretext and
-      feedback; overall: HTML).
+      inreview, reviewnote, hasscore, score, hasfeedback, feedbackaria and
+      feedback (criteria: list of name (HTML from format_string), scoretext,
+      feedback and notcounted; overall: HTML; hastips and tips; hasvisual,
+      visualstatus, visualheading, visualnote and visualtext).
 
     Example context (json):
     {
@@ -66,16 +77,28 @@
                 "candelete": true,
                 "deletearia": "Delete the recording you made on 6/10/26, 14:00",
                 "gonenote": "",
+                "inreview": false,
+                "reviewnote": "",
                 "hasscore": true,
                 "score": "80.00%",
                 "hasfeedback": true,
                 "feedbackaria": "Feedback on the attempt you made on 6/10/26, 14:00",
                 "feedback": {
                     "criteria": [
-                        {"name": "Content", "scoretext": "4 out of 5", "feedback": "Your thesis was clear from the start."},
-                        {"name": "Delivery", "scoretext": "Not assessed", "feedback": ""}
+                        {"name": "Content", "scoretext": "4 out of 5", "feedback": "Your thesis was clear from the start.",
+                            "notcounted": false},
+                        {"name": "Delivery", "scoretext": "Not assessed", "feedback": "", "notcounted": false},
+                        {"name": "Body Language &amp; Gestures", "scoretext": "3 out of 5",
+                            "feedback": "Your hands stayed low in four of the six frames.", "notcounted": true}
                     ],
-                    "overall": "A well organized talk.<br>Slow down in the conclusion."
+                    "overall": "A well organized talk.<br>Slow down in the conclusion.",
+                    "hastips": true,
+                    "tips": ["Pause after each main point."],
+                    "hasvisual": true,
+                    "visualstatus": "summary",
+                    "visualheading": "Body language and camera presence",
+                    "visualnote": "This summary was written by the AI from six still frames taken from your recording.",
+                    "visualtext": "Your hands stayed below the desk in most frames, so your gestures were hard to see."
                 }
             },
             {
@@ -83,7 +106,7 @@
                 "attempt": "1",
                 "recorded": "1/10/26, 09:30",
                 "length": "5:48",
-                "status": "Submitted",
+                "status": "Awaiting review",
                 "statekey": "attempt_gone_learner",
                 "state": "You deleted this recording on 2/10/26",
                 "mediaavailable": false,
@@ -95,11 +118,14 @@
                 "candelete": false,
                 "deletearia": "Delete the recording you made on 1/10/26, 09:30",
                 "gonenote": "No longer available to watch",
+                "inreview": true,
+                "reviewnote": "Your feedback is being reviewed by your teacher.",
                 "hasscore": false,
                 "score": "",
                 "hasfeedback": false,
                 "feedbackaria": "Feedback on the attempt you made on 1/10/26, 09:30",
-                "feedback": {"criteria": [], "overall": ""}
+                "feedback": {"criteria": [], "overall": "", "hastips": false, "tips": [], "hasvisual": false,
+                    "visualstatus": "", "visualheading": "", "visualnote": "", "visualtext": ""}
             }
         ]
     }
@@ -128,7 +154,7 @@
             <td>{{recorded}}</td>
             <td>{{length}}</td>
             <td>{{status}}</td>
-            <td data-region="score">{{score}}</td>
+            <td data-region="score">{{#inreview}}<span class="mod-presenterai-inreview">{{reviewnote}}</span>{{/inreview}}{{^inreview}}{{score}}{{/inreview}}</td>
             <td data-region="state" data-statekey="{{statekey}}" tabindex="-1">{{state}}</td>
             <td data-region="actions">
                 {{#canwatch}}
@@ -153,12 +179,29 @@
                     {{#feedback}}
                     <ul class="mod-presenterai-feedback-criteria list-unstyled mt-2">
                         {{#criteria}}
-                        <li class="mb-2"><strong>{{{name}}}</strong>: {{scoretext}}{{#feedback}}<br>{{feedback}}{{/feedback}}</li>
+                        <li class="mb-2"><strong>{{{name}}}</strong>: {{scoretext}}{{#notcounted}} <span class="badge badge-info mod-presenterai-notcounted">{{#str}}feedback_criterion_notcounted, mod_presenterai{{/str}}</span>{{/notcounted}}{{#feedback}}<br>{{feedback}}{{/feedback}}</li>
                         {{/criteria}}
                     </ul>
+                    {{#hasvisual}}
+                    <div class="mod-presenterai-visual-feedback mb-2" data-region="visual-feedback" data-visualstatus="{{visualstatus}}">
+                        <p class="mb-1"><strong>{{visualheading}}</strong></p>
+                        {{#visualnote}}
+                        <p class="mod-presenterai-visual-note small mb-1">{{visualnote}}</p>
+                        {{/visualnote}}
+                        <p class="mod-presenterai-visual-text mb-0">{{visualtext}}</p>
+                    </div>
+                    {{/hasvisual}}
                     {{#overall}}
                     <p class="mod-presenterai-feedback-overall">{{{overall}}}</p>
                     {{/overall}}
+                    {{#hastips}}
+                    <p class="mb-1"><strong>{{#str}}feedback_tips, mod_presenterai{{/str}}</strong></p>
+                    <ul class="mod-presenterai-feedback-tips">
+                        {{#tips}}
+                        <li>{{.}}</li>
+                        {{/tips}}
+                    </ul>
+                    {{/hastips}}
                     {{/feedback}}
                 </details>
             </td>

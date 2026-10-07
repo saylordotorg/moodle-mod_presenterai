@@ -152,6 +152,54 @@ Download and deletion are governed separately. `allowlearnerdownload` controls w
 
 ---
 
+**D23. Body language is feedback only by default; an activity can opt in to scoring it.**
+Recorded 6 October 2026 by Tom, settling 9.17. The default is option (b): the two visual criteria produce written feedback, gated by D21, and contribute nothing to `rawsum`, `rawmax`, the gradebook or any outcome. An activity setting, `visualscored`, default 0, lets a teacher score them as designed (option (c)). When it's on, the scoring prompt carries the counterweight the design document describes, so a behaviour that is visibly and permanently absent goes to `assessed = false` rather than to an assessed zero, and an absent `assessed` flag is never defaulted to true. The setting's help text says plainly that a model is judging a body from six stills and what that means for learners with disabilities.
+
+**D24. No body language opt out by default; an activity can allow one.**
+Recorded 6 October 2026 by Tom, settling 9.18. An activity setting, `allowvisualoptout`, default 0. When it's on, the learner sees a checkbox before recording, and ticking it has two effects the recommendation made conditions: the frames are never sampled or uploaded (not uploaded and ignored), and the page says the score is computed over the remaining criteria. It costs no model call and no marks. With the setting off, D17's audio mode remains the only route out.
+
+**D25. English only until the plugin directory submission.**
+Recorded 6 October 2026 by Tom, settling 9.22. Phases 3 and 4 add strings in `lang/en` only. One translation pass into SOLA's 45 other locales happens in phase 5, before the directory submission, once the strings have stopped changing. Privacy strings are translated, not left identical to English, so the parity trap in 9.22 isn't repeated.
+
+**D26. When scoring runs on Moodle core AI, nothing else leaves core for a vendor key.**
+Recorded 7 October 2026 by Tom. Until now, vision, slide vision and the summary judge fell back to the keyed order (Claude, OpenAI, Gemini, compatible) when the route was core, which is how a core site that also held a key got slide design notes. That's the wrong reading of an admin who picks core: they've chosen to keep learner content inside core. So when scoring resolves to core, whether by `airoute = core` or by `auto` finding nothing else, `route_resolver::client_for()` returns null for `vision`, `slide_vision` and `judge`. Scoring goes ahead on the transcript and the slide text, without a slide design note and without body language.
+
+Four things follow.
+
+No frames are taken on core, and the learner isn't told about any. Analyzing nothing while still sampling and uploading a frame sheet, and still telling the learner six frames go to an AI model, would make the disclosure false. So `visual_pipeline::takes_frames()` answers no when scoring resolves to core, by the same rule as above, and everything that decides whether frames exist asks it: the recorder's config doesn't sample, the frame disclosure and the D24 opt out aren't shown, the privacy paragraph leaves out its frames clauses, `start_upload` refuses a frame sheet (`error:framesdisabled`), and finalize deletes a sheet that arrived before the site moved to core. The visual pipeline then reports no evidence at all rather than "couldn't be analyzed", so a core attempt's feedback has no body language section: nothing a learner sees implies visual analysis. Added later the same day, after the first D26 commit left this undone.
+
+The D21 gate doesn't fail closed on core. The visual pipeline has no evidence on the core route and never asks for a client (design 3.6), and `finalise()` gates nothing when there's no usable evidence, so the judge is never asked for and its absence withholds nothing. A test scores a core attempt with body language and slide design switched on and vendor keys present, and checks that no vision, slide or judge call is made, nothing is withheld, and there's no body language section. No gate code needed changing for this.
+
+Transcription is the one exception and it can't be removed. Core AI has no audio action (D6), so a recording is still sent to the transcription service. The route's help text says so, and doesn't claim that nothing at all leaves core.
+
+The settings page says it. The readiness list shows that body language and slide design feedback are off on core and that no frames are taken, the route's help text says no provider key is used for anything but transcription there, and the vendor fields that can't be used under core are hidden (the OpenAI key stays visible, because transcription uses it).
+
+**D27. A permanent AI failure hands the attempt back to the learner, and a teacher can still grade it.**
+Recorded 7 October 2026 by Tom, confirming what phase 3 built rather than changing it. When scoring fails for good (a bad response, too few spoken criteria assessed, the media gone with no transcript, the retries spent), the scorer sets the attempt to `failed`. `failed` is in `recording_manager::COUNTED_EXCLUDED`, so it doesn't use up one of the learner's attempts and they can record again. That's right: the failure wasn't theirs.
+
+The attempt isn't lost to staff either. The submissions report lists it with its status and a grade link, `grade.php` opens it (`failed` isn't in `access::NOT_GRADABLE`), and a hand grade saved there moves it to `scored`, where it counts toward the attempts and the gradebook like any other. Rescore is the other way back: `grade_page::rescore_state()` offers it on a failed attempt that has a transcript or its media, and the scorer acts on `failed` when it's a rescore. `tests/failed_attempt_test.php` pins all three paths end to end, through the report, the grade form and the queued task.
+
+A consequence worth knowing: a learner whose first attempt failed and who records again can end up with two scored attempts if a teacher later grades the failed one, which can take them past `maxattempts`. That's accepted. The cap stops a learner recording more than they're allowed, not a teacher grading work that was submitted.
+
+**D28. An activity can hold AI feedback for a teacher to review before the learner sees it. Off by default.**
+Recorded 7 October 2026 by Tom. A new activity setting, `reviewbeforerelease`, default 0, under the AI feedback heading. Saylor leaves it off: there's no teacher in its flow (Part 1), and this doesn't change that. It's for the sites that do have teachers and want to check what a model wrote before a learner reads it.
+
+What's held, and where. The AI still scores. Its row is written with a new `presenterai_score.released = 0`; teacher rows are always 1, and the column defaults to 1 so every score that existed before the upgrade stays released. The attempt's `status` stays `scored`, because D8 keeps `status` for the scoring lifecycle and review is a release state, not a scoring one. While the current score is held, the learner's attempt list shows "Awaiting review" and the sentence "Your feedback is being reviewed by your teacher." in place of the score, with no feedback row at all, so the overall comment, criterion feedback, tips and body language summary all stay hidden. `grader::aggregate_for_users()` reads released scores only, so the gradebook, the `completionminscore` rule and the core grade and pass rules all wait for the release, and `notifier` isn't called.
+
+Release. A teacher releases one attempt from its grading page, either as the AI wrote it ("Release to learner") or by saving their own grade in the existing form, whose button reads "Save and release" on a held attempt. A teacher's own grade is always a release. The submissions page says how many attempts are awaiting review, marks each one, and offers "Release all awaiting review" behind a confirmation page; it releases only attempts of learners the teacher can see in the active group, so separate groups hold. Every release flips the flag, fires the new `feedback_released` event (logged, edulevel teaching), pushes the grade, updates completion and sends the learner the usual message, in that order.
+
+*Chosen: release all means every attempt awaiting review.* "Release all reviewed" would need a separate "reviewed" mark that a teacher sets per attempt and that nothing else uses. The confirmation page says how many attempts it will release, and a teacher who wants to change one first opens it instead.
+
+Rescoring a released attempt while the setting is on writes a held row, so the attempt goes back to awaiting review. The grade and completion are recalculated without it, which takes the old released grade out of the gradebook until the new one is released. That follows `mod_assign`, which nulls the gradebook grade when a marking workflow grade moves out of released, and it means the gradebook never shows a number the learner's own page is hiding.
+
+Turning the setting off releases everything held, at once, with the grade, completion and message each attempt would have had (`presenterai_update_instance()`). Nobody is going to release them otherwise. Turning it on hides nothing that's already released. The help text says both.
+
+*Capability: none new; `mod/presenterai:grade` releases.* A grader can already release by saving their own grade on a held attempt, so a separate release capability couldn't stop a grader releasing; it would only make the AI's version harder to release than the grader's own, which is backwards. `mod_assign` has `mod/assign:releasegrades` because its marking workflow separates markers from the person who signs grades off, and PresenterAI has no marker allocation to separate.
+
+*Privacy: held feedback is exported, marked as not released.* It's personal data the site holds about the learner whether or not it has been shown, and a subject access request covers what's held, not what's displayed. `mod_assign` does the same: its provider exports the grade and the marking workflow state regardless of release. Each exported score carries `released` and, when held, a sentence saying it hadn't been shown yet. Deletion is unchanged, since held rows are score rows like any other.
+
+Backup and restore carry both fields, and a held score stays held after a restore. Course reset needs nothing new: it deletes score rows with the attempts. The plugin has no Behat features, so this is pinned by PHPUnit (`tests/review_release_test.php`, plus the event, privacy, backup and grading page tests).
+
 ## Part 4: open questions these two decisions raised
 
 These are **new information produced by designing 9.1 and 9.2**, not a reopening of either. D21 and D22 stand as taken. What the design work found is that both of them sit on top of an older assumption nobody has written down as a decision, and on four smaller choices the plan never made. They belong in `IMPLEMENTATION-PLAN.md` section 9 when it is next updated and are numbered to continue it.

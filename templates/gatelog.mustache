@@ -1,0 +1,83 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/gatelog
+
+    The visual feedback gate's rejection log for site administrators: the
+    strings withheld from learners in the last seven days. The text is model
+    output, so it is always escaped. No learner name is shown.
+
+    Context variables required for this template:
+    * hasrows - Whether there is anything to show.
+    * rows - List of time, course (HTML from format_string), activity (HTML from format_string),
+      activityurl, hasactivityurl, target, layer, rule and text.
+    * total - How many rows the last seven days hold.
+    * pagingbar - The paging bar HTML, or empty.
+
+    Example context (json):
+    {
+        "hasrows": true,
+        "total": 1,
+        "pagingbar": "",
+        "rows": [
+            {
+                "time": "6/10/26, 14:00",
+                "course": "Public Speaking 101",
+                "activity": "Persuasive speech",
+                "activityurl": "https://example.com/mod/presenterai/grade.php?id=12&recordingid=7",
+                "hasactivityurl": true,
+                "target": "Summary",
+                "layer": "Word list",
+                "rule": "clothing",
+                "text": "You were wearing a dark shirt against a dark wall."
+            }
+        ]
+    }
+}}
+<p class="mod-presenterai-gatelog-intro">{{#str}}gatelog_intro, mod_presenterai{{/str}}</p>
+{{^hasrows}}
+<p class="mod-presenterai-gatelog-empty">{{#str}}gatelog_empty, mod_presenterai{{/str}}</p>
+{{/hasrows}}
+{{#hasrows}}
+<table class="generaltable mod-presenterai-gatelog" data-region="gatelog">
+    <thead>
+        <tr>
+            <th scope="col">{{#str}}gatelog_col_time, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}gatelog_col_course, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}gatelog_col_activity, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}gatelog_col_target, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}gatelog_col_layer, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}gatelog_col_rule, mod_presenterai{{/str}}</th>
+            <th scope="col">{{#str}}gatelog_col_text, mod_presenterai{{/str}}</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{#rows}}
+        <tr>
+            <td>{{time}}</td>
+            <td>{{{course}}}</td>
+            <td>{{#hasactivityurl}}<a href="{{activityurl}}">{{{activity}}}</a>{{/hasactivityurl}}{{^hasactivityurl}}{{{activity}}}{{/hasactivityurl}}</td>
+            <td>{{target}}</td>
+            <td>{{layer}}</td>
+            <td>{{rule}}</td>
+            <td class="mod-presenterai-gatelog-text">{{text}}</td>
+        </tr>
+        {{/rows}}
+    </tbody>
+</table>
+{{{pagingbar}}}
+{{/hasrows}}

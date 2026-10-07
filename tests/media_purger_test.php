@@ -367,4 +367,27 @@ final class media_purger_test extends \advanced_testcase {
         $this->expectException(\coding_exception::class);
         media_purger::purge_instance((int) $this->instance->id, 'keep');
     }
+
+    /**
+     * The gate log rows of purged recordings go with them; another learner's stay.
+     *
+     * @return void
+     */
+    public function test_purge_deletes_gatelog_rows(): void {
+        global $DB;
+
+        $alicerec = $this->fs_recording($this->alice);
+        $bobrec = $this->fs_recording($this->bob);
+        foreach ([$alicerec, $bobrec] as $rec) {
+            $DB->insert_record('presenterai_gatelog', (object) [
+                'recordingid' => $rec->id, 'target' => 'summary', 'layer' => 2, 'gaterule' => 'appearance',
+                'rejectedtext' => 'about ' . $rec->userid, 'timecreated' => time(),
+            ]);
+        }
+
+        media_purger::purge_user((int) $this->instance->id, (int) $this->alice->id, media_purger::AIUSAGE_DELETE);
+
+        $this->assertFalse($DB->record_exists('presenterai_gatelog', ['recordingid' => $alicerec->id]));
+        $this->assertTrue($DB->record_exists('presenterai_gatelog', ['recordingid' => $bobrec->id]));
+    }
 }

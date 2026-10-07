@@ -190,4 +190,28 @@ final class lib_test extends \advanced_testcase {
     private function prepare_new(\stdClass $course): array {
         return prepare_new_moduleinfo_data($course, 'presenterai', 0);
     }
+
+    /**
+     * Deleting a course deletes its course level rubrics, and no other course's.
+     *
+     * @covers \mod_presenterai\local\hook_callbacks::before_course_deleted
+     * @return void
+     */
+    public function test_course_delete_removes_course_rubrics(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        $criteria = [['name' => 'Content', 'description' => 'What was said.', 'max_score' => 5, 'visual' => false]];
+        $doomed = $this->getDataGenerator()->create_course();
+        $kept = $this->getDataGenerator()->create_course();
+        $doomedctx = \context_course::instance($doomed->id);
+        $keptctx = \context_course::instance($kept->id);
+        \mod_presenterai\local\rubric_manager::create((int) $doomedctx->id, 'speech', 'Doomed', $criteria);
+        $keep = \mod_presenterai\local\rubric_manager::create((int) $keptctx->id, 'speech', 'Kept', $criteria);
+
+        delete_course($doomed, false);
+
+        $this->assertFalse($DB->record_exists('presenterai_rubric', ['contextid' => $doomedctx->id]));
+        $this->assertTrue($DB->record_exists('presenterai_rubric', ['id' => $keep]));
+    }
 }

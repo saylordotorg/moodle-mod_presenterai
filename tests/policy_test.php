@@ -274,4 +274,19 @@ final class policy_test extends \advanced_testcase {
             $this->assertFalse(policy::frames_taken($instance));
         }
     }
+
+    /**
+     * The visual note clause promises what the expiry task does: zero or less is one day, never the default or forever.
+     *
+     * @return void
+     */
+    public function test_privacy_visualnote_minimum_is_one_day(): void {
+        set_config('retentiondays', 0, 'mod_presenterai');
+        set_config('visualdatadays', 0, 'mod_presenterai');
+        [$instance] = $this->instance(['videovision' => 1, 'mode' => 'video']);
+
+        $paragraph = policy::privacy_paragraph($instance, true);
+
+        $this->assertStringContainsString(get_string('privacy_visualnote', 'mod_presenterai', 1), $paragraph);
+    }
 }

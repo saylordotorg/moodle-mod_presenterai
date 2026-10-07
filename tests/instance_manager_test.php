@@ -166,6 +166,34 @@ final class instance_manager_test extends \advanced_testcase {
     }
 
     /**
+     * Scoring body language and the opt out need frames: off with video vision off or for audio (D23, D24).
+     *
+     * @return void
+     */
+    public function test_visual_options_need_video_vision(): void {
+        $this->resetAfterTest();
+
+        $on = ['mode' => 'video', 'videovision' => 1, 'visualscored' => '1', 'allowvisualoptout' => 'yes'];
+        $data = instance_manager::normalise((object) $on, null);
+        $this->assertSame(1, $data->visualscored);
+        $this->assertSame(1, $data->allowvisualoptout);
+
+        $data = instance_manager::normalise((object) (['videovision' => 0] + $on), null);
+        $this->assertSame(0, $data->visualscored);
+        $this->assertSame(0, $data->allowvisualoptout);
+
+        $data = instance_manager::normalise((object) (['mode' => 'audio'] + $on), null);
+        $this->assertSame(0, $data->visualscored);
+        $this->assertSame(0, $data->allowvisualoptout);
+
+        // Video vision not in the write: the stored value decides.
+        $existing = (object) ['mode' => 'video', 'videovision' => 0, 'retentiondays' => -1];
+        $data = instance_manager::normalise((object) ['visualscored' => 1, 'allowvisualoptout' => 1], $existing);
+        $this->assertSame(0, $data->visualscored);
+        $this->assertSame(0, $data->allowvisualoptout);
+    }
+
+    /**
      * Fields absent from the write stay absent, so update_record() leaves them alone.
      *
      * @return void
@@ -327,5 +355,49 @@ final class instance_manager_test extends \advanced_testcase {
 
         $this->assertSame(-7, instance_manager::normalise((object) ['grade' => -7], null)->grade);
         $this->assertSame(250, instance_manager::normalise((object) ['grade' => 250], null)->grade);
+    }
+
+    /**
+     * Presentation type and speaking level fall back to their defaults; the rubric must be visible and active.
+     *
+     * @return void
+     */
+    public function test_ptype_level_and_rubric(): void {
+        $this->resetAfterTest();
+
+        $this->assertSame('informative', instance_manager::normalise((object) ['ptype' => 'rant'], null)->ptype);
+        $this->assertSame('persuasive', instance_manager::normalise((object) ['ptype' => 'persuasive'], null)->ptype);
+        $this->assertNull(instance_manager::normalise((object) ['speakinglevel' => ''], null)->speakinglevel);
+        $this->assertNull(instance_manager::normalise((object) ['speakinglevel' => 'general'], null)->speakinglevel);
+        $this->assertNull(instance_manager::normalise((object) ['speakinglevel' => 'klingon'], null)->speakinglevel);
+        $this->assertSame(
+            'esl_intermediate',
+            instance_manager::normalise((object) ['speakinglevel' => 'esl_intermediate'], null)->speakinglevel
+        );
+
+        $course = $this->getDataGenerator()->create_course();
+        $other = $this->getDataGenerator()->create_course();
+        $mine = \mod_presenterai\local\rubric_manager::create(
+            (int) \context_course::instance($course->id)->id,
+            'speech',
+            'Mine',
+            [['name' => 'Pace']]
+        );
+        $theirs = \mod_presenterai\local\rubric_manager::create(
+            (int) \context_course::instance($other->id)->id,
+            'speech',
+            'Theirs',
+            [['name' => 'Pace']]
+        );
+
+        $this->assertNull(instance_manager::normalise((object) ['rubricid' => 0, 'course' => $course->id], null)->rubricid);
+        $chosen = instance_manager::normalise((object) ['rubricid' => $mine, 'course' => $course->id], null);
+        $this->assertSame($mine, $chosen->rubricid);
+        $this->assertNull(
+            instance_manager::normalise((object) ['rubricid' => $theirs, 'course' => $course->id], null)->rubricid,
+            'A rubric from another course was accepted.'
+        );
+        \mod_presenterai\local\rubric_manager::update($mine, 'Mine', [['name' => 'Pace']], false);
+        $this->assertNull(instance_manager::normalise((object) ['rubricid' => $mine, 'course' => $course->id], null)->rubricid);
     }
 }

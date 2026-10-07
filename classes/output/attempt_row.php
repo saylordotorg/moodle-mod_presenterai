@@ -19,6 +19,8 @@ namespace mod_presenterai\output;
 use mod_presenterai\local\access;
 use mod_presenterai\local\score_manager;
 use mod_presenterai\local\storage\store_factory;
+use mod_presenterai\local\vision\fallback_template;
+use mod_presenterai\local\vision\visual_pipeline;
 
 /**
  * One row of a learner's attempt list.
@@ -193,6 +195,12 @@ final class attempt_row {
         $candelete = $hasmedia && access::may_delete($rec, $ctx, $userid);
 
         $score = $scorehidden ? null : score_manager::current_score((int) $rec->id);
+        // D28: a score held for the teacher's review shows nothing of itself,
+        // not the number, not the feedback and not the body language section.
+        $inreview = $score !== null && !score_manager::is_released($score);
+        if ($inreview) {
+            $score = null;
+        }
         $feedback = $score ? self::feedback($score) : null;
 
         return [
@@ -202,7 +210,9 @@ final class attempt_row {
             'attempt' => $neveruploaded ? '-' : (string) (int) $rec->attemptnumber,
             'recorded' => $recorded,
             'length' => self::duration((int) ($rec->durationseconds ?? 0)),
-            'status' => self::status_label($rec),
+            'status' => $inreview ? get_string('status_awaitingreview', 'mod_presenterai') : self::status_label($rec),
+            'inreview' => $inreview,
+            'reviewnote' => $inreview ? get_string('feedback_inreview', 'mod_presenterai') : '',
             'statekey' => $state['key'],
             'state' => self::text($state),
             'mediaavailable' => $hasmedia,
@@ -226,7 +236,7 @@ final class attempt_row {
             'hasscore' => $score !== null && $score->overallpct !== null,
             'score' => ($score !== null && $score->overallpct !== null) ? format_float((float) $score->overallpct, 2) . '%' : '',
             'hasfeedback' => $feedback !== null,
-            'feedback' => $feedback ?? ['criteria' => [], 'overall' => ''],
+            'feedback' => $feedback ?? self::empty_feedback(),
             'feedbackaria' => get_string('feedback_toggle_aria', 'mod_presenterai', $recorded),
         ];
     }
@@ -235,15 +245,25 @@ final class attempt_row {
      * The per criterion and overall feedback of a score, ready for the template.
      *
      * Every criterion is listed, including those not assessed, so the learner
-     * can see which parts of the rubric their score covers.
+     * can see which parts of the rubric their score covers. A criterion that
+     * doesn't count toward the score (D23: body language is feedback only by
+     * default) says so in words beside its mark.
+     *
+     * The visual section follows the score row's visualstatus (design 6, 9.6).
+     * It shows the gated summary, never the raw note, and is never empty: a
+     * status it can't fill shows nothing at all rather than a heading over a
+     * hole.
      *
      * @param \stdClass $score A presenterai_score row.
-     * @return array ['criteria' => list of ['name', 'scoretext', 'feedback'], 'overall' => HTML]
+     * @return array ['criteria' => list of ['name', 'scoretext', 'feedback', 'notcounted'], 'overall' => HTML,
+     *     'hastips', 'tips', 'hasvisual', 'visualstatus', 'visualheading', 'visualnote', 'visualtext']
      */
     private static function feedback(\stdClass $score): array {
         $criteria = [];
-        foreach (score_manager::decode_criteria($score) as $criterion) {
+        $flags = self::criterion_flags($score);
+        foreach (score_manager::decode_criteria($score) as $i => $criterion) {
             $assessed = !empty($criterion['assessed']) && $criterion['score'] !== null;
+            $counts = array_key_exists('counts', $criterion) ? $criterion['counts'] : ($flags[$i]['counts'] ?? true);
             $criteria[] = [
                 'name' => format_string((string) $criterion['name']),
                 'scoretext' => $assessed
@@ -253,14 +273,144 @@ final class attempt_row {
                     ])
                     : get_string('feedback_notassessed', 'mod_presenterai'),
                 'feedback' => trim((string) ($criterion['feedback'] ?? '')),
+                'notcounted' => $counts === false,
             ];
         }
 
         $overall = trim((string) ($score->feedback ?? ''));
+        $tips = self::tips($score);
 
         return [
             'criteria' => $criteria,
             'overall' => $overall !== '' ? nl2br(s($overall)) : '',
+            'hastips' => !empty($tips),
+            'tips' => $tips,
+        ] + self::visual_section($score);
+    }
+
+    /**
+     * The feedback context for a row with no score, so the template always sees the same keys.
+     *
+     * @return array
+     */
+    private static function empty_feedback(): array {
+        return [
+            'criteria' => [],
+            'overall' => '',
+            'hastips' => false,
+            'tips' => [],
+            'hasvisual' => false,
+            'visualstatus' => '',
+            'visualheading' => '',
+            'visualnote' => '',
+            'visualtext' => '',
+        ];
+    }
+
+    /**
+     * The visual and counts flags of each criterion, straight from the stored JSON.
+     *
+     * Aligned with score_manager::decode_criteria(), which skips the same
+     * malformed entries, so a renderer sees the D23 flag even where the decoder
+     * does not carry it.
+     *
+     * @param \stdClass $score A presenterai_score row.
+     * @return array List of ['visual' => bool, 'counts' => bool].
+     */
+    private static function criterion_flags(\stdClass $score): array {
+        $raw = json_decode((string) ($score->scores ?? ''), true);
+        if (!is_array($raw)) {
+            return [];
+        }
+        $out = [];
+        foreach ($raw as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $out[] = [
+                'visual' => !empty($entry['visual']),
+                'counts' => !array_key_exists('counts', $entry) || $entry['counts'] !== false,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * The tips for next time, as plain strings (B2: a JSON list, null on teacher rows).
+     *
+     * @param \stdClass $score A presenterai_score row.
+     * @return string[]
+     */
+    private static function tips(\stdClass $score): array {
+        $decoded = json_decode((string) ($score->tips ?? ''), true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+        $out = [];
+        foreach ($decoded as $tip) {
+            if (is_scalar($tip) && trim((string) $tip) !== '') {
+                $out[] = trim((string) $tip);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * The body language section of the feedback panel, by the score's visualstatus.
+     *
+     * summary: the gated summary, with a note saying where it came from.
+     * fallback: the deterministic template (design 6 b). notassessed: the
+     * learner's setup is why (6 a1). notanalysed: nothing the learner did
+     * caused it, and no advice (6 a2). optedout: the learner's choice (D24).
+     * Empty: no section. The raw visualevidence note is never read here.
+     *
+     * @param \stdClass $score A presenterai_score row.
+     * @return array ['hasvisual', 'visualstatus', 'visualheading', 'visualnote', 'visualtext']
+     */
+    private static function visual_section(\stdClass $score): array {
+        $status = (string) ($score->visualstatus ?? '');
+        $summary = trim((string) ($score->visualsummary ?? ''));
+        $note = '';
+        switch ($status) {
+            case visual_pipeline::STATUS_SUMMARY:
+            case visual_pipeline::STATUS_FALLBACK:
+                if ($status === visual_pipeline::STATUS_SUMMARY && $summary !== '') {
+                    $note = get_string('visual_summary_note', 'mod_presenterai');
+                }
+                if ($summary === '') {
+                    // A status that promised words and has none still gets the
+                    // template, never an empty section.
+                    $criteria = [];
+                    $flags = self::criterion_flags($score);
+                    foreach (score_manager::decode_criteria($score) as $i => $criterion) {
+                        $criterion['visual'] = $criterion['visual'] ?? ($flags[$i]['visual'] ?? false);
+                        $criteria[] = $criterion;
+                    }
+                    $summary = fallback_template::build($criteria);
+                }
+                $text = $summary;
+                break;
+            case visual_pipeline::STATUS_NOTASSESSED:
+                $text = get_string('visual_not_assessed', 'mod_presenterai');
+                break;
+            case visual_pipeline::STATUS_NOTANALYSED:
+                $text = get_string('visual_not_analysed', 'mod_presenterai');
+                break;
+            case visual_pipeline::STATUS_OPTEDOUT:
+                $text = get_string('visual_optedout', 'mod_presenterai');
+                break;
+            default:
+                $text = '';
+        }
+
+        return [
+            'hasvisual' => $text !== '',
+            'visualstatus' => $text !== '' ? $status : '',
+            'visualheading' => $text !== '' ? get_string('visual_summary_heading', 'mod_presenterai') : '',
+            'visualnote' => $note,
+            'visualtext' => $text,
         ];
     }
 

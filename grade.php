@@ -25,6 +25,15 @@
  * gradebook, completion, the event and the learner's message, and then
  * through grading_outcomes for any outcomes attached to the activity.
  *
+ * action=rescore queues an AI rescore of the attempt. It's a POST with the
+ * sesskey, and it's refused unless grade_page::rescore_state() offers it, so
+ * an attempt a teacher has scored is never handed back to the model.
+ *
+ * action=release hands a held AI score and its feedback to the learner as
+ * they are (D28), also a POST with the sesskey. Saving the form on a held
+ * attempt releases the teacher's own score instead. Both need only
+ * mod/presenterai:grade: a grader who can save a score can release one.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -34,12 +43,14 @@ require(__DIR__ . '/../../config.php');
 
 use mod_presenterai\form\grade_form;
 use mod_presenterai\local\access;
+use mod_presenterai\output\grade_page;
 use mod_presenterai\local\grading_outcomes;
 use mod_presenterai\local\rubric_manager;
 use mod_presenterai\local\score_manager;
 
 $id = required_param('id', PARAM_INT);
 $recordingid = required_param('recordingid', PARAM_INT);
+$action = optional_param('action', '', PARAM_ALPHA);
 
 [$course, $cm] = get_course_and_cm_from_cmid($id, 'presenterai');
 require_login($course, false, $cm);
@@ -58,8 +69,33 @@ $PAGE->set_context($context);
 $PAGE->set_pagelayout('incourse');
 $PAGE->set_activity_record($instance);
 
+if ($action === 'rescore') {
+    if (!data_submitted()) {
+        throw new moodle_exception('invalidrequest');
+    }
+    require_sesskey();
+    if (grade_page::rescore_state($rec, $context, (int) $USER->id) !== grade_page::RESCORE_AVAILABLE) {
+        redirect($url, get_string('rescore_notavailable', 'mod_presenterai'), null, \core\output\notification::NOTIFY_ERROR);
+    }
+    \mod_presenterai\task\score_recording::queue((int) $rec->id, true);
+    redirect($url, get_string('rescore_queued', 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
+
+if ($action === 'release') {
+    if (!data_submitted()) {
+        throw new moodle_exception('invalidrequest');
+    }
+    require_sesskey();
+    $released = score_manager::release($rec, $instance, $context);
+    if ($released === null) {
+        redirect($url, get_string('release_nothing', 'mod_presenterai'), null, \core\output\notification::NOTIFY_INFO);
+    }
+    redirect($url, get_string('release_done', 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
+
 $rubric = rubric_manager::resolve($instance, $context);
 $current = score_manager::current_score((int) $rec->id);
+$heldbefore = $current !== null && !score_manager::is_released($current);
 $outcomes = grading_outcomes::for_user($course, $instance, (int) $rec->userid);
 
 $form = new grade_form($url, [
@@ -67,6 +103,7 @@ $form = new grade_form($url, [
     'recordingid' => (int) $rec->id,
     'criteria' => $rubric['criteria'],
     'outcomes' => $outcomes,
+    'saveandrelease' => $heldbefore,
 ]);
 $form->set_prefill($current);
 
@@ -84,7 +121,8 @@ if ($form->is_cancelled()) {
     );
     grading_outcomes::save($course, $instance, (int) $rec->userid, $form->to_outcomes($data));
 
-    redirect($url, get_string('grade_saved', 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
+    $message = $heldbefore ? 'grade_saved_released' : 'grade_saved';
+    redirect($url, get_string($message, 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
 $learner = $DB->get_record('user', ['id' => $rec->userid], '*', MUST_EXIST);
@@ -100,9 +138,9 @@ $PAGE->navbar->add($title);
 // Only the selector: the recording id and the player label travel as data
 // attributes on the root, which keeps the call under js_call_amd()'s 1024
 // character warning.
-$PAGE->requires->js_call_amd('mod_presenterai/grading', 'init', ['#' . \mod_presenterai\output\grade_page::ROOT_ID]);
+$PAGE->requires->js_call_amd('mod_presenterai/grading', 'init', ['#' . grade_page::ROOT_ID]);
 
-$page = new \mod_presenterai\output\grade_page($instance, $rec, $course, $cm, $context, (int) $USER->id, $form->render());
+$page = new grade_page($instance, $rec, $course, $cm, $context, (int) $USER->id, $form->render());
 
 echo $OUTPUT->header();
 echo $OUTPUT->render_from_template('mod_presenterai/grade', $page->export_for_template($OUTPUT));

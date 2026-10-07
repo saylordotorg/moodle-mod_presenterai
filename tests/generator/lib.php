@@ -90,6 +90,7 @@ class mod_presenterai_generator extends testing_module_generator {
             'storagekey' => null,
             'deckkey' => null,
             'frameskey' => null,
+            'audiokey' => null,
             'uploadid' => null,
             'slidetimeline' => null,
             'durationseconds' => 60,

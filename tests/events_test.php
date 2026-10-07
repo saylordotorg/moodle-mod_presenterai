@@ -16,6 +16,7 @@
 
 namespace mod_presenterai;
 
+use mod_presenterai\event\feedback_released;
 use mod_presenterai\event\recording_scored;
 use mod_presenterai\event\recording_submitted;
 use mod_presenterai\external\begin_attempt;
@@ -32,7 +33,10 @@ use mod_presenterai\local\storage\fs_store;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \mod_presenterai\event\recording_submitted
  * @covers     \mod_presenterai\event\recording_scored
+ * @covers     \mod_presenterai\event\feedback_released
  * @covers     \mod_presenterai\local\attempt_events
+ * @covers     \mod_presenterai\event\visual_summary_rejected
+ * @covers     \mod_presenterai\event\visual_summary_judge_unavailable
  */
 final class events_test extends \advanced_testcase {
     /** @var \stdClass The course. */
@@ -147,6 +151,45 @@ final class events_test extends \advanced_testcase {
     }
 
     /**
+     * feedback_released carries the score and its origin, and maps on restore (D28).
+     *
+     * @return void
+     */
+    public function test_feedback_released_data(): void {
+        $rec = $this->recording();
+        $score = $this->getDataGenerator()->get_plugin_generator('mod_presenterai')->create_score([
+            'recordingid' => $rec->id,
+            'origin' => 'ai',
+        ]);
+        $sink = $this->redirectEvents();
+        feedback_released::create_from_score($rec, $score, $this->ctx)->trigger();
+        $event = $sink->get_events()[0];
+
+        $this->assertInstanceOf(feedback_released::class, $event);
+        $this->assertSame('u', $event->crud);
+        $this->assertSame(\core\event\base::LEVEL_TEACHING, $event->edulevel);
+        $this->assertSame((int) $rec->id, (int) $event->objectid);
+        $this->assertSame((int) $this->learner->id, (int) $event->relateduserid);
+        $this->assertSame((int) $score->id, $event->other['scoreid']);
+        $this->assertSame('ai', $event->other['origin']);
+        $this->assertEquals(
+            new \moodle_url('/mod/presenterai/grade.php', ['id' => $this->instance->cmid, 'recordingid' => $rec->id]),
+            $event->get_url()
+        );
+        $this->assertSame(get_string('eventfeedbackreleased', 'mod_presenterai'), feedback_released::get_name());
+        $this->assertStringContainsString("released the score with id '{$score->id}'", $event->get_description());
+        $this->assertSame(
+            ['db' => 'presenterai_recording', 'restore' => 'presenterai_recording'],
+            feedback_released::get_objectid_mapping()
+        );
+        $this->assertSame(
+            ['scoreid' => ['db' => 'presenterai_score', 'restore' => 'presenterai_score']],
+            feedback_released::get_other_mapping()
+        );
+        $this->assertEventContextNotUsed($event);
+    }
+
+    /**
      * Each event refuses to be created without what it must carry.
      *
      * @return void
@@ -158,6 +201,9 @@ final class events_test extends \advanced_testcase {
             [recording_scored::class, ['objectid' => 1, 'relateduserid' => 2, 'other' => ['origin' => 'teacher']]],
             [recording_scored::class, ['objectid' => 1, 'relateduserid' => 2, 'other' => ['scoreid' => 5]]],
             [recording_scored::class, ['objectid' => 1, 'other' => ['scoreid' => 5, 'origin' => 'teacher']]],
+            [feedback_released::class, ['objectid' => 1, 'relateduserid' => 2, 'other' => ['origin' => 'ai']]],
+            [feedback_released::class, ['objectid' => 1, 'relateduserid' => 2, 'other' => ['scoreid' => 5]]],
+            [feedback_released::class, ['objectid' => 1, 'other' => ['scoreid' => 5, 'origin' => 'ai']]],
         ];
         foreach ($cases as $i => [$class, $data]) {
             try {
@@ -195,5 +241,75 @@ final class events_test extends \advanced_testcase {
         $this->assertSame((int) $begin['recordingid'], (int) $submitted[0]->objectid);
         $this->assertSame(1, $submitted[0]->other['attemptnumber']);
         $this->assertSame((int) $this->learner->id, (int) $submitted[0]->userid);
+    }
+
+    /**
+     * visual_summary_rejected carries target, layer and rule, never the text, about the learner.
+     *
+     * @return void
+     */
+    public function test_visual_summary_rejected_data(): void {
+        $rec = $this->recording();
+        $sink = $this->redirectEvents();
+        \mod_presenterai\event\visual_summary_rejected::create_from_recording($rec, $this->ctx, [
+            'target' => 'summary',
+            'layer' => 2,
+            'rule' => 'clothing',
+            'text' => 'You were wearing a dark shirt.',
+        ])->trigger();
+        $events = $sink->get_events();
+
+        $this->assertCount(1, $events);
+        $event = $events[0];
+        $this->assertSame(['target' => 'summary', 'layer' => 2, 'rule' => 'clothing'], $event->other);
+        $this->assertSame((int) $rec->id, (int) $event->objectid);
+        $this->assertSame((int) $this->learner->id, (int) $event->relateduserid);
+        $this->assertSame('u', $event->crud);
+        $this->assertSame(\core\event\base::LEVEL_OTHER, $event->edulevel);
+        $this->assertSame($this->ctx->id, $event->get_context()->id);
+        $this->assertStringNotContainsString('shirt', json_encode($event->get_data()), 'The event carries the rejected text.');
+        $this->assertSame(get_string('eventvisualsummaryrejected', 'mod_presenterai'), $event->get_name());
+        $this->assertStringContainsString("'clothing'", $event->get_description());
+        $this->assertStringContainsString('recordingid=' . $rec->id, $event->get_url()->out(false));
+    }
+
+    /**
+     * visual_summary_judge_unavailable carries the reason only.
+     *
+     * @return void
+     */
+    public function test_visual_summary_judge_unavailable_data(): void {
+        $rec = $this->recording();
+        $sink = $this->redirectEvents();
+        \mod_presenterai\event\visual_summary_judge_unavailable::create_from_recording($rec, $this->ctx, [
+            'reason' => 'timeout',
+        ])->trigger();
+        $event = $sink->get_events()[0];
+
+        $this->assertSame(['reason' => 'timeout'], $event->other);
+        $this->assertSame(\core\event\base::LEVEL_OTHER, $event->edulevel);
+        $this->assertSame(get_string('eventvisualsummaryjudgeunavailable', 'mod_presenterai'), $event->get_name());
+        $this->assertStringContainsString("'timeout'", $event->get_description());
+    }
+
+    /**
+     * Both visual events refuse to be built without their other keys.
+     *
+     * @return void
+     */
+    public function test_visual_event_validation(): void {
+        $rec = $this->recording();
+        try {
+            \mod_presenterai\event\visual_summary_rejected::create([
+                'context' => $this->ctx, 'objectid' => $rec->id, 'relateduserid' => $rec->userid, 'other' => ['target' => 'x'],
+            ]);
+            $this->fail('A rejection event without a layer and rule was accepted.');
+        } catch (\coding_exception $e) {
+            $this->assertStringContainsString('layer', $e->getMessage());
+        }
+        $this->expectException(\coding_exception::class);
+        \mod_presenterai\event\visual_summary_judge_unavailable::create([
+            'context' => $this->ctx, 'objectid' => $rec->id, 'relateduserid' => $rec->userid, 'other' => [],
+        ]);
     }
 }

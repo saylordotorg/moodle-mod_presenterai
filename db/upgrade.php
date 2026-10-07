@@ -96,5 +96,139 @@ function xmldb_presenterai_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026100602, 'presenterai');
     }
 
+    if ($oldversion < 2026100700) {
+        // Phase 3: D23 scoring switch and D24 opt out on the activity.
+        $table = new xmldb_table('presenterai');
+        $fields = [
+            new xmldb_field('visualscored', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'videovision'),
+            new xmldb_field('allowvisualoptout', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'visualscored'),
+        ];
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+
+        // D24: the learner's per attempt opt out.
+        $table = new xmldb_table('presenterai_recording');
+        $field = new xmldb_field('visualoptout', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'visualevidenceat');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // D21: the gated summary and which visual section the learner sees.
+        $table = new xmldb_table('presenterai_score');
+        $fields = [
+            new xmldb_field('visualsummary', XMLDB_TYPE_TEXT, null, null, null, null, null, 'tips'),
+            new xmldb_field('visualstatus', XMLDB_TYPE_CHAR, '16', null, null, null, null, 'visualsummary'),
+        ];
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+
+        // Design 5.3: the staff only log of rejected feedback strings.
+        $table = new xmldb_table('presenterai_gatelog');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('recordingid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('target', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('layer', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('gaterule', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('rejectedtext', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_key('recordingid', XMLDB_KEY_FOREIGN, ['recordingid'], 'presenterai_recording', ['id']);
+            $table->add_index('timecreated', XMLDB_INDEX_NOTUNIQUE, ['timecreated']);
+            $dbman->create_table($table);
+        }
+
+        upgrade_mod_savepoint(true, 2026100700, 'presenterai');
+    }
+
+    if ($oldversion < 2026100701) {
+        // The gate log's old column name, rule, is a reserved word on SQL Server,
+        // where an unquoted insert or select of it is a syntax error. Sites that ran an
+        // earlier build of the 2026100700 step have the old name.
+        $table = new xmldb_table('presenterai_gatelog');
+        $field = new xmldb_field('rule', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null, 'layer');
+        if ($dbman->table_exists($table) && $dbman->field_exists($table, $field)) {
+            $dbman->rename_field($table, $field, 'gaterule');
+        }
+
+        upgrade_mod_savepoint(true, 2026100701, 'presenterai');
+    }
+
+    if ($oldversion < 2026100702) {
+        // The score table's visualstatus was CHAR NOT NULL with an empty
+        // default, which XMLDB refuses to install (it debugs, and a CLI
+        // install treats that as a failure). It is nullable now; readers
+        // treat null as the empty status.
+        $table = new xmldb_table('presenterai_score');
+        $field = new xmldb_field('visualstatus', XMLDB_TYPE_CHAR, '16', null, null, null, null, 'visualsummary');
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->change_field_default($table, $field);
+            $dbman->change_field_notnull($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026100702, 'presenterai');
+    }
+
+    if ($oldversion < 2026100703) {
+        // D28: an activity can hold AI feedback for a teacher to release.
+        $table = new xmldb_table('presenterai');
+        $field = new xmldb_field(
+            'reviewbeforerelease',
+            XMLDB_TYPE_INTEGER,
+            '1',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            '0',
+            'allowvisualoptout'
+        );
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Every score that exists already was shown when it was written, so
+        // the default of 1 is the truth for each of them.
+        $table = new xmldb_table('presenterai_score');
+        $field = new xmldb_field('released', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1', 'visualstatus');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026100703, 'presenterai');
+    }
+
+    if ($oldversion < 2026100704) {
+        // A separate audio only track beside a video recording, so a long
+        // video can be transcribed under OpenAI's 25 MB limit.
+        $table = new xmldb_table('presenterai_recording');
+        $field = new xmldb_field('audiokey', XMLDB_TYPE_CHAR, '255', null, null, null, null, 'frameskey');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $index = new xmldb_index('audiokey', XMLDB_INDEX_NOTUNIQUE, ['audiokey']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        upgrade_mod_savepoint(true, 2026100704, 'presenterai');
+    }
+
+    if ($oldversion < 2026100705) {
+        // The audio track's declared size, checked when it's committed.
+        $table = new xmldb_table('presenterai_recording');
+        $field = new xmldb_field('audiobytes', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'audiokey');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026100705, 'presenterai');
+    }
+
     return true;
 }

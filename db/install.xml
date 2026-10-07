@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/presenterai/db" VERSION="20261006" COMMENT="PresenterAI: recorded presentations with AI feedback."
+<XMLDB PATH="mod/presenterai/db" VERSION="20261007" COMMENT="PresenterAI: recorded presentations with AI feedback."
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
 >
@@ -22,6 +22,9 @@
         <FIELD NAME="slidesenabled" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="slidevision" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="videovision" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="visualscored" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="D23: 1 counts the two visual criteria in the score; 0, the default, makes them feedback only."/>
+        <FIELD NAME="allowvisualoptout" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="D24: 1 offers the learner a per attempt body language opt out."/>
+        <FIELD NAME="reviewbeforerelease" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="D28: 1 holds AI scores and feedback from the learner, the gradebook and notifications until a teacher releases them."/>
         <FIELD NAME="retentiondays" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="-1" SEQUENCE="false"/>
         <FIELD NAME="grade" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="gradingmethod" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="highest" SEQUENCE="false"/>
@@ -72,11 +75,14 @@
         <FIELD NAME="storagekey" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="deckkey" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="frameskey" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="audiokey" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="A low bitrate audio only copy of a video recording, recorded beside it for transcription. Null when there is none."/>
+        <FIELD NAME="audiobytes" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The audio track's size as the browser declared it, so a track whose upload stopped partway isn't committed as whole. 0 when unknown."/>
         <FIELD NAME="uploadid" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="Client-generated id for a resumable upload in progress; null once the upload is finalised or if it never started. Nullable rather than NOT NULL with an empty default: XMLDB rejects an empty-string default on a CHAR NOT NULL column and silently rewrites it to nullable anyway, so this declares what the database will actually hold."/>
         <FIELD NAME="clienttoken" TYPE="char" LENGTH="32" NOTNULL="false" SEQUENCE="false" COMMENT="Ties an unfinished attempt to the one page that holds it. Replaced each time begin_attempt hands the row out, required by start_upload and finalize, cleared at finalize. Nullable for the same XMLDB reason as uploadid."/>
         <FIELD NAME="slidetimeline" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="visualevidence" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="visualevidenceat" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="visualoptout" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="D24: 1 when the learner opted this attempt out of body language feedback."/>
         <FIELD NAME="durationseconds" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="sizebytes" TYPE="int" LENGTH="19" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="uploading" SEQUENCE="false"/>
@@ -104,6 +110,7 @@
         <INDEX NAME="uploadid" UNIQUE="false" FIELDS="uploadid"/>
         <INDEX NAME="deckkey" UNIQUE="false" FIELDS="deckkey"/>
         <INDEX NAME="frameskey" UNIQUE="false" FIELDS="frameskey"/>
+        <INDEX NAME="audiokey" UNIQUE="false" FIELDS="audiokey"/>
         <INDEX NAME="legacyrec" UNIQUE="false" FIELDS="legacyrecid"/>
         <INDEX NAME="visualat" UNIQUE="false" FIELDS="visualevidenceat"/>
       </INDEXES>
@@ -143,6 +150,9 @@
         <FIELD NAME="scoreprovenance" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="exact" SEQUENCE="false"/>
         <FIELD NAME="feedback" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="tips" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="visualsummary" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="D21: the gated learner facing body language summary, or the deterministic fallback."/>
+        <FIELD NAME="visualstatus" TYPE="char" LENGTH="16" NOTNULL="false" SEQUENCE="false" COMMENT="Which visual section the learner sees: null or empty for none, summary, fallback, notassessed, notanalysed or optedout."/>
+        <FIELD NAME="released" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false" COMMENT="D28: 0 while an AI score waits for a teacher to release it. Teacher scores are always 1."/>
         <FIELD NAME="legacymeanscore" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="legacymeta" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="graderid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
@@ -179,6 +189,24 @@
       <INDEXES>
         <INDEX NAME="insttime" UNIQUE="false" FIELDS="presenteraiid, timecreated"/>
         <INDEX NAME="usertime" UNIQUE="false" FIELDS="userid, timecreated"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="presenterai_gatelog" COMMENT="Staff only log of learner feedback strings the visual feedback gate rejected, kept 7 days.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="recordingid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="target" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="summary, or the criterion name whose feedback was rejected."/>
+        <FIELD NAME="layer" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 copy or length, 2 deny list, 3 anchor, 4 judge, 0 judge unavailable."/>
+        <FIELD NAME="gaterule" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The rule that rejected it. Not rule, which SQL Server reserves."/>
+        <FIELD NAME="rejectedtext" TYPE="text" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="recordingid" TYPE="foreign" FIELDS="recordingid" REFTABLE="presenterai_recording" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
       </INDEXES>
     </TABLE>
     <TABLE NAME="presenterai_migration_map" COMMENT="One row per migrated source row: idempotency, resume and rollback.">

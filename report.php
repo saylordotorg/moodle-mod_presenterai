@@ -23,6 +23,10 @@
  * \mod_presenterai\output\report_page; this file checks access and resolves
  * the active group.
  *
+ * action=releaseall releases every attempt awaiting review (D28) that the
+ * viewer may grade in the active group. It asks first, and the release
+ * itself is a POST with the sesskey, needing mod/presenterai:grade.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -31,6 +35,7 @@
 require(__DIR__ . '/../../config.php');
 
 $id = required_param('id', PARAM_INT);
+$action = optional_param('action', '', PARAM_ALPHA);
 
 [$course, $cm] = get_course_and_cm_from_cmid($id, 'presenterai');
 require_login($course, false, $cm);
@@ -54,6 +59,33 @@ $groupselector = groups_print_activity_menu($cm, $url, true);
 $groupid = (int) groups_get_activity_group($cm, true);
 
 $page = new \mod_presenterai\output\report_page($instance, $course, $cm, $context, (int) $USER->id, $groupid, $groupselector);
+
+if ($action === 'releaseall') {
+    require_capability('mod/presenterai:grade', $context);
+    $ids = $page->releasable_ids();
+    if (optional_param('confirm', 0, PARAM_BOOL) && data_submitted() && confirm_sesskey()) {
+        $released = \mod_presenterai\local\score_manager::release_all($instance, $context, $ids);
+        redirect(
+            $url,
+            get_string('releaseall_done', 'mod_presenterai', $released),
+            null,
+            \core\output\notification::NOTIFY_SUCCESS
+        );
+    }
+    if (empty($ids)) {
+        redirect($url, get_string('release_nothing', 'mod_presenterai'), null, \core\output\notification::NOTIFY_INFO);
+    }
+    $confirm = new single_button(
+        new moodle_url('/mod/presenterai/report.php', ['id' => $cm->id, 'action' => 'releaseall', 'confirm' => 1]),
+        get_string('releaseall', 'mod_presenterai'),
+        'post',
+        single_button::BUTTON_PRIMARY
+    );
+    echo $OUTPUT->header();
+    echo $OUTPUT->confirm(get_string('releaseall_confirm', 'mod_presenterai', count($ids)), $confirm, $url);
+    echo $OUTPUT->footer();
+    die();
+}
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('submissions', 'mod_presenterai'));

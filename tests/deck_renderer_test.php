@@ -255,4 +255,48 @@ final class deck_renderer_test extends \advanced_testcase {
         $this->assertSame($before, sha1_file($path));
         $this->assertSame($mtime, filemtime($path));
     }
+
+    /**
+     * Text extraction runs txtwrite with the same -dSAFER guard and page cap.
+     *
+     * @return void
+     */
+    public function test_build_text_command_flags(): void {
+        $command = deck_renderer::build_text_command('/usr/bin/gs', '/tmp/deck.pdf', '/tmp/out/text-%d.txt', 200);
+
+        $this->assertStringStartsWith(escapeshellarg('/usr/bin/gs') . ' ', $command);
+        $this->assertStringContainsString(' -dSAFER ', $command);
+        $this->assertStringContainsString(' -sDEVICE=txtwrite ', $command);
+        $this->assertStringContainsString(' -dLastPage=60 ', $command);
+        $this->assertStringNotContainsString('png16m', $command);
+        $this->assertStringEndsWith(' ' . escapeshellarg('/tmp/deck.pdf'), $command);
+    }
+
+    /**
+     * Each page's text comes back in order, whitespace collapsed; a non PDF gives nothing.
+     *
+     * @return void
+     */
+    public function test_extract_text(): void {
+        $this->resetAfterTest();
+        $this->require_ghostscript();
+
+        $this->assertSame(['Slide 1', 'Slide 2', 'Slide 3'], deck_renderer::extract_text($this->fixture('deck-3pages.pdf')));
+        $this->assertSame(['Slide 1', 'Slide 2'], deck_renderer::extract_text($this->fixture('deck-3pages.pdf'), 2));
+        $this->assertSame([], deck_renderer::extract_text($this->fixture('not-a-pdf.pdf')));
+        $this->assertSame([], deck_renderer::extract_text('/no/such/file.pdf'));
+    }
+
+    /**
+     * Without Ghostscript there is no text, and no error.
+     *
+     * @return void
+     */
+    public function test_extract_text_without_ghostscript(): void {
+        global $CFG;
+
+        $this->resetAfterTest();
+        $CFG->pathtogs = '';
+        $this->assertSame([], deck_renderer::extract_text($this->fixture('deck-3pages.pdf')));
+    }
 }

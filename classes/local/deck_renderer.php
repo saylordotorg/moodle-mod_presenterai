@@ -39,8 +39,9 @@ namespace mod_presenterai\local;
  *   so there is no shell to interpret anything and the process the timeout
  *   kills is Ghostscript itself, not a /bin/sh wrapped around it.
  *
- * Text extraction (SOLA's extract_text) is not ported here: it feeds slide
- * aware scoring, which is phase 3.
+ * extract_text() is SOLA's extract_text(), for slide aware scoring: the same
+ * guards (magic bytes, -dSAFER, argument vector, timeout) with Ghostscript's
+ * txtwrite device in place of png16m.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -97,6 +98,66 @@ final class deck_renderer {
             . ' ' . implode(' ', self::flags($maxpages))
             . ' -sOutputFile=' . escapeshellarg($pattern)
             . ' ' . escapeshellarg($pdfpath);
+    }
+
+    /**
+     * The Ghostscript command line extract_text() runs, as a shell would see it.
+     *
+     * Like build_command(), this exists so a test can pin the flags.
+     *
+     * @param string $gs Path to the Ghostscript binary.
+     * @param string $pdfpath Path to the PDF.
+     * @param string $pattern Output pattern containing %d for the page number.
+     * @param int $maxpages The last page to read, clamped to [1, MAX_PAGES].
+     * @return string
+     */
+    public static function build_text_command(string $gs, string $pdfpath, string $pattern, int $maxpages): string {
+        return escapeshellarg($gs)
+            . ' ' . implode(' ', self::text_flags($maxpages))
+            . ' -sOutputFile=' . escapeshellarg($pattern)
+            . ' ' . escapeshellarg($pdfpath);
+    }
+
+    /**
+     * Each page's text, for the scoring prompt.
+     *
+     * Whitespace runs are collapsed to one space so the prompt stays compact.
+     * A page with no text gives an empty string, so page numbers still line up
+     * with the slide timeline.
+     *
+     * @param string $pdfpath Local path to the PDF. Read, never written.
+     * @param int $maxpages Pages to read, clamped to [1, MAX_PAGES].
+     * @return string[] One string per page, in order. Empty on any failure,
+     *                  including when Ghostscript is unavailable.
+     */
+    public static function extract_text(string $pdfpath, int $maxpages = self::MAX_PAGES): array {
+        global $CFG;
+
+        if (!self::is_available() || !self::looks_like_pdf($pdfpath)) {
+            return [];
+        }
+        $maxpages = self::clamp_pages($maxpages);
+
+        $outdir = make_request_directory();
+        $pattern = $outdir . '/text-%d.txt';
+        $argv = array_merge(
+            [(string) $CFG->pathtogs],
+            self::text_flags($maxpages),
+            ['-sOutputFile=' . $pattern, $pdfpath]
+        );
+        if (!self::run($argv, self::TIMEOUT)) {
+            return [];
+        }
+
+        $texts = [];
+        for ($i = 1; $i <= $maxpages; $i++) {
+            $file = $outdir . '/text-' . $i . '.txt';
+            if (!is_file($file)) {
+                break;
+            }
+            $texts[] = trim((string) preg_replace('/\s+/u', ' ', (string) file_get_contents($file)));
+        }
+        return $texts;
     }
 
     /**
@@ -201,6 +262,25 @@ final class deck_renderer {
             '-dPDFFitPage',
             '-dTextAlphaBits=4',
             '-dGraphicsAlphaBits=4',
+            '-dFirstPage=1',
+            '-dLastPage=' . self::clamp_pages($maxpages),
+        ];
+    }
+
+    /**
+     * The Ghostscript flags for text extraction, between the binary and the output file.
+     *
+     * @param int $maxpages The last page to read.
+     * @return string[]
+     */
+    private static function text_flags(int $maxpages): array {
+        return [
+            '-q',
+            '-dNOPAUSE',
+            '-dBATCH',
+            // As in flags(): file access from inside the PDF is restricted.
+            '-dSAFER',
+            '-sDEVICE=txtwrite',
             '-dFirstPage=1',
             '-dLastPage=' . self::clamp_pages($maxpages),
         ];

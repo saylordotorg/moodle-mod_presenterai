@@ -35,6 +35,11 @@ use mod_presenterai\local\score_manager;
  * The score select starts on an empty "Choose..." option rather than 0, so a
  * grader who skips a criterion is told so instead of silently awarding nothing.
  *
+ * A criterion whose counts flag is false (D23: the visual criteria, unless the
+ * activity scores them) is labeled feedback only and its select carries
+ * data-counts="0", so the live total in mod_presenterai/grading leaves it out
+ * just as grader::sums() does when the score is saved.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -56,11 +61,20 @@ class grade_form extends \moodleform {
 
         foreach ($criteria as $i => $criterion) {
             $max = max(0, (int) $criterion['max_score']);
+            $counts = ($criterion['counts'] ?? true) !== false;
 
             $mform->addElement('header', 'criterion_' . $i, format_string($criterion['name']));
             $mform->setExpanded('criterion_' . $i, true);
             if (trim((string) ($criterion['description'] ?? '')) !== '') {
                 $mform->addElement('static', 'criteriondesc_' . $i, '', s($criterion['description']));
+            }
+            if (!$counts) {
+                $mform->addElement(
+                    'static',
+                    'criterionfeedbackonly_' . $i,
+                    '',
+                    get_string('grade_feedbackonly', 'mod_presenterai')
+                );
             }
 
             $mform->addElement(
@@ -82,7 +96,7 @@ class grade_form extends \moodleform {
                 "score[$i]",
                 get_string('col_score', 'mod_presenterai'),
                 $options,
-                ['data-criterion' => $i, 'data-max' => $max]
+                ['data-criterion' => $i, 'data-max' => $max, 'data-counts' => $counts ? 1 : 0]
             );
             $mform->setDefault("score[$i]", '');
             $mform->disabledIf("score[$i]", "assessed[$i]", 'notchecked');
@@ -117,7 +131,9 @@ class grade_form extends \moodleform {
             }
         }
 
-        $this->add_action_buttons(true, get_string('grade_save', 'mod_presenterai'));
+        // D28: saving a teacher's score releases a held attempt, and the button says so.
+        $label = !empty($this->_customdata['saveandrelease']) ? 'grade_saveandrelease' : 'grade_save';
+        $this->add_action_buttons(true, get_string($label, 'mod_presenterai'));
     }
 
     /**

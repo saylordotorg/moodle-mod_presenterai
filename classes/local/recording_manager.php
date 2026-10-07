@@ -37,12 +37,23 @@ use mod_presenterai\local\storage\store_interface;
  * at begin, is what removes the S3 problem of a 900 second upload URL issued
  * before a seven minute recording.
  *
- * The single uploadid column is shared by the deck and the recording, which
- * works because they never upload at the same time: the deck is committed
- * before the recording's upload is started (commit_pending_deck()), and a
- * deck cannot be started once the recording has a key. On the File API that
- * makes the rule simple to state: while storagekey is empty, uploadid belongs
- * to the deck; once storagekey is set, it belongs to the recording.
+ * The single uploadid column is shared by the deck, the frame sheet, the
+ * audio track and the recording, which works because they never upload at
+ * the same time and always in that order: the deck is committed before the
+ * frames are started, the frames before the audio track, the audio track
+ * before the recording (commit_pending_deck(), commit_pending_frames(),
+ * commit_pending_audio()), and nothing earlier in the order can be started
+ * once something later has a key. On the File API that makes the rule simple
+ * to state: once storagekey is set, uploadid belongs to the recording; before
+ * that, once audiokey is set, to the audio track; before that, once frameskey
+ * is set, to the frames; before that, to the deck.
+ *
+ * The audio track is a low bitrate audio only copy of a video recording, made
+ * by a second MediaRecorder on the same stream, so a long video can still be
+ * transcribed under OpenAI's 25 MB limit (transcription_source). It belongs
+ * everywhere the recording does: deletion, retention, pruning, privacy,
+ * backup and the shared key guard all walk MEDIA_COLUMNS. It's never offered
+ * for download or playback.
  *
  * One attempt row belongs to one page. begin() hands out a fresh clienttoken
  * every time it returns a row, and start_upload() and finalize() refuse a
@@ -80,6 +91,12 @@ final class recording_manager {
     /** @var int Largest PDF deck accepted, 20 MB. */
     public const MAX_DECK_BYTES = 20971520;
 
+    /** @var int Largest frame contact sheet accepted, 8 MB. Six 426 by 240 JPEG cells come to well under 1 MB. */
+    public const MAX_FRAMES_BYTES = 8388608;
+
+    /** @var string[] Extensions a frame contact sheet may be uploaded with. frames.js makes JPEG. */
+    public const FRAMES_EXTS = ['jpg'];
+
     /** @var int Most slide-advance events kept from one recording, which guards absurd input. */
     public const MAX_TIMELINE_EVENTS = 500;
 
@@ -100,6 +117,12 @@ final class recording_manager {
 
     /** @var string[] Extensions a deck may be uploaded with. */
     public const DECK_EXTS = ['pdf'];
+
+    /** @var string[] Extensions an audio track may be uploaded with. recorder.js makes WebM or Ogg Opus, or AAC in MP4. */
+    public const AUDIO_EXTS = ['webm', 'ogg', 'oga', 'm4a'];
+
+    /** @var string[] Every column on a recording row that can name a stored object. */
+    public const MEDIA_COLUMNS = ['storagekey', 'deckkey', 'frameskey', 'audiokey'];
 
     /** @var string[] Statuses that do not use up an attempt. */
     public const COUNTED_EXCLUDED = ['uploading', 'abandoned', 'failed'];
@@ -265,7 +288,8 @@ final class recording_manager {
             $existing = $DB->get_records_select(
                 'presenterai_recording',
                 'presenteraiid = :presenteraiid AND userid = :userid AND status = :status AND timecreated > :since
-                    AND storagekey IS NULL AND deckkey IS NULL AND uploadid IS NULL',
+                    AND storagekey IS NULL AND deckkey IS NULL AND frameskey IS NULL AND audiokey IS NULL
+                    AND uploadid IS NULL',
                 [
                     'presenteraiid' => $instance->id,
                     'userid' => $userid,
@@ -307,6 +331,12 @@ final class recording_manager {
 
             if (self::cap_reached($instance, $userid)) {
                 throw new \moodle_exception('error:capreached', 'mod_presenterai');
+            }
+
+            // Scoring is set up but transcription isn't, so every attempt would
+            // fail to score. Refuse before the learner speaks, not after.
+            if (!\mod_presenterai\local\ai\route_resolver::accepts_recordings()) {
+                throw new \moodle_exception('error:notranscription', 'mod_presenterai');
             }
 
             // Throws errorstorenotconfigured when S3 is selected and not
@@ -374,7 +404,7 @@ final class recording_manager {
      * @param \stdClass $instance The presenterai row.
      * @param \stdClass $course The course row.
      * @param \context_module $ctx The module context.
-     * @param string $kind media_ref::KIND_RECORDING or media_ref::KIND_DECK.
+     * @param string $kind One of media_ref::KINDS.
      * @param string $ext File extension without the dot.
      * @param int $sizebytes The size the browser says it is about to send.
      * @param string|null $token The page's token from begin(), or null for a server-side caller.
@@ -417,7 +447,7 @@ final class recording_manager {
      * @param \stdClass $instance The presenterai row.
      * @param \stdClass $course The course row.
      * @param \context_module $ctx The module context.
-     * @param string $kind media_ref::KIND_RECORDING or media_ref::KIND_DECK.
+     * @param string $kind One of media_ref::KINDS.
      * @param string $ext File extension without the dot.
      * @param int $sizebytes The declared size.
      * @param string|null $token The page's token, or null for a server-side caller.
@@ -439,26 +469,66 @@ final class recording_manager {
             throw new \moodle_exception('error:notuploading', 'mod_presenterai');
         }
         self::require_token($rec, $token);
-        if ($kind !== media_ref::KIND_RECORDING && $kind !== media_ref::KIND_DECK) {
-            throw new \invalid_parameter_exception('kind must be recording or deck');
+        if (!in_array($kind, media_ref::KINDS, true)) {
+            throw new \invalid_parameter_exception('kind must be recording, deck, frames or audio');
         }
         $isdeck = $kind === media_ref::KIND_DECK;
+        $isframes = $kind === media_ref::KIND_FRAMES;
+        $isaudio = $kind === media_ref::KIND_AUDIO;
         if ($isdeck && empty($instance->slidesenabled)) {
             throw new \moodle_exception('error:slidesdisabled', 'mod_presenterai');
         }
+        if ($isframes && !self::frames_wanted($rec, $instance)) {
+            // Frames exist only for a camera recording on an activity that
+            // asked for body language feedback (D17). An audio attempt has no
+            // body to sample, and nothing is sent that nothing will read.
+            throw new \moodle_exception('error:framesdisabled', 'mod_presenterai');
+        }
+        if ($isaudio && !self::audio_wanted($rec, $instance)) {
+            // Only a camera recording gets a separate audio track. An audio
+            // only recording is already small, so it isn't recorded twice.
+            throw new \moodle_exception('error:audiotracknotwanted', 'mod_presenterai');
+        }
         $ext = strtolower(trim($ext));
-        if (!in_array($ext, $isdeck ? self::DECK_EXTS : self::RECORDING_EXTS, true)) {
+        if ($isdeck) {
+            $exts = self::DECK_EXTS;
+        } else if ($isframes) {
+            $exts = self::FRAMES_EXTS;
+        } else if ($isaudio) {
+            $exts = self::AUDIO_EXTS;
+        } else {
+            $exts = self::RECORDING_EXTS;
+        }
+        if (!in_array($ext, $exts, true)) {
             throw new \moodle_exception('error:badext', 'mod_presenterai');
         }
-        $ceiling = $isdeck ? self::MAX_DECK_BYTES : self::max_media_bytes($course);
+        if ($isdeck) {
+            $ceiling = self::MAX_DECK_BYTES;
+        } else if ($isframes) {
+            $ceiling = self::MAX_FRAMES_BYTES;
+        } else {
+            // The audio track is held to the recording's own ceiling, which
+            // already takes the course's upload limit into account.
+            $ceiling = self::max_media_bytes($course);
+        }
         if ($sizebytes > $ceiling) {
             throw new \moodle_exception('error:uploadtoolarge', 'mod_presenterai', '', display_size($ceiling));
         }
-        if ($isdeck && !empty($rec->storagekey)) {
-            // The one uploadid column belongs to the recording from here on,
-            // and a deck swapped after the recording has started would no
-            // longer match the slide timeline the learner recorded against.
+        if ($isdeck && (!empty($rec->storagekey) || !empty($rec->frameskey) || !empty($rec->audiokey))) {
+            // The one uploadid column belongs to the frames or the recording
+            // from here on, and a deck swapped after the recording has started
+            // would no longer match the slide timeline the learner recorded
+            // against.
             throw new \moodle_exception('error:deckafterrecording', 'mod_presenterai');
+        }
+        if ($isframes && (!empty($rec->storagekey) || !empty($rec->audiokey))) {
+            // The frames come before the audio track and the recording, so the
+            // upload id is free; once either has a key it is theirs.
+            throw new \moodle_exception('error:framesdisabled', 'mod_presenterai');
+        }
+        if ($isaudio && !empty($rec->storagekey)) {
+            // The audio track comes before the recording, for the same reason.
+            throw new \moodle_exception('error:audiotracknotwanted', 'mod_presenterai');
         }
 
         $store = store_factory::for_recording($rec);
@@ -467,12 +537,27 @@ final class recording_manager {
         if (!$isdeck) {
             self::commit_pending_deck($rec, $ctx, $course);
         }
+        if (!$isdeck && !$isframes) {
+            self::commit_pending_frames($rec, $ctx, $course);
+        }
+        if (!$isdeck && !$isframes && !$isaudio) {
+            self::commit_pending_audio($rec, $ctx, $course);
+        }
 
-        $column = $isdeck ? 'deckkey' : 'storagekey';
+        if ($isdeck) {
+            $column = 'deckkey';
+        } else if ($isframes) {
+            $column = 'frameskey';
+        } else if ($isaudio) {
+            $column = 'audiokey';
+        } else {
+            $column = 'storagekey';
+        }
         if (!empty($rec->$column)) {
             // Whatever upload id the row holds at this point belongs to this
-            // kind: commit_pending_deck() has just cleared the deck's, and a
-            // deck is never started once the recording has a key.
+            // kind: the commits above have just cleared the deck's and the
+            // frames', and nothing earlier in the order is started once a
+            // later kind has a key.
             if ($chunked && !empty($rec->uploadid)) {
                 $store->abort_upload((string) $rec->uploadid);
             }
@@ -489,12 +574,19 @@ final class recording_manager {
         $rec->$column = (string) $target['key'];
         $rec->uploadid = isset($target['uploadid']) ? (string) $target['uploadid'] : null;
         $rec->timemodified = time();
-        $DB->update_record('presenterai_recording', (object) [
+        $update = [
             'id' => $rec->id,
             $column => $rec->$column,
             'uploadid' => $rec->uploadid,
             'timemodified' => $rec->timemodified,
-        ]);
+        ];
+        if ($isaudio) {
+            // Kept so commit_pending_audio() can tell a track that arrived
+            // whole from one whose upload stopped partway.
+            $rec->audiobytes = max(0, $sizebytes);
+            $update['audiobytes'] = $rec->audiobytes;
+        }
+        $DB->update_record('presenterai_recording', (object) $update);
 
         return [
             'method' => (string) $target['method'],
@@ -530,8 +622,9 @@ final class recording_manager {
         $store = store_factory::for_recording($rec);
         $chunked = !$store->supports_direct_upload();
         $key = (string) $rec->deckkey;
-        // On the File API the upload id is the deck's until the recording has a key.
-        $deckuploadid = ($chunked && empty($rec->storagekey) && !empty($rec->uploadid)) ? (string) $rec->uploadid : '';
+        // On the File API the upload id is the deck's until the frames, the audio track or the recording have a key.
+        $deckuploadid = ($chunked && empty($rec->storagekey) && empty($rec->frameskey) && empty($rec->audiokey)
+            && !empty($rec->uploadid)) ? (string) $rec->uploadid : '';
 
         $size = null;
         try {
@@ -579,6 +672,187 @@ final class recording_manager {
     }
 
     /**
+     * Commit an uploaded frame contact sheet into storage, or drop it if it never arrived.
+     *
+     * The same shape as commit_pending_deck(), for the same reason: idempotent,
+     * and a sheet that is missing, refused by the antivirus scanner or larger
+     * than MAX_FRAMES_BYTES is deleted and its key cleared without failing the
+     * attempt. The frames are best effort from the browser onwards; a learner
+     * who loses them gets the "could not be assessed" sentence, never a lost
+     * recording.
+     *
+     * @param \stdClass $rec The recording row. Updated in place as well as in the database.
+     * @param \context_module $ctx The module context.
+     * @param \stdClass $course The course row.
+     * @return int|null The sheet's size in bytes, or null when there is no sheet.
+     */
+    public static function commit_pending_frames(\stdClass $rec, \context_module $ctx, \stdClass $course): ?int {
+        global $DB;
+
+        if (empty($rec->frameskey)) {
+            return null;
+        }
+
+        $store = store_factory::for_recording($rec);
+        $chunked = !$store->supports_direct_upload();
+        $key = (string) $rec->frameskey;
+        // On the File API the upload id is the frames' until the audio track or the recording has a key.
+        $framesuploadid = ($chunked && empty($rec->storagekey) && empty($rec->audiokey) && !empty($rec->uploadid))
+            ? (string) $rec->uploadid : '';
+
+        $size = null;
+        try {
+            if ($chunked) {
+                $size = $store->size($key);
+                if ($size === null && $framesuploadid !== '') {
+                    $size = $store->commit_upload(self::ref($rec, $ctx, $course, media_ref::KIND_FRAMES, $key), $framesuploadid);
+                }
+            } else {
+                $size = $store->commit_upload(self::ref($rec, $ctx, $course, media_ref::KIND_FRAMES, $key));
+            }
+        } catch (\core\antivirus\scanner_exception $e) {
+            $size = null;
+        }
+
+        if ($size !== null && $size <= self::MAX_FRAMES_BYTES) {
+            if ($framesuploadid !== '') {
+                $rec->uploadid = null;
+                $DB->set_field('presenterai_recording', 'uploadid', null, ['id' => $rec->id]);
+            }
+            return $size;
+        }
+
+        // Delete while the row still names the key, which fs_store needs.
+        if ($framesuploadid !== '') {
+            $store->abort_upload($framesuploadid);
+        }
+        if (!self::key_in_use_elsewhere((string) $rec->backend, $key, (int) $rec->id)) {
+            $store->delete($key);
+        }
+        $rec->frameskey = null;
+        if ($framesuploadid !== '') {
+            $rec->uploadid = null;
+        }
+        $rec->timemodified = time();
+        $DB->update_record('presenterai_recording', (object) [
+            'id' => $rec->id,
+            'frameskey' => null,
+            'uploadid' => $rec->uploadid,
+            'timemodified' => $rec->timemodified,
+        ]);
+
+        return null;
+    }
+
+    /**
+     * Commit an uploaded audio track into storage, or drop it if it never arrived.
+     *
+     * The same shape as commit_pending_frames(): idempotent, and a track that
+     * is missing, refused by the antivirus scanner, larger than the
+     * recording's ceiling or not the size start_upload was told it would be
+     * is deleted and its key cleared without failing the attempt. The size
+     * check matters here as it doesn't for the frames: the browser carries on
+     * to the recording when the track's upload fails partway, and a truncated
+     * track would be transcribed as though the talk ended there. The audio track is best effort; without it transcription falls
+     * back to the recording itself (transcription_source).
+     *
+     * @param \stdClass $rec The recording row. Updated in place as well as in the database.
+     * @param \context_module $ctx The module context.
+     * @param \stdClass $course The course row.
+     * @return int|null The track's size in bytes, or null when there is no track.
+     */
+    public static function commit_pending_audio(\stdClass $rec, \context_module $ctx, \stdClass $course): ?int {
+        global $DB;
+
+        if (empty($rec->audiokey)) {
+            return null;
+        }
+
+        $store = store_factory::for_recording($rec);
+        $chunked = !$store->supports_direct_upload();
+        $key = (string) $rec->audiokey;
+        // On the File API the upload id is the audio track's until the recording has a key.
+        $audiouploadid = ($chunked && empty($rec->storagekey) && !empty($rec->uploadid)) ? (string) $rec->uploadid : '';
+
+        $size = null;
+        try {
+            if ($chunked) {
+                $size = $store->size($key);
+                if ($size === null && $audiouploadid !== '') {
+                    $size = $store->commit_upload(self::ref($rec, $ctx, $course, media_ref::KIND_AUDIO, $key), $audiouploadid);
+                }
+            } else {
+                $size = $store->commit_upload(self::ref($rec, $ctx, $course, media_ref::KIND_AUDIO, $key));
+            }
+        } catch (\core\antivirus\scanner_exception $e) {
+            $size = null;
+        }
+
+        $declared = (int) ($rec->audiobytes ?? 0);
+        $whole = $declared <= 0 || $size === $declared;
+        if ($size !== null && $whole && $size <= self::max_media_bytes($course)) {
+            if ($audiouploadid !== '') {
+                $rec->uploadid = null;
+                $DB->set_field('presenterai_recording', 'uploadid', null, ['id' => $rec->id]);
+            }
+            return $size;
+        }
+
+        // Delete while the row still names the key, which fs_store needs.
+        if ($audiouploadid !== '') {
+            $store->abort_upload($audiouploadid);
+        }
+        if (!self::key_in_use_elsewhere((string) $rec->backend, $key, (int) $rec->id)) {
+            $store->delete($key);
+        }
+        $rec->audiokey = null;
+        if ($audiouploadid !== '') {
+            $rec->uploadid = null;
+        }
+        $rec->timemodified = time();
+        $DB->update_record('presenterai_recording', (object) [
+            'id' => $rec->id,
+            'audiokey' => null,
+            'uploadid' => $rec->uploadid,
+            'timemodified' => $rec->timemodified,
+        ]);
+
+        return null;
+    }
+
+    /**
+     * Whether this attempt may carry a separate audio track: a camera recording on a camera activity.
+     *
+     * @param \stdClass $rec The recording row.
+     * @param \stdClass $instance The presenterai row.
+     * @return bool
+     */
+    public static function audio_wanted(\stdClass $rec, \stdClass $instance): bool {
+        return (string) ($instance->mode ?? 'video') === 'video'
+            && (string) ($rec->mode ?? 'video') === 'video';
+    }
+
+    /**
+     * Whether this attempt may carry a frame contact sheet at all.
+     *
+     * A camera recording on a camera activity with video vision on, on a
+     * site whose scoring isn't Moodle core AI (D26). The
+     * learner's opt out is not checked here, because it is only known at
+     * finalize; the browser doesn't sample or send frames when it is ticked,
+     * and finalize deletes any that arrived anyway (D24).
+     *
+     * @param \stdClass $rec The recording row.
+     * @param \stdClass $instance The presenterai row.
+     * @return bool
+     */
+    public static function frames_wanted(\stdClass $rec, \stdClass $instance): bool {
+        // The core AI route (D26) makes takes_frames() say no, so a frame
+        // sheet is refused there at start_upload, before a byte is sent.
+        return \mod_presenterai\local\vision\visual_pipeline::takes_frames($instance)
+            && (string) ($rec->mode ?? 'video') === 'video';
+    }
+
+    /**
      * Confirm the recording arrived and make the attempt count.
      *
      * Idempotent. A client whose finalize response was lost retries it, and
@@ -599,6 +873,8 @@ final class recording_manager {
      * @param bool|null $transitioned Set to true only when this call moved the row out of
      *                                uploading, so the caller fires the submitted event once
      *                                even when two requests finalize the same row at once.
+     * @param bool $visualoptout Whether the learner ticked the body language opt out (D24).
+     *                           Honoured only when the activity offers it.
      * @return \stdClass The updated row.
      */
     public static function finalize(
@@ -610,7 +886,8 @@ final class recording_manager {
         int $durationseconds,
         string $timeline,
         ?string $token = null,
-        ?bool &$transitioned = null
+        ?bool &$transitioned = null,
+        bool $visualoptout = false
     ): \stdClass {
         $transitioned = false;
         if (self::finalized_already($rec)) {
@@ -620,7 +897,18 @@ final class recording_manager {
         return self::with_attempt_lock(
             (int) $instance->id,
             (int) $rec->userid,
-            function () use ($rec, $instance, $course, $ctx, $topicid, $durationseconds, $timeline, $token, &$transitioned) {
+            function () use (
+                $rec,
+                $instance,
+                $course,
+                $ctx,
+                $topicid,
+                $durationseconds,
+                $timeline,
+                $token,
+                &$transitioned,
+                $visualoptout
+            ) {
                 return self::finalize_locked(
                     $rec,
                     $instance,
@@ -630,7 +918,8 @@ final class recording_manager {
                     $durationseconds,
                     $timeline,
                     $token,
-                    $transitioned
+                    $transitioned,
+                    $visualoptout
                 );
             }
         );
@@ -648,6 +937,7 @@ final class recording_manager {
      * @param string $timeline The slide-advance timeline as JSON, or empty.
      * @param string|null $token The page's token, or null for a server-side caller.
      * @param bool|null $transitioned Set to true when this call made the row uploaded.
+     * @param bool $visualoptout Whether the learner ticked the body language opt out (D24).
      * @return \stdClass The updated row.
      */
     private static function finalize_locked(
@@ -659,7 +949,8 @@ final class recording_manager {
         int $durationseconds,
         string $timeline,
         ?string $token,
-        ?bool &$transitioned
+        ?bool &$transitioned,
+        bool $visualoptout = false
     ): \stdClass {
         global $DB;
 
@@ -674,6 +965,20 @@ final class recording_manager {
         }
 
         self::commit_pending_deck($rec, $ctx, $course);
+
+        // D24. The opt out is honoured only where the activity offers it, and
+        // only for an attempt that could have had frames at all. Frames that
+        // arrived anyway (an old page, a crafted request) are deleted here,
+        // before the attempt counts, so nothing can ever read them.
+        $optedout = $visualoptout && !empty($instance->allowvisualoptout) && self::frames_wanted($rec, $instance);
+        if ($optedout || !self::frames_wanted($rec, $instance)) {
+            // An opted out attempt, or one whose frames nothing will analyze
+            // (the site moved to core AI after the page loaded), keeps none.
+            self::discard_frames($rec);
+        } else {
+            self::commit_pending_frames($rec, $ctx, $course);
+        }
+        self::commit_pending_audio($rec, $ctx, $course);
 
         $store = store_factory::for_recording($rec);
         $key = (string) $rec->storagekey;
@@ -750,13 +1055,42 @@ final class recording_manager {
             'status' => self::STATUS_UPLOADED,
             'uploadid' => null,
             'clienttoken' => null,
+            'visualoptout' => $optedout ? 1 : 0,
             'timemodified' => $now,
         ]);
         $transitioned = true;
 
-        // Phase 3: queue \mod_presenterai\task\score_recording here.
+        // Scored in an adhoc task, never in this web request (plan section 5).
+        // With no AI set up the attempt stays uploaded and is graded by hand.
+        if (\mod_presenterai\local\ai\route_resolver::ai_ready()) {
+            \mod_presenterai\task\score_recording::queue((int) $rec->id);
+        }
 
         return $DB->get_record('presenterai_recording', ['id' => $rec->id], '*', MUST_EXIST);
+    }
+
+    /**
+     * Delete an attempt's frame sheet and forget its key, for an opted out attempt.
+     *
+     * Called from finalize, when the recording has a key, so the upload id is
+     * the recording's and is left alone. The object goes first, while the row
+     * still names it, because fs_store finds a file only through its row.
+     *
+     * @param \stdClass $rec The recording row. Updated in place as well as in the database.
+     * @return void
+     */
+    private static function discard_frames(\stdClass $rec): void {
+        global $DB;
+
+        $key = (string) ($rec->frameskey ?? '');
+        if ($key === '') {
+            return;
+        }
+        if (!self::key_in_use_elsewhere((string) $rec->backend, $key, (int) $rec->id)) {
+            store_factory::for_recording($rec)->delete($key);
+        }
+        $rec->frameskey = null;
+        $DB->set_field('presenterai_recording', 'frameskey', null, ['id' => $rec->id]);
     }
 
     /**
@@ -841,7 +1175,8 @@ final class recording_manager {
      * only through the row that names its key: clear the row first and the
      * file can never be named again, by this or anything else. If the
      * recording itself cannot be deleted nothing is written, so the next run
-     * tries again. The deck and the frame sheet are deleted best effort.
+     * tries again. The deck, the frame sheet and the audio track are deleted
+     * best effort.
      *
      * Status is never changed (D8). The score, the feedback and the transcript
      * survive, and so does the attempt's place in the grade and the cap.
@@ -872,7 +1207,7 @@ final class recording_manager {
         if ($storagekey !== '' && !$shared && !$store->delete($storagekey)) {
             return false;
         }
-        foreach (['deckkey', 'frameskey'] as $column) {
+        foreach (array_diff(self::MEDIA_COLUMNS, ['storagekey']) as $column) {
             $key = (string) ($rec->$column ?? '');
             if ($key !== '' && !self::key_in_use_elsewhere($backend, $key, $recid)) {
                 $store->delete($key);
@@ -888,6 +1223,7 @@ final class recording_manager {
             'storagekey' => null,
             'deckkey' => null,
             'frameskey' => null,
+            'audiokey' => null,
             'uploadid' => null,
             'mediadeletedat' => $now,
             'mediagonereason' => $reason,
@@ -929,15 +1265,15 @@ final class recording_manager {
         $rs = $DB->get_recordset_select(
             'presenterai_recording',
             'presenteraiid = :presenteraiid AND (storagekey IS NOT NULL OR deckkey IS NOT NULL
-                OR frameskey IS NOT NULL OR uploadid IS NOT NULL)',
+                OR frameskey IS NOT NULL OR audiokey IS NOT NULL OR uploadid IS NOT NULL)',
             ['presenteraiid' => $presenteraiid],
             'id',
-            'id, backend, storagekey, deckkey, frameskey, uploadid'
+            'id, backend, ' . implode(', ', self::MEDIA_COLUMNS) . ', uploadid'
         );
         $orphans = [];
         foreach ($rs as $rec) {
             $keys = [];
-            foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
+            foreach (self::MEDIA_COLUMNS as $column) {
                 $key = (string) ($rec->$column ?? '');
                 // Every row of this activity is about to go, so only a row of
                 // another activity (a restored copy) can still need the object.
@@ -1058,8 +1394,9 @@ final class recording_manager {
 
         return $DB->record_exists_select(
             'presenterai_recording',
-            "backend = :sharedbackend AND (storagekey = :sk1 OR deckkey = :sk2 OR frameskey = :sk3) AND {$exclusion}",
-            ['sharedbackend' => $backend, 'sk1' => $key, 'sk2' => $key, 'sk3' => $key] + $params
+            "backend = :sharedbackend AND (storagekey = :sk1 OR deckkey = :sk2 OR frameskey = :sk3 OR audiokey = :sk4)
+                AND {$exclusion}",
+            ['sharedbackend' => $backend, 'sk1' => $key, 'sk2' => $key, 'sk3' => $key, 'sk4' => $key] + $params
         );
     }
 
@@ -1135,7 +1472,7 @@ final class recording_manager {
     private static function abandon(\stdClass $rec, store_interface $store): void {
         global $DB;
 
-        foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
+        foreach (self::MEDIA_COLUMNS as $column) {
             $key = (string) ($rec->$column ?? '');
             if ($key !== '' && !self::key_in_use_elsewhere((string) $rec->backend, $key, (int) $rec->id)) {
                 $store->delete($key);
@@ -1149,6 +1486,7 @@ final class recording_manager {
             'storagekey' => null,
             'deckkey' => null,
             'frameskey' => null,
+            'audiokey' => null,
             'uploadid' => null,
             'status' => self::STATUS_ABANDONED,
             'timemodified' => time(),

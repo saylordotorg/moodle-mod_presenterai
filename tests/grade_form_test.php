@@ -232,4 +232,34 @@ final class grade_form_test extends \advanced_testcase {
         $this->assertSame(['', '0', '1', '2', '3', '4'], $values[1]);
         $this->assertMatchesRegularExpression('/<select[^>]*name="score\[1\]"[^>]*data-criterion="1"/', $html);
     }
+
+    /**
+     * A feedback only criterion is labeled and left out of the live total's inputs (D23).
+     *
+     * @return void
+     */
+    public function test_feedback_only_criterion(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $criteria = $this->criteria();
+        $criteria[0]['counts'] = true;
+        $criteria[] = ['name' => 'Body Language & Gestures', 'description' => 'Hands.', 'max_score' => 5, 'visual' => true,
+            'counts' => false];
+        $form = new grade_form(new \moodle_url('/mod/presenterai/grade.php'), [
+            'cmid' => 3,
+            'recordingid' => 9,
+            'criteria' => $criteria,
+            'outcomes' => [],
+        ]);
+        $html = $form->render();
+
+        $this->assertMatchesRegularExpression('/<select[^>]*name="score\[0\]"[^>]*data-counts="1"/', $html);
+        $this->assertMatchesRegularExpression(
+            '/<select[^>]*name="score\[1\]"[^>]*data-counts="1"/',
+            $html,
+            'An absent flag counts.'
+        );
+        $this->assertMatchesRegularExpression('/<select[^>]*name="score\[2\]"[^>]*data-counts="0"/', $html);
+        $this->assertSame(1, substr_count($html, get_string('grade_feedbackonly', 'mod_presenterai')));
+    }
 }

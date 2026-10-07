@@ -23,6 +23,7 @@ use mod_presenterai\local\recording_manager;
 use mod_presenterai\local\retention;
 use mod_presenterai\local\storage\store_factory;
 use mod_presenterai\local\topic_manager;
+use mod_presenterai\local\vision\visual_pipeline;
 
 /**
  * The learner's page for one activity: topics, policy, recorder and attempts.
@@ -178,11 +179,18 @@ final class view_page implements \renderable, \templatable {
     private function recorder(): array {
         $isaudio = (string) $this->instance->mode === 'audio';
         $min = max(0, (int) $this->instance->minseconds);
+        $frames = visual_pipeline::takes_frames($this->instance);
 
         return [
             'isaudio' => $isaudio,
             'isvideo' => !$isaudio,
             'slides' => !empty($this->instance->slidesenabled),
+            // DECISIONS.md Part 1: disclosure is not consent, and it is cheap.
+            // One sentence of static text wherever frames are taken.
+            'visualdisclosure' => $frames,
+            // D24: the opt out and the sentence saying it costs no marks, only
+            // where the activity offers it and frames would be taken.
+            'visualoptout' => $frames && !empty($this->instance->allowvisualoptout),
             'limits' => get_string('rec_limits', 'mod_presenterai', (object) [
                 'min' => attempt_row::duration($min),
                 'max' => attempt_row::duration($this->max_seconds()),
@@ -209,6 +217,18 @@ final class view_page implements \renderable, \templatable {
             'audiokbps' => (int) $quality['audiokbps'],
             'slides' => !empty($this->instance->slidesenabled) ? 1 : 0,
             'maxbytes' => recording_manager::max_media_bytes($this->course),
+            // Whether the recorder samples frames after Stop, and whether it
+            // reads the opt out box first. The server checks both again.
+            'videovision' => visual_pipeline::takes_frames($this->instance) ? 1 : 0,
+            'allowvisualoptout' => visual_pipeline::takes_frames($this->instance)
+                && !empty($this->instance->allowvisualoptout) ? 1 : 0,
+            // B7: warm the speech to text endpoint when recording starts.
+            'warmstt' => (int) get_config('mod_presenterai', 'sttwarm'),
+            // A second, audio only recorder beside a camera recording, so a
+            // long video still transcribes under a 25 MB limit. An audio only
+            // activity's recording is small already and isn't recorded twice.
+            'audiotrack' => (string) $this->instance->mode === 'audio' ? 0 : 1,
+            'audiotrackkbps' => \mod_presenterai\local\transcription_source::AUDIO_TRACK_KBPS,
         ];
     }
 

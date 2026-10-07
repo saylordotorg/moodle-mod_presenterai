@@ -32,13 +32,17 @@
  * attempt still uploading, which has no finished media and whose page cannot
  * come back to it on another course.
  *
- * Media follows plan section 4.7. On the File API the recording, deck and
- * frame sheet are annotated, so the bytes travel inside the .mbz. On S3 only
+ * Media follows plan section 4.7. On the File API the recording, deck,
+ * frame sheet and audio track are annotated, so the bytes travel inside the .mbz. On S3 only
  * the rows travel, carrying their keys, because the bytes are in a bucket the
  * backup cannot reach; the restore keeps the keys on the same site and drops
  * them elsewhere. No S3 setting, credential or other secret is ever written
  * here, and neither are clienttoken and uploadid, which belong to a page that
  * no longer exists.
+ *
+ * presenterai_gatelog is never backed up. It holds text the visual feedback
+ * gate refused to show a learner, kept seven days for staff to tune the gate,
+ * and a copy in a backup file would outlive that clock indefinitely.
  *
  * @package    mod_presenterai
  * @category   backup
@@ -59,7 +63,8 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         $presenterai = new backup_nested_element('presenterai', ['id'], [
             'name', 'intro', 'introformat', 'ptype', 'mode', 'minseconds', 'maxseconds',
             'maxattempts', 'storedattempts', 'rubricid', 'speakinglevel', 'slidesenabled',
-            'slidevision', 'videovision', 'retentiondays', 'grade', 'gradingmethod',
+            'slidevision', 'videovision', 'visualscored', 'allowvisualoptout', 'reviewbeforerelease', 'retentiondays', 'grade',
+            'gradingmethod',
             'completionsubmit', 'completionminscore', 'legacyassignid', 'timecreated', 'timemodified',
         ]);
 
@@ -74,12 +79,16 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
             'type', 'title', 'criteria', 'active', 'legacyrubricid', 'timecreated', 'timemodified',
         ]);
 
-        // Every recording column except id, presenteraiid (the parent), and the
-        // two that belong to an upload page: clienttoken and uploadid.
+        // Every recording column except id, presenteraiid (the parent), the two
+        // that belong to an upload page (clienttoken and uploadid), and the raw
+        // body language note (visualevidence and visualevidenceat). The note is
+        // kept for staff on the visualdatadays clock (D5), and a copy in a
+        // backup file would outlive that clock indefinitely, as the gate log
+        // would.
         $recordings = new backup_nested_element('recordings');
         $recording = new backup_nested_element('recording', ['id'], [
-            'userid', 'topicid', 'attemptnumber', 'mode', 'backend', 'storagekey', 'deckkey', 'frameskey',
-            'slidetimeline', 'visualevidence', 'visualevidenceat', 'durationseconds', 'sizebytes', 'status',
+            'userid', 'topicid', 'attemptnumber', 'mode', 'backend', 'storagekey', 'deckkey', 'frameskey', 'audiokey', 'audiobytes',
+            'slidetimeline', 'visualoptout', 'durationseconds', 'sizebytes', 'status',
             'transcript', 'scoreid', 'expiresat', 'mediadeletedat', 'mediagonereason', 'deletewarnedat',
             'legacyrecid', 'legacyscoreid', 'timecreated', 'timemodified',
         ]);
@@ -88,7 +97,8 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         $scores = new backup_nested_element('scores');
         $score = new backup_nested_element('score', ['id'], [
             'userid', 'rubricid', 'origin', 'scores', 'rawsum', 'rawmax', 'overallpct', 'scoreprovenance',
-            'feedback', 'tips', 'legacymeanscore', 'legacymeta', 'graderid', 'timecreated',
+            'feedback', 'tips', 'visualsummary', 'visualstatus', 'released', 'legacymeanscore', 'legacymeta', 'graderid',
+            'timecreated',
         ]);
 
         $presenterai->add_child($topics);
@@ -134,6 +144,7 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         $recording->annotate_files('mod_presenterai', 'recording', 'id');
         $recording->annotate_files('mod_presenterai', 'deck', 'id');
         $recording->annotate_files('mod_presenterai', 'frames', 'id');
+        $recording->annotate_files('mod_presenterai', 'audio', 'id');
 
         return $this->prepare_activity_structure($presenterai);
     }

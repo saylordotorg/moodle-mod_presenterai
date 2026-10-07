@@ -684,4 +684,150 @@ final class backup_restore_test extends \advanced_testcase {
         $this->assertSame($expected, \mod_presenterai\event\recording_deleted::get_objectid_mapping());
         $this->assertSame($expected, \mod_presenterai\event\recording_downloaded::get_objectid_mapping());
     }
+
+    /**
+     * The phase 3 fields come back, and the gate log never travels.
+     *
+     * @return void
+     */
+    public function test_phase3_fields_round_trip_and_gatelog_does_not(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        [$course, $instance, , $alice, , , , , $fsrec] = $this->course_with_learner_work();
+        $DB->update_record('presenterai', (object) [
+            'id' => $instance->id,
+            'videovision' => 1,
+            'visualscored' => 1,
+            'allowvisualoptout' => 1,
+            'reviewbeforerelease' => 1,
+        ]);
+        $DB->set_field('presenterai_recording', 'visualoptout', 1, ['id' => $fsrec->id]);
+        $DB->set_field('presenterai_recording', 'visualevidence', '{"note":"Hands below the desk."}', ['id' => $fsrec->id]);
+        $DB->set_field('presenterai_recording', 'visualevidenceat', time(), ['id' => $fsrec->id]);
+        $aiid = (int) $DB->get_field('presenterai_score', 'id', ['recordingid' => $fsrec->id, 'origin' => 'ai']);
+        $DB->update_record('presenterai_score', (object) [
+            'id' => $aiid,
+            'visualsummary' => 'Your hands stayed in view.',
+            'visualstatus' => 'summary',
+            'tips' => json_encode(['Pause between points.']),
+            'released' => 0,
+        ]);
+        $DB->insert_record('presenterai_gatelog', (object) [
+            'recordingid' => $fsrec->id,
+            'target' => 'summary',
+            'layer' => 2,
+            'gaterule' => 'deny_appearance',
+            'rejectedtext' => 'Text the gate refused.',
+            'timecreated' => time(),
+        ]);
+
+        $newcourseid = $this->backup_and_restore_with_users($course);
+
+        $restored = $DB->get_record('presenterai', ['course' => $newcourseid], '*', MUST_EXIST);
+        $this->assertSame(1, (int) $restored->visualscored);
+        $this->assertSame(1, (int) $restored->allowvisualoptout);
+        $this->assertSame(1, (int) $restored->reviewbeforerelease, 'D28: the review setting was lost.');
+        $newfs = $DB->get_record_select(
+            'presenterai_recording',
+            'presenteraiid = ? AND userid = ? AND backend = ?',
+            [$restored->id, $alice->id, 'fs'],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertSame(1, (int) $newfs->visualoptout);
+        $this->assertNull($newfs->visualevidence, 'The raw body language note outlived its clock in a backup.');
+        $this->assertSame(0, (int) $newfs->visualevidenceat);
+        $ai = $DB->get_record('presenterai_score', ['recordingid' => $newfs->id, 'origin' => 'ai'], '*', MUST_EXIST);
+        $this->assertSame('Your hands stayed in view.', $ai->visualsummary);
+        $this->assertSame('summary', $ai->visualstatus);
+        $this->assertSame(['Pause between points.'], json_decode($ai->tips, true));
+        $this->assertSame(0, (int) $ai->released, 'D28: a held score came back released.');
+        $teacher = $DB->get_record('presenterai_score', ['recordingid' => $newfs->id, 'origin' => 'teacher'], '*', MUST_EXIST);
+        $this->assertSame('', $teacher->visualstatus);
+        $this->assertSame(1, (int) $teacher->released);
+
+        $this->assertSame(1, $DB->count_records('presenterai_gatelog'), 'The gate log was copied by the restore.');
+        $this->assertFalse($DB->record_exists('presenterai_gatelog', ['recordingid' => $newfs->id]));
+    }
+
+    /**
+     * The separate audio track travels with the recording on the File API, under a fresh key,
+     * and a track whose file didn't arrive is forgotten.
+     *
+     * @return void
+     */
+    public function test_audio_track_round_trips(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        [$course, , $context, $alice, $bob, , , , $fsrec, , $missingrec] = $this->course_with_learner_work();
+        $DB->set_field('presenterai_recording', 'audiokey', 'original-audio-key.ogg', ['id' => $fsrec->id]);
+        $this->media_file($context, 'audio', (int) $fsrec->id, 'original-audio-key.ogg', 'OggS the audio track');
+        $DB->set_field('presenterai_recording', 'audiokey', 'no-file-for-this-audio.ogg', ['id' => $missingrec->id]);
+
+        $newcourseid = $this->backup_and_restore_with_users($course);
+
+        $restored = $DB->get_record('presenterai', ['course' => $newcourseid], '*', MUST_EXIST);
+        $newcm = get_coursemodule_from_instance('presenterai', $restored->id, $newcourseid, false, MUST_EXIST);
+        $newcontext = \context_module::instance($newcm->id);
+        $newfs = $DB->get_record_select(
+            'presenterai_recording',
+            'presenteraiid = ? AND userid = ? AND backend = ?',
+            [$restored->id, $alice->id, 'fs'],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertNotEmpty($newfs->audiokey);
+        $this->assertNotSame('original-audio-key.ogg', $newfs->audiokey, 'Two rows now name one fs filename.');
+        $this->assertStringEndsWith('.ogg', $newfs->audiokey);
+        $file = get_file_storage()->get_file($newcontext->id, 'mod_presenterai', 'audio', $newfs->id, '/', $newfs->audiokey);
+        $this->assertNotFalse($file, 'The audio track was left out of the backup.');
+        $this->assertSame('OggS the audio track', $file->get_content());
+
+        $bobrow = $DB->get_record(
+            'presenterai_recording',
+            ['presenteraiid' => $restored->id, 'userid' => $bob->id],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertNull($bobrow->audiokey);
+    }
+
+    /**
+     * Duplicating an activity that chose a course level rubric keeps that choice.
+     *
+     * The course rubric isn't in the activity's backup, so there is no
+     * mapping for it. Without the same site fallback the copy would resolve
+     * to the newest course rubric instead, a rubric the teacher didn't choose.
+     *
+     * @return void
+     */
+    public function test_duplicate_keeps_course_level_rubric(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/course/lib.php');
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $CFG->backup_file_logger_level = backup::LOG_NONE;
+
+        $course = $this->getDataGenerator()->create_course();
+        $coursectx = \context_course::instance($course->id);
+        $criteria = [['name' => 'Content', 'description' => 'What was said.', 'max_score' => 5, 'visual' => false]];
+        $chosen = \mod_presenterai\local\rubric_manager::create((int) $coursectx->id, 'speech', 'Chosen B', $criteria);
+        $this->waitForSecond();
+        $newer = \mod_presenterai\local\rubric_manager::create((int) $coursectx->id, 'speech', 'Newer A', $criteria);
+        $instance = $this->getDataGenerator()->create_module('presenterai', ['course' => $course->id, 'rubricid' => $chosen]);
+        $this->assertSame($chosen, (int) $DB->get_field('presenterai', 'rubricid', ['id' => $instance->id]));
+
+        $cm = get_coursemodule_from_id('presenterai', $instance->cmid, 0, false, MUST_EXIST);
+        $newcm = duplicate_module($course, $cm);
+
+        $copy = $DB->get_record('presenterai', ['id' => $newcm->instance], '*', MUST_EXIST);
+        $this->assertSame($chosen, (int) $copy->rubricid);
+        $resolved = \mod_presenterai\local\rubric_manager::resolve($copy, \context_module::instance($newcm->id));
+        $this->assertSame($chosen, (int) $resolved['rubricid']);
+        $this->assertNotSame($newer, (int) $resolved['rubricid']);
+    }
 }

@@ -32,6 +32,13 @@
     The visual evidence section renders only when showvisual is true. Its
     note is escaped text, labeled staff only.
 
+    Rescore is a POST form carrying the sesskey, shown only when canrescore
+    is true. When rescorenomedia is true a sentence says why there's no
+    button instead.
+
+    An attempt held for review (D28, inreview) gets a note above the form,
+    and when canrelease is true a Release POST form, also with the sesskey.
+
     Context variables required for this template:
     * rootid - The root element id, given to mod_presenterai/grading.
     * cmid - The course module id.
@@ -41,6 +48,8 @@
     * recorded - When the attempt was recorded.
     * length - Its length, m:ss.
     * status - Its status label.
+    * inreview - Whether its AI score and feedback are held for review.
+    * canrelease - Whether to offer the Release button.
     * mediaavailable - Whether the recording's media still exists.
     * watcharia - The accessible name of the player.
     * hastranscript - Whether there is a transcript.
@@ -50,6 +59,10 @@
     * hasvisual - Whether there is a note.
     * visualevidence - The note, escaped, with line breaks as HTML.
     * visualempty - The placeholder when there is no note.
+    * canrescore - Whether to offer "Rescore with AI".
+    * rescorenomedia - Whether to say the attempt can't be rescored because nothing is left to score from.
+    * rescoreurl - grade.php, the rescore form's action.
+    * sesskey - The session key for the rescore form.
     * form - The rendered scoring form, HTML.
     * reporturl - The submissions report URL.
     * total - {label}: the total before any score is chosen.
@@ -63,7 +76,9 @@
         "attemptlabel": "Attempt 2",
         "recorded": "6/10/26, 14:00",
         "length": "6:12",
-        "status": "Submitted",
+        "status": "Awaiting review",
+        "inreview": true,
+        "canrelease": true,
         "mediaavailable": true,
         "watcharia": "Recording by Ada Lovelace, made on 6/10/26, 14:00",
         "hastranscript": true,
@@ -73,6 +88,10 @@
         "hasvisual": false,
         "visualevidence": "",
         "visualempty": "There is no visual evidence note for this attempt.",
+        "canrescore": true,
+        "rescorenomedia": false,
+        "rescoreurl": "https://example.com/mod/presenterai/grade.php",
+        "sesskey": "abc123",
         "form": "<form action=\"#\" method=\"post\"><p>The scoring form.</p></form>",
         "reporturl": "https://example.com/mod/presenterai/report.php?id=12",
         "total": {"label": "Total: no scores chosen yet"}
@@ -115,6 +134,33 @@
             {{/showvisual}}
         </div>
         <div class="mod-presenterai-grade-scoring">
+            {{#inreview}}
+            <div class="mod-presenterai-grade-review alert alert-info mb-3" data-region="review">
+                <p class="mb-2">{{#str}}grade_inreview_note, mod_presenterai{{/str}}</p>
+                {{#canrelease}}
+                <form class="mod-presenterai-grade-release" action="{{rescoreurl}}" method="post">
+                    <input type="hidden" name="id" value="{{cmid}}">
+                    <input type="hidden" name="recordingid" value="{{recordingid}}">
+                    <input type="hidden" name="action" value="release">
+                    <input type="hidden" name="sesskey" value="{{sesskey}}">
+                    <button type="submit" class="btn btn-primary">{{#str}}grade_release, mod_presenterai{{/str}}</button>
+                </form>
+                {{/canrelease}}
+            </div>
+            {{/inreview}}
+            {{#canrescore}}
+            <form class="mod-presenterai-grade-rescore mb-3" action="{{rescoreurl}}" method="post">
+                <input type="hidden" name="id" value="{{cmid}}">
+                <input type="hidden" name="recordingid" value="{{recordingid}}">
+                <input type="hidden" name="action" value="rescore">
+                <input type="hidden" name="sesskey" value="{{sesskey}}">
+                <button type="submit" class="btn btn-secondary">{{#str}}rescore, mod_presenterai{{/str}}</button>
+                <p class="small mt-1 mb-0">{{#str}}rescore_help, mod_presenterai{{/str}}</p>
+            </form>
+            {{/canrescore}}
+            {{#rescorenomedia}}
+            <p class="mod-presenterai-grade-rescore-note">{{#str}}rescore_unavailable_nomedia, mod_presenterai{{/str}}</p>
+            {{/rescorenomedia}}
             {{#total}}
             <div class="mod-presenterai-grade-total alert alert-secondary" data-region="total" aria-live="polite">{{label}}</div>
             {{/total}}

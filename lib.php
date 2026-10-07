@@ -114,6 +114,14 @@ function presenterai_update_instance($data, $mform = null) {
     $instance = $DB->get_record('presenterai', ['id' => $data->instance], '*', MUST_EXIST);
     $instance->cmidnumber = $data->cmidnumber ?? '';
     presenterai_grade_item_update($instance);
+
+    // D28: with review switched off nobody is going to release what's held,
+    // so it all goes to the learners now, with the grade, completion and the
+    // message each would have had.
+    if (!empty($existing->reviewbeforerelease) && empty($instance->reviewbeforerelease)) {
+        \mod_presenterai\local\score_manager::release_all($instance, \context_module::instance($data->coursemodule));
+    }
+
     presenterai_update_grades($instance, 0, false);
 
     // Core resets stored completion only when the completion settings change.
@@ -159,6 +167,8 @@ function presenterai_delete_instance($id) {
     if (!empty($recordingids)) {
         [$insql, $inparams] = $DB->get_in_or_equal($recordingids, SQL_PARAMS_NAMED, 'rid');
         $DB->delete_records_select('presenterai_score', "recordingid {$insql}", $inparams);
+        // The strings the visual gate withheld are about these attempts' learners.
+        $DB->delete_records_select('presenterai_gatelog', "recordingid {$insql}", $inparams);
     }
 
     $DB->delete_records('presenterai_recording', ['presenteraiid' => $id]);
@@ -170,6 +180,15 @@ function presenterai_delete_instance($id) {
     $DB->set_field('presenterai_aiusage', 'recordingid', 0, ['presenteraiid' => $id]);
 
     \mod_presenterai\local\topic_manager::delete_all((int) $id);
+
+    // Rubrics defined in this activity's own context go with it. Course and
+    // category rubrics belong to their contexts and stay.
+    $cm = get_coursemodule_from_instance('presenterai', $id, 0, false, IGNORE_MISSING);
+    $modctx = $cm ? \context_module::instance($cm->id, IGNORE_MISSING) : false;
+    if ($modctx) {
+        $DB->delete_records('presenterai_rubric', ['contextid' => $modctx->id]);
+    }
+
     $DB->delete_records('presenterai', ['id' => $id]);
 
     return true;
@@ -223,6 +242,9 @@ function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $ar
 
     // The column on the recording row that must agree with the requested
     // filename, per file area. An area not listed here is not ours to serve.
+    // The audio area is deliberately absent: the separate audio track exists
+    // for transcription only, so nobody plays or downloads it from here, and
+    // a learner never gets a second copy of their recording through it.
     $keycolumns = [
         'recording' => 'storagekey',
         'deck' => 'deckkey',
@@ -388,7 +410,7 @@ function mod_presenterai_get_completion_active_rule_descriptions($cm) {
 }
 
 /**
- * Add the submissions report to the activity's settings navigation.
+ * Add the submissions report and the rubric editor to the activity's settings navigation.
  *
  * @param settings_navigation $settings The settings navigation.
  * @param navigation_node $presenterainode The activity's node.
@@ -407,6 +429,15 @@ function presenterai_extend_settings_navigation(settings_navigation $settings, n
             navigation_node::TYPE_SETTING,
             null,
             'mod_presenterai_submissions'
+        );
+    }
+    if (has_capability('mod/presenterai:managerubrics', $context)) {
+        $presenterainode->add(
+            get_string('rubrics', 'mod_presenterai'),
+            new moodle_url('/mod/presenterai/rubric.php', ['id' => $cm->id]),
+            navigation_node::TYPE_SETTING,
+            null,
+            'mod_presenterai_rubrics'
         );
     }
 }
