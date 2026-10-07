@@ -117,13 +117,14 @@ final class recording_manager_test extends \advanced_testcase {
      * Start an upload of one kind and send it in a single chunk, as upload.php would.
      *
      * @param \stdClass $rec The uploading row.
-     * @param string $kind media_ref::KIND_RECORDING or media_ref::KIND_DECK.
+     * @param string $kind media_ref::KIND_RECORDING, media_ref::KIND_DECK or media_ref::KIND_FRAMES.
      * @param string $content The bytes.
      * @param string|null $token The page's token, or null to act as a server-side caller.
      * @return array The upload target start_upload returned.
      */
     private function send(\stdClass $rec, string $kind, string $content, ?string $token = null): array {
-        $ext = $kind === media_ref::KIND_DECK ? 'pdf' : 'webm';
+        $exts = [media_ref::KIND_DECK => 'pdf', media_ref::KIND_FRAMES => 'jpg'];
+        $ext = $exts[$kind] ?? 'webm';
         $target = recording_manager::start_upload(
             $rec,
             $this->instance,
@@ -428,8 +429,15 @@ final class recording_manager_test extends \advanced_testcase {
             'A deck was accepted where slides are off.'
         );
 
+        // Frames on an activity without video vision (D17).
+        $this->assert_refused(
+            'error:framesdisabled',
+            fn() => $start('frames', 'jpg', 10),
+            'Frames were accepted where body language feedback is off.'
+        );
+
         $this->expectException(\invalid_parameter_exception::class);
-        $start('frames', 'jpg', 10);
+        $start('thumbnail', 'jpg', 10);
     }
 
     /**
@@ -1011,5 +1019,184 @@ final class recording_manager_test extends \advanced_testcase {
         // The unreachable bucket refuses the one delete that was attempted, so
         // it is queued; the shared key was never attempted.
         $this->assertSame([$own], $keys);
+    }
+
+    /**
+     * Turn video vision on for the test activity, and optionally the opt out.
+     *
+     * @param int $allowoptout 1 to let learners opt out (D24).
+     * @return void
+     */
+    private function enable_frames(int $allowoptout = 0): void {
+        global $DB;
+
+        $fields = ['videovision' => 1, 'mode' => 'video', 'allowvisualoptout' => $allowoptout];
+        $DB->update_record('presenterai', (object) (['id' => $this->instance->id] + $fields));
+        foreach ($fields as $name => $value) {
+            $this->instance->$name = $value;
+        }
+    }
+
+    /**
+     * Frames are refused for an audio activity or attempt, a wrong type, an oversized sheet, and after the recording.
+     *
+     * @return void
+     */
+    public function test_frames_are_refused_unless_wanted(): void {
+        global $DB;
+
+        $this->enable_frames();
+        $rec = $this->begin();
+        $start = fn(string $ext, int $size) => recording_manager::start_upload(
+            $rec,
+            $this->instance,
+            $this->course,
+            $this->context,
+            'frames',
+            $ext,
+            $size
+        );
+
+        $this->assert_refused('error:badext', fn() => $start('png', 10), 'A sheet of the wrong type was accepted.');
+        $this->assert_refused(
+            'error:uploadtoolarge',
+            fn() => $start('jpg', recording_manager::MAX_FRAMES_BYTES + 1),
+            'A sheet over 8 MB was offered an upload target.'
+        );
+
+        // An audio attempt on a video activity has no body to sample.
+        $DB->set_field('presenterai_recording', 'mode', 'audio', ['id' => $rec->id]);
+        $rec->mode = 'audio';
+        $this->assert_refused('error:framesdisabled', fn() => $start('jpg', 10), 'Frames were accepted for an audio attempt.');
+        $DB->set_field('presenterai_recording', 'mode', 'video', ['id' => $rec->id]);
+        $rec->mode = 'video';
+
+        // An audio activity, whatever its stale videovision says.
+        $this->instance->mode = 'audio';
+        $this->assert_refused('error:framesdisabled', fn() => $start('jpg', 10), 'Frames were accepted for an audio activity.');
+        $this->instance->mode = 'video';
+
+        // After the recording has a key the upload id is the recording's.
+        $this->send($rec, 'recording', 'video-bytes');
+        $this->assert_refused('error:framesdisabled', fn() => $start('jpg', 10), 'Frames were started after the recording.');
+    }
+
+    /**
+     * Deck, frames and recording share one upload id in order, and all three are stored.
+     *
+     * @return void
+     */
+    public function test_deck_frames_and_recording_all_commit(): void {
+        $this->enable_frames();
+        $rec = $this->begin();
+        $this->send($rec, 'deck', '%PDF-1.4 deck');
+        $this->send($rec, 'frames', "\xFF\xD8\xFF frames");
+        $this->assertNotEmpty($this->reload((int) $rec->id)->deckkey, 'Starting the frames lost the deck.');
+        $this->send($rec, 'recording', 'video-bytes');
+
+        $done = $this->finalize($rec);
+
+        $this->assertSame('uploaded', $done->status);
+        $this->assertSame(0, (int) $done->visualoptout);
+        $fs = get_file_storage();
+        $frames = $fs->get_file($this->context->id, 'mod_presenterai', 'frames', $done->id, '/', (string) $done->frameskey);
+        $this->assertNotFalse($frames, 'The frame sheet was not committed.');
+        $this->assertSame("\xFF\xD8\xFF frames", $frames->get_content());
+        $this->assertNotFalse(
+            $fs->get_file($this->context->id, 'mod_presenterai', 'deck', $done->id, '/', (string) $done->deckkey)
+        );
+        $this->assertNotFalse(
+            $fs->get_file($this->context->id, 'mod_presenterai', 'recording', $done->id, '/', (string) $done->storagekey)
+        );
+    }
+
+    /**
+     * A deck can't be started once frames have a key, because the upload id is theirs.
+     *
+     * @return void
+     */
+    public function test_deck_after_frames_is_refused(): void {
+        $this->enable_frames();
+        $rec = $this->begin();
+        $this->send($rec, 'frames', "\xFF\xD8\xFF frames");
+        $this->assert_refused(
+            'error:deckafterrecording',
+            fn() => recording_manager::start_upload($rec, $this->instance, $this->course, $this->context, 'deck', 'pdf', 10),
+            'A deck started after the frames would take over their upload id.'
+        );
+    }
+
+    /**
+     * Frames that never arrived are dropped without failing the attempt.
+     *
+     * @return void
+     */
+    public function test_missing_frames_never_fail_the_attempt(): void {
+        $this->enable_frames();
+        $rec = $this->begin();
+        recording_manager::start_upload($rec, $this->instance, $this->course, $this->context, 'frames', 'jpg', 100);
+        $this->assertNotEmpty($this->reload((int) $rec->id)->frameskey);
+
+        $this->send($rec, 'recording', 'video-bytes');
+        $this->assertEmpty($this->reload((int) $rec->id)->frameskey, 'A sheet that never arrived kept its key.');
+
+        $done = $this->finalize($rec);
+        $this->assertSame('uploaded', $done->status);
+        $this->assertEmpty($done->frameskey);
+    }
+
+    /**
+     * A row holding a frame sheet is not handed to another page.
+     *
+     * @return void
+     */
+    public function test_a_row_with_frames_is_not_resumed(): void {
+        $this->enable_frames();
+        $first = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->user->id);
+        $this->send($first['recording'], 'frames', "\xFF\xD8\xFF frames", $first['token']);
+
+        $second = recording_manager::begin($this->instance, $this->cm, $this->context, (int) $this->user->id);
+        $this->assertFalse($second['resumed'], 'A row with frames was handed to a second page.');
+    }
+
+    /**
+     * D24: an opted out finalize stores the flag and deletes frames that arrived anyway.
+     *
+     * @return void
+     */
+    public function test_optout_at_finalize_deletes_frames_and_stores_the_flag(): void {
+        $this->enable_frames(1);
+        $rec = $this->begin();
+        $this->send($rec, 'frames', "\xFF\xD8\xFF frames");
+        $this->send($rec, 'recording', 'video-bytes');
+        $key = (string) $this->reload((int) $rec->id)->frameskey;
+        $this->assertNotSame('', $key);
+
+        $done = recording_manager::finalize($rec, $this->instance, $this->course, $this->context, 0, 30, '', null, $moved, true);
+
+        $this->assertTrue($moved);
+        $this->assertSame(1, (int) $done->visualoptout);
+        $this->assertEmpty($done->frameskey, 'An opted out attempt kept its frames key.');
+        $this->assertFalse(
+            get_file_storage()->get_file($this->context->id, 'mod_presenterai', 'frames', $done->id, '/', $key),
+            'Frames from an opted out attempt are still stored.'
+        );
+    }
+
+    /**
+     * The opt out is honoured only where the activity offers it.
+     *
+     * @return void
+     */
+    public function test_optout_is_ignored_where_not_offered(): void {
+        $this->enable_frames(0);
+        $rec = $this->begin();
+        $this->send($rec, 'frames', "\xFF\xD8\xFF frames");
+        $this->send($rec, 'recording', 'video-bytes');
+
+        $done = recording_manager::finalize($rec, $this->instance, $this->course, $this->context, 0, 30, '', null, $moved, true);
+
+        $this->assertSame(0, (int) $done->visualoptout);
+        $this->assertNotEmpty($done->frameskey);
     }
 }

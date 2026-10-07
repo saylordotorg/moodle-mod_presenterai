@@ -333,11 +333,18 @@ class mod_presenterai_mod_form extends moodleform_mod {
     }
 
     /**
-     * The AI feedback section: presentation type, speaking level, rubric and slide vision.
+     * The AI feedback section: presentation type, speaking level, rubric,
+     * slide vision and body language feedback.
      *
      * The rubric choice lists active rubrics visible from where the activity
      * is being created or edited, so a teacher can't pick one from another
      * course; instance_manager::normalise() checks the choice again.
+     *
+     * Body language feedback is opt in per activity (D17) and forced off for
+     * audio. Scoring it is a second, separate opt in (D23), and so is letting
+     * a learner opt an attempt out (D24). Both are hidden unless video vision
+     * is on and the activity records a camera; instance_manager::normalise()
+     * forces them to 0 otherwise.
      *
      * @return void
      */
@@ -378,6 +385,23 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $mform->setDefault('slidevision', 0);
         $mform->addHelpButton('slidevision', 'slidevision', 'mod_presenterai');
         $mform->hideIf('slidevision', 'slidesenabled', 'notchecked');
+
+        $mform->addElement('advcheckbox', 'videovision', get_string('videovision', 'mod_presenterai'));
+        $mform->setDefault('videovision', 0);
+        $mform->addHelpButton('videovision', 'videovision', 'mod_presenterai');
+        $mform->hideIf('videovision', 'mode', 'eq', 'audio');
+
+        $mform->addElement('advcheckbox', 'visualscored', get_string('visualscored', 'mod_presenterai'));
+        $mform->setDefault('visualscored', 0);
+        $mform->addHelpButton('visualscored', 'visualscored', 'mod_presenterai');
+        $mform->hideIf('visualscored', 'videovision', 'notchecked');
+        $mform->hideIf('visualscored', 'mode', 'eq', 'audio');
+
+        $mform->addElement('advcheckbox', 'allowvisualoptout', get_string('allowvisualoptout', 'mod_presenterai'));
+        $mform->setDefault('allowvisualoptout', 0);
+        $mform->addHelpButton('allowvisualoptout', 'allowvisualoptout', 'mod_presenterai');
+        $mform->hideIf('allowvisualoptout', 'videovision', 'notchecked');
+        $mform->hideIf('allowvisualoptout', 'mode', 'eq', 'audio');
     }
 
     /**

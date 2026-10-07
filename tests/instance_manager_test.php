@@ -166,6 +166,34 @@ final class instance_manager_test extends \advanced_testcase {
     }
 
     /**
+     * Scoring body language and the opt out need frames: off with video vision off or for audio (D23, D24).
+     *
+     * @return void
+     */
+    public function test_visual_options_need_video_vision(): void {
+        $this->resetAfterTest();
+
+        $on = ['mode' => 'video', 'videovision' => 1, 'visualscored' => '1', 'allowvisualoptout' => 'yes'];
+        $data = instance_manager::normalise((object) $on, null);
+        $this->assertSame(1, $data->visualscored);
+        $this->assertSame(1, $data->allowvisualoptout);
+
+        $data = instance_manager::normalise((object) (['videovision' => 0] + $on), null);
+        $this->assertSame(0, $data->visualscored);
+        $this->assertSame(0, $data->allowvisualoptout);
+
+        $data = instance_manager::normalise((object) (['mode' => 'audio'] + $on), null);
+        $this->assertSame(0, $data->visualscored);
+        $this->assertSame(0, $data->allowvisualoptout);
+
+        // Video vision not in the write: the stored value decides.
+        $existing = (object) ['mode' => 'video', 'videovision' => 0, 'retentiondays' => -1];
+        $data = instance_manager::normalise((object) ['visualscored' => 1, 'allowvisualoptout' => 1], $existing);
+        $this->assertSame(0, $data->visualscored);
+        $this->assertSame(0, $data->allowvisualoptout);
+    }
+
+    /**
      * Fields absent from the write stay absent, so update_record() leaves them alone.
      *
      * @return void

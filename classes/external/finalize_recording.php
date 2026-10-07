@@ -34,6 +34,9 @@ use mod_presenterai\local\recording_manager;
  * The submitted event and the completion update follow only the call that
  * moves the attempt out of uploading, so a retried finalize never repeats them.
  *
+ * visualoptout is the learner's D24 choice. The server honours it only where
+ * the activity offers the opt out, and deletes any frame sheet that arrived.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -51,6 +54,12 @@ class finalize_recording extends external_api {
             'topicid' => new external_value(PARAM_INT, 'Chosen topic id, 0 for none', VALUE_DEFAULT, 0),
             'durationseconds' => new external_value(PARAM_INT, 'Recorded length in seconds', VALUE_DEFAULT, 0),
             'slidetimeline' => new external_value(PARAM_RAW, 'JSON slide-advance timeline', VALUE_DEFAULT, ''),
+            'visualoptout' => new external_value(
+                PARAM_INT,
+                '1 when the learner opted this attempt out of body language feedback',
+                VALUE_DEFAULT,
+                0
+            ),
         ]);
     }
 
@@ -62,6 +71,7 @@ class finalize_recording extends external_api {
      * @param int $topicid Topic id or 0.
      * @param int $durationseconds Recorded length.
      * @param string $slidetimeline JSON timeline or empty.
+     * @param int $visualoptout 1 when the learner ticked the body language opt out (D24).
      * @return array
      */
     public static function execute(
@@ -69,7 +79,8 @@ class finalize_recording extends external_api {
         string $attempttoken,
         int $topicid = 0,
         int $durationseconds = 0,
-        string $slidetimeline = ''
+        string $slidetimeline = '',
+        int $visualoptout = 0
     ): array {
         global $USER;
 
@@ -79,6 +90,7 @@ class finalize_recording extends external_api {
             'topicid' => $topicid,
             'durationseconds' => $durationseconds,
             'slidetimeline' => $slidetimeline,
+            'visualoptout' => $visualoptout,
         ]);
 
         [$rec, $instance, $course, $cm, $context] = recording_manager::load((int) $params['recordingid']);
@@ -98,7 +110,8 @@ class finalize_recording extends external_api {
             (int) $params['durationseconds'],
             (string) $params['slidetimeline'],
             (string) $params['attempttoken'],
-            $transitioned
+            $transitioned,
+            !empty($params['visualoptout'])
         );
 
         // Only the request that made the transition fires it. Two requests

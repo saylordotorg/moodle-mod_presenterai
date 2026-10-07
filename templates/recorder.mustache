@@ -26,22 +26,42 @@
     the learner starts. The recording and near-the-limit indicators carry
     words, not only a colour (design section 11, rule 9).
 
+    Where still frames are taken for body language feedback, one sentence of
+    static text says so before the learner records (DECISIONS.md Part 1). Where
+    the activity offers the D24 opt out, a checkbox follows, with the sentence
+    that says ticking it costs no marks directly under it and tied to it by
+    aria-describedby. mod_presenterai/recorder locks it while recording.
+
     Context variables required for this template:
     * isaudio - Audio only.
     * isvideo - Camera and microphone.
     * slides - Whether a slide deck may be added.
     * limits - The length and size limits sentence.
+    * visualdisclosure - Whether still frames are taken, so the disclosure shows.
+    * visualoptout - Whether to offer the body language opt out.
 
     Example context (json):
     {
         "isaudio": false,
         "isvideo": true,
         "slides": true,
-        "limits": "Record for between 5:00 and 7:00. The largest recording this site accepts is 150 MB."
+        "limits": "Record for between 5:00 and 7:00. The largest recording this site accepts is 150 MB.",
+        "visualdisclosure": true,
+        "visualoptout": true
     }
 }}
 <div class="mod-presenterai-recorder card p-3 mb-4" data-region="recorder">
     <p class="mod-presenterai-limits small mb-2">{{limits}}</p>
+    {{#visualdisclosure}}
+    <p class="mod-presenterai-visual-disclosure small mb-2" data-region="visual-disclosure">{{#str}}visual_disclosure, mod_presenterai{{/str}}</p>
+    {{/visualdisclosure}}
+    {{#visualoptout}}
+    <div class="mod-presenterai-visualoptout form-check mb-3">
+        <input type="checkbox" class="form-check-input" id="mod-presenterai-visualoptout-{{uniqid}}" data-region="visualoptout" aria-describedby="mod-presenterai-visualoptout-note-{{uniqid}}">
+        <label class="form-check-label" for="mod-presenterai-visualoptout-{{uniqid}}">{{#str}}visualoptout_label, mod_presenterai{{/str}}</label>
+        <p class="mod-presenterai-visualoptout-note small mb-0" id="mod-presenterai-visualoptout-note-{{uniqid}}">{{#str}}visualoptout_note, mod_presenterai{{/str}}</p>
+    </div>
+    {{/visualoptout}}
     {{#slides}}
     <div class="mod-presenterai-deck mb-3">
         <label for="mod-presenterai-deck-{{uniqid}}" class="font-weight-bold d-block">{{#str}}deck_label, mod_presenterai{{/str}}</label>

@@ -137,3 +137,22 @@ video.mod-presenterai-play-media {
 .mod-presenterai-feedback summary {
     cursor: pointer;
 }
+
+/* Body language feedback (phase 3). Words carry every state; colour only supports them. */
+.mod-presenterai-visualoptout-note {
+    margin-left: 0;
+}
+
+.mod-presenterai-visual-feedback {
+    border-left: 3px solid #8f959e;
+    padding-left: 0.75rem;
+}
+
+.mod-presenterai-notcounted {
+    white-space: normal;
+}
+
+.mod-presenterai-gatelog-text {
+    max-width: 40em;
+    overflow-wrap: anywhere;
+}

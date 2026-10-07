@@ -63,6 +63,9 @@ const readConfig = (root) => {
         slides: d.slides === '1',
         maxbytes: int(d.maxbytes),
         topicid: int(d.topicid),
+        videovision: int(d.videovision),
+        allowvisualoptout: int(d.allowvisualoptout),
+        warmstt: int(d.warmstt),
     };
 };
 

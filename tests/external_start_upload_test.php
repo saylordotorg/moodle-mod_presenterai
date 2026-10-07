@@ -148,4 +148,53 @@ final class external_start_upload_test extends \advanced_testcase {
         $this->expectException(\required_capability_exception::class);
         start_upload::execute($begin['recordingid'], 'recording', 'webm', 10, $begin['attempttoken']);
     }
+
+    /**
+     * Frames are refused where the activity takes none: video vision off, or an audio activity (D17).
+     *
+     * @return void
+     */
+    public function test_frames_refused_without_video_vision_or_for_audio(): void {
+        global $DB;
+
+        $this->setUser($this->alice);
+        $begin = begin_attempt::execute((int) $this->instance->cmid);
+        try {
+            start_upload::execute($begin['recordingid'], 'frames', 'jpg', 2048, $begin['attempttoken']);
+            $this->fail('Frames were accepted on an activity with video vision off.');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:framesdisabled', $e->errorcode);
+        }
+
+        $DB->update_record('presenterai', (object) ['id' => $this->instance->id, 'videovision' => 1, 'mode' => 'audio']);
+        try {
+            start_upload::execute($begin['recordingid'], 'frames', 'jpg', 2048, $begin['attempttoken']);
+            $this->fail('Frames were accepted on an audio activity.');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:framesdisabled', $e->errorcode);
+        }
+        $this->assertEmpty($DB->get_field('presenterai_recording', 'frameskey', ['id' => $begin['recordingid']]));
+    }
+
+    /**
+     * With video vision on a camera activity the frames get a target and the key stays on the server.
+     *
+     * @return void
+     */
+    public function test_frames_get_a_target_when_wanted(): void {
+        global $DB;
+
+        $DB->update_record('presenterai', (object) ['id' => $this->instance->id, 'videovision' => 1, 'mode' => 'video']);
+        $this->setUser($this->alice);
+        $begin = begin_attempt::execute((int) $this->instance->cmid);
+        $result = external_api::clean_returnvalue(
+            start_upload::execute_returns(),
+            start_upload::execute($begin['recordingid'], 'frames', 'jpg', 2048, $begin['attempttoken'])
+        );
+
+        $this->assertSame('POST', $result['method']);
+        $key = (string) $DB->get_field('presenterai_recording', 'frameskey', ['id' => $begin['recordingid']]);
+        $this->assertStringEndsWith('.jpg', $key);
+        $this->assertStringNotContainsString($key, $result['url']);
+    }
 }

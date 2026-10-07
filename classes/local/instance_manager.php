@@ -113,6 +113,17 @@ final class instance_manager {
         } else if (property_exists($data, 'videovision')) {
             $data->videovision = empty($data->videovision) ? 0 : 1;
         }
+        // Scoring body language (D23) and the learner's opt out (D24) mean
+        // nothing without frames, so a stale 1 does not survive video vision
+        // or the camera being switched off.
+        $videovision = $data->videovision ?? ($existing->videovision ?? 0);
+        foreach (['visualscored', 'allowvisualoptout'] as $field) {
+            if ($mode === 'audio' || empty($videovision)) {
+                $data->$field = 0;
+            } else if (property_exists($data, $field)) {
+                $data->$field = empty($data->$field) ? 0 : 1;
+            }
+        }
 
         // The presentation type and speaking level steer the scoring prompt.
         // An unknown value falls back rather than reaching the prompt.

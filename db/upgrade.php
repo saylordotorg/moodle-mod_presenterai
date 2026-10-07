@@ -97,9 +97,7 @@ function xmldb_presenterai_upgrade($oldversion) {
     }
 
     if ($oldversion < 2026100700) {
-        // Phase 3: D23 visualscored and D24 allowvisualoptout on the activity,
-        // the learner's opt out on the attempt, the gated learner summary and
-        // its status on the score, and the staff only gate rejection log.
+        // Phase 3: D23 scoring switch and D24 opt out on the activity.
         $table = new xmldb_table('presenterai');
         $fields = [
             new xmldb_field('visualscored', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'videovision'),
@@ -111,12 +109,14 @@ function xmldb_presenterai_upgrade($oldversion) {
             }
         }
 
+        // D24: the learner's per attempt opt out.
         $table = new xmldb_table('presenterai_recording');
         $field = new xmldb_field('visualoptout', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'visualevidenceat');
         if (!$dbman->field_exists($table, $field)) {
             $dbman->add_field($table, $field);
         }
 
+        // D21: the gated summary and which visual section the learner sees.
         $table = new xmldb_table('presenterai_score');
         $fields = [
             new xmldb_field('visualsummary', XMLDB_TYPE_TEXT, null, null, null, null, null, 'tips'),
@@ -128,6 +128,7 @@ function xmldb_presenterai_upgrade($oldversion) {
             }
         }
 
+        // Design 5.3: the staff only log of rejected feedback strings.
         $table = new xmldb_table('presenterai_gatelog');
         if (!$dbman->table_exists($table)) {
             $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);

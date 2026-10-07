@@ -159,6 +159,8 @@ function presenterai_delete_instance($id) {
     if (!empty($recordingids)) {
         [$insql, $inparams] = $DB->get_in_or_equal($recordingids, SQL_PARAMS_NAMED, 'rid');
         $DB->delete_records_select('presenterai_score', "recordingid {$insql}", $inparams);
+        // The strings the visual gate withheld are about these attempts' learners.
+        $DB->delete_records_select('presenterai_gatelog', "recordingid {$insql}", $inparams);
     }
 
     $DB->delete_records('presenterai_recording', ['presenteraiid' => $id]);
