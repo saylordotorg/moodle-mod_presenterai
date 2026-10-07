@@ -38,7 +38,10 @@ use mod_presenterai\local\storage\store_factory;
  *
  * The export follows design 5.4. The raw visualevidence note is exported with
  * a sentence saying what it is, because a subject access request is exactly
- * when a person is entitled to read what a model wrote about their body.
+ * when a person is entitled to read what a model wrote about their body. The
+ * learner facing visualsummary goes with each score, and the strings the
+ * visual gate withheld (presenterai_gatelog) go with their attempt while the
+ * seven day log still has them.
  *
  * Deletion goes through media_purger, so stored objects are deleted through
  * the store BEFORE the rows that name them, on both backends. SOLA's provider
@@ -73,8 +76,8 @@ class provider implements
     public static function get_metadata(collection $collection): collection {
         $recordingfields = [
             'userid', 'topicid', 'attemptnumber', 'mode', 'durationseconds', 'sizebytes', 'status', 'slidetimeline',
-            'transcript', 'visualevidence', 'visualevidenceat', 'expiresat', 'mediadeletedat', 'mediagonereason', 'deletewarnedat',
-            'timecreated',
+            'transcript', 'visualevidence', 'visualevidenceat', 'visualoptout', 'expiresat', 'mediadeletedat', 'mediagonereason',
+            'deletewarnedat', 'timecreated',
         ];
         $collection->add_database_table(
             'presenterai_recording',
@@ -83,8 +86,8 @@ class provider implements
         );
 
         $scorefields = [
-            'userid', 'origin', 'scores', 'rawsum', 'rawmax', 'overallpct', 'feedback', 'tips', 'graderid', 'legacymeanscore',
-            'legacymeta', 'timecreated',
+            'userid', 'origin', 'scores', 'rawsum', 'rawmax', 'overallpct', 'feedback', 'tips', 'visualsummary', 'visualstatus',
+            'graderid', 'legacymeanscore', 'legacymeta', 'timecreated',
         ];
         $collection->add_database_table(
             'presenterai_score',
@@ -102,6 +105,15 @@ class provider implements
             'privacy:metadata:presenterai_aiusage'
         );
 
+        // Design 5.3: the feedback strings the visual gate rejected, kept seven
+        // days for staff tuning the word lists. Linked to the attempt, so to
+        // the learner, through recordingid.
+        $collection->add_database_table(
+            'presenterai_gatelog',
+            self::field_strings('presenterai_gatelog', ['recordingid', 'target', 'layer', 'rule', 'rejectedtext', 'timecreated']),
+            'privacy:metadata:presenterai_gatelog'
+        );
+
         $collection->add_subsystem_link('core_files', [], 'privacy:metadata:core_files');
         $collection->add_subsystem_link('core_message', [], 'privacy:metadata:core_message');
         $collection->add_subsystem_link('core_grades', [], 'privacy:metadata:core_grades');
@@ -111,6 +123,15 @@ class provider implements
             'deck' => 'privacy:metadata:s3:deck',
             'frames' => 'privacy:metadata:s3:frames',
         ], 'privacy:metadata:s3');
+
+        // The AI services transcription, scoring and body language feedback
+        // call. What goes depends on the site's route; this declares the most.
+        $collection->add_external_location_link('aiservice', [
+            'audio' => 'privacy:metadata:aiservice:audio',
+            'transcript' => 'privacy:metadata:aiservice:transcript',
+            'frames' => 'privacy:metadata:aiservice:frames',
+            'feedback' => 'privacy:metadata:aiservice:feedback',
+        ], 'privacy:metadata:aiservice');
 
         return $collection;
     }
@@ -339,8 +360,10 @@ class provider implements
                 ? get_string('privacy:export:visualevidence_note', 'mod_presenterai')
                 : null,
             'visualevidenceat' => (int) ($rec->visualevidenceat ?? 0) > 0 ? transform::datetime($rec->visualevidenceat) : null,
+            'visualoptout' => transform::yesno(!empty($rec->visualoptout)),
             'timecreated' => transform::datetime($rec->timecreated),
             'scores' => self::scores_for($rec),
+            'rejectedfeedback' => self::gatelog_for($rec),
         ];
         if ($hasmedia && (string) $rec->backend === store_factory::BACKEND_S3) {
             $data['media_note'] = get_string('privacy:export:s3media', 'mod_presenterai', display_size((int) $rec->sizebytes));
@@ -383,6 +406,8 @@ class provider implements
                 'overallpct' => $score->overallpct === null ? null : (float) $score->overallpct,
                 'feedback' => $score->feedback,
                 'tips' => $score->tips,
+                'visualsummary' => $score->visualsummary ?? null,
+                'visualstatus' => (string) ($score->visualstatus ?? ''),
                 'legacymeanscore' => $legacy ? (int) $score->legacymeanscore : null,
                 'legacymeta' => $legacymeta,
                 'timecreated' => transform::datetime($score->timecreated),
@@ -393,10 +418,36 @@ class provider implements
     }
 
     /**
+     * The feedback strings the visual gate withheld from this attempt, while the log still holds them.
+     *
+     * They are about the learner, so a subject access request returns them,
+     * with the rule that withheld each one.
+     *
+     * @param \stdClass $rec The presenterai_recording row.
+     * @return array List of exportable gatelog objects.
+     */
+    private static function gatelog_for(\stdClass $rec): array {
+        global $DB;
+
+        $out = [];
+        foreach ($DB->get_records('presenterai_gatelog', ['recordingid' => $rec->id], 'timecreated ASC, id ASC') as $row) {
+            $out[] = (object) [
+                'target' => $row->target,
+                'layer' => (int) $row->layer,
+                'rule' => $row->rule,
+                'rejectedtext' => $row->rejectedtext,
+                'timecreated' => transform::datetime($row->timecreated),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
      * The per-criterion marks of one score row, decoded for reading.
      *
      * @param string|null $json The scores column.
-     * @return array List of {name, score, max_score, feedback, assessed}.
+     * @return array List of {name, score, max_score, feedback, assessed, visual, counts}.
      */
     private static function criteria(?string $json): array {
         $decoded = json_decode((string) $json, true);
@@ -415,6 +466,8 @@ class provider implements
                 'max_score' => $criterion['max_score'] ?? null,
                 'feedback' => $criterion['feedback'] ?? null,
                 'assessed' => transform::yesno(!array_key_exists('assessed', $criterion) || !empty($criterion['assessed'])),
+                'visual' => transform::yesno(!empty($criterion['visual'])),
+                'counts' => transform::yesno(!array_key_exists('counts', $criterion) || $criterion['counts'] !== false),
             ];
         }
 

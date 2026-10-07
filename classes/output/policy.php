@@ -18,6 +18,7 @@ namespace mod_presenterai\output;
 
 use mod_presenterai\local\access;
 use mod_presenterai\local\retention;
+use mod_presenterai\local\vision\visual_pipeline;
 
 /**
  * What a learner is told before they record: the policy callout and the privacy paragraph.
@@ -40,7 +41,7 @@ use mod_presenterai\local\retention;
  */
 final class policy {
     /** @var int What privacy_visualnote promises when the site has not set visualdatadays (design 9.7). */
-    public const DEFAULT_VISUAL_DATA_DAYS = 30;
+    public const DEFAULT_VISUAL_DATA_DAYS = visual_pipeline::DEFAULT_VISUAL_DATA_DAYS;
 
     /**
      * Context for templates/policy_callout.mustache.
@@ -140,7 +141,7 @@ final class policy {
      * @return bool
      */
     public static function frames_taken(\stdClass $instance): bool {
-        return !empty($instance->videovision) && (string) ($instance->mode ?? 'video') !== 'audio';
+        return visual_pipeline::takes_frames($instance);
     }
 
     /**
@@ -214,15 +215,15 @@ final class policy {
     /**
      * How many days the AI's raw note about the frames is kept.
      *
-     * There is no forever for this clock (design 7.4), so an unset or
-     * non-positive value reads as the default rather than as "kept".
+     * The number the expire_visual_data task acts on, from the one place that
+     * reads the setting, so the promise and the deletion can't disagree. There
+     * is no forever for this clock (design 7.4): unset reads as 30 and zero or
+     * less as 1.
      *
      * @return int
      */
     private static function visual_data_days(): int {
-        $days = (int) get_config('mod_presenterai', 'visualdatadays');
-
-        return $days > 0 ? $days : self::DEFAULT_VISUAL_DATA_DAYS;
+        return visual_pipeline::visual_data_days();
     }
 
     /**

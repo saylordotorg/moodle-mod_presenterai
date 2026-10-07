@@ -217,6 +217,46 @@ if ($ADMIN->fulltree) {
         PARAM_INT
     ));
 
+    // Body language feedback (D17, D21, D5). Per activity it is opt in; these
+    // are the site's rules for what happens to the evidence and the words.
+
+    $settings->add(new admin_setting_heading(
+        'mod_presenterai/visualheading',
+        get_string('visualheading', 'mod_presenterai'),
+        get_string('visualheading_desc', 'mod_presenterai')
+    ));
+
+    // No forever and a minimum of 1 (design 7.4). Zero or less is read as 1
+    // where it is acted on, by visual_pipeline::visual_data_days().
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/visualdatadays',
+        get_string('visualdatadays', 'mod_presenterai'),
+        get_string('visualdatadays_desc', 'mod_presenterai'),
+        \mod_presenterai\local\vision\visual_pipeline::DEFAULT_VISUAL_DATA_DAYS,
+        PARAM_INT
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
+        'mod_presenterai/storevisualevidence',
+        get_string('storevisualevidence', 'mod_presenterai'),
+        get_string('storevisualevidence_desc', 'mod_presenterai'),
+        1
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
+        'mod_presenterai/visualsummaryjudge',
+        get_string('visualsummaryjudge', 'mod_presenterai'),
+        get_string('visualsummaryjudge_desc', 'mod_presenterai'),
+        1
+    ));
+
+    // Named on the settings page so nobody discovers the log by accident (design 5.3).
+    $settings->add(new admin_setting_description(
+        'mod_presenterai/gateloglink',
+        '',
+        html_writer::link(new moodle_url('/mod/presenterai/gatelog.php'), get_string('gatelog_link', 'mod_presenterai'))
+    ));
+
     // Retention and download.
 
     $settings->add(new admin_setting_heading(

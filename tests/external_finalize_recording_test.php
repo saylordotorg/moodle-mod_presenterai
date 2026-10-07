@@ -239,4 +239,55 @@ final class external_finalize_recording_test extends \advanced_testcase {
 
         $this->assertEquals(COMPLETION_COMPLETE, $completion->get_data($cm, false, $this->alice->id)->completionstate);
     }
+
+    /**
+     * D24 through the web service: the opt out is stored, frames that arrived anyway are deleted.
+     *
+     * @return void
+     */
+    public function test_visualoptout_is_stored_and_frames_deleted(): void {
+        global $DB;
+
+        $DB->update_record('presenterai', (object) [
+            'id' => $this->instance->id, 'videovision' => 1, 'mode' => 'video', 'allowvisualoptout' => 1,
+        ]);
+        $this->setUser($this->alice);
+        $begin = begin_attempt::execute((int) $this->instance->cmid);
+        $this->token = (string) $begin['attempttoken'];
+        $recordingid = (int) $begin['recordingid'];
+        foreach (['frames' => ['jpg', "\xFF\xD8\xFF sheet"], 'recording' => ['webm', 'video bytes']] as $kind => [$ext, $bytes]) {
+            $target = start_upload::execute($recordingid, $kind, $ext, strlen($bytes), $this->token);
+            $stream = fopen('php://memory', 'r+b');
+            fwrite($stream, $bytes);
+            rewind($stream);
+            (new fs_store())->accept_chunk($target['uploadid'], 0, $stream);
+        }
+        $this->assertNotEmpty($DB->get_field('presenterai_recording', 'frameskey', ['id' => $recordingid]));
+
+        finalize_recording::execute($recordingid, $this->token, 0, 42, '', 1);
+
+        $row = $DB->get_record('presenterai_recording', ['id' => $recordingid], '*', MUST_EXIST);
+        $this->assertSame(1, (int) $row->visualoptout);
+        $this->assertEmpty($row->frameskey, 'Frames from an opted out attempt were kept.');
+        $context = \context_module::instance($this->instance->cmid);
+        $this->assertEmpty(
+            get_file_storage()->get_area_files($context->id, 'mod_presenterai', 'frames', $recordingid, 'id', false),
+            'The frame sheet is still in the file area.'
+        );
+    }
+
+    /**
+     * Without the parameter nothing is opted out.
+     *
+     * @return void
+     */
+    public function test_visualoptout_defaults_to_off(): void {
+        global $DB;
+
+        $recordingid = $this->uploaded_attempt('some bytes');
+        finalize_recording::execute($recordingid, $this->token, 0, 42, '');
+
+        $this->assertSame(0, (int) $DB->get_field('presenterai_recording', 'visualoptout', ['id' => $recordingid]));
+    }
 }
+

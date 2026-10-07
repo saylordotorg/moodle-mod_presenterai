@@ -18,8 +18,16 @@
  *
  * Ported from Soapbox's soapbox_recorder.js: getUserMedia and MediaRecorder at
  * a capped bitrate, MP4 where the browser can record it (it plays on more
- * devices) and WebM otherwise, and a min/max timer. Dropped from the port:
- * still frame sampling and the speech-to-text warm-up, both phase 3.
+ * devices) and WebM otherwise, and a min/max timer.
+ *
+ * Body language feedback (D17): when the activity takes still frames, Stop
+ * builds one contact sheet in the browser (mod_presenterai/frames) and sends
+ * it, best effort, before the recording's own start_upload, which is the
+ * order the server's single upload id column needs. When the activity offers
+ * the D24 opt out and the learner ticked it, frames.js is never called and no
+ * sheet is sent; finalize carries visualoptout so the server deletes anything
+ * that arrived anyway. The box is locked while a recording is under way, so
+ * what the learner chose is what happened to that recording.
  *
  * After Stop: start_upload, upload, finalize_recording. The recording row
  * already exists (begin_attempt, DECISIONS.md D16) and the storage key is
@@ -36,6 +44,7 @@
 import Ajax from 'core/ajax';
 import {getString} from 'core/str';
 import {upload} from 'mod_presenterai/uploader';
+import {contactSheet} from 'mod_presenterai/frames';
 
 /** @var {number} Seconds before the maximum at which the timer warns. */
 const NEAR_MAX_SECONDS = 15;
@@ -117,6 +126,9 @@ const isError = (err, name) => !!err && typeof err.errorcode === 'string'
  * @param {number} config.height
  * @param {number} config.videokbps
  * @param {number} config.audiokbps
+ * @param {number} [config.videovision] 1 when the activity takes still frames for body language feedback.
+ * @param {number} [config.allowvisualoptout] 1 when the learner may opt an attempt out of it.
+ * @param {number} [config.warmstt] 1 to warm the speech to text service when recording starts.
  * @param {object} hooks What the page controller provides.
  * @param {function} hooks.ensureAttempt Resolves to {recordingid, token}, creating the row on first use.
  * @param {function} hooks.forgetAttempt Drops the cached attempt so the next ensureAttempt begins again.
@@ -141,7 +153,9 @@ export const init = (root, config, hooks) => {
     const status = root.querySelector('[data-region="status"]');
     const retrywrap = root.querySelector('[data-region="retry"]');
     const retrybtn = root.querySelector('[data-action="retry"]');
+    const optoutbox = config.allowvisualoptout ? root.querySelector('[data-region="visualoptout"]') : null;
     const notify = typeof hooks.onStateChange === 'function' ? hooks.onStateChange : () => undefined;
+    const takesFrames = !!config.videovision && config.mode !== 'audio';
 
     let stream = null;
     let recorder = null;
@@ -152,6 +166,8 @@ export const init = (root, config, hooks) => {
     let busy = false;
     // The finished recording waiting to be sent, kept until the server has it.
     let pending = null;
+    // Whether the speech to text service has been warmed on this page.
+    let warmed = false;
 
     const setStatus = (text, announce) => {
         if (status) {
@@ -178,7 +194,37 @@ export const init = (root, config, hooks) => {
         if (recbtn) {
             recbtn.disabled = value;
         }
+        // The opt out applies to the recording being made, so it can't change
+        // under one, nor between Stop and the server having it.
+        if (optoutbox) {
+            optoutbox.disabled = value || pending !== null;
+        }
         notify(state);
+    };
+
+    /**
+     * Whether the learner opted this recording out of body language feedback.
+     *
+     * @return {boolean}
+     */
+    const optedOut = () => !!(optoutbox && optoutbox.checked);
+
+    /**
+     * Warm the speech to text service once per page, ignoring the answer.
+     */
+    const warm = () => {
+        if (!config.warmstt || warmed) {
+            return;
+        }
+        warmed = true;
+        try {
+            Ajax.call([{
+                methodname: 'mod_presenterai_warm_stt',
+                args: {cmid: config.cmid},
+            }])[0].catch(() => undefined);
+        } catch (e) {
+            // Warming is a courtesy; nothing depends on it.
+        }
     };
 
     const stopStream = () => {
@@ -229,8 +275,42 @@ export const init = (root, config, hooks) => {
         show(retrywrap, false);
         window.addEventListener('beforeunload', guard);
         try {
+            /**
+             * Send the frame sheet, best effort: any failure leaves the attempt without body language feedback.
+             *
+             * Tried once per attempt row. It must come before the recording's
+             * start_upload, which the server refuses frames after.
+             *
+             * @param {object} attempt {recordingid, token}.
+             * @return {Promise<void>}
+             */
+            const sendFrames = async(attempt) => {
+                if (!pending.sheet || pending.framesTriedFor === attempt.recordingid) {
+                    return;
+                }
+                pending.framesTriedFor = attempt.recordingid;
+                try {
+                    const sheet = await pending.sheet;
+                    if (!sheet || !sheet.size) {
+                        return;
+                    }
+                    const target = await Ajax.call([{
+                        methodname: 'mod_presenterai_start_upload',
+                        args: {recordingid: attempt.recordingid, kind: 'frames', ext: 'jpg', sizebytes: sheet.size,
+                            attempttoken: attempt.token},
+                    }])[0];
+                    await upload(target, sheet, {
+                        cmid: config.cmid,
+                        recordingid: attempt.recordingid,
+                        contentType: 'image/jpeg',
+                    });
+                } catch (e) {
+                    // Body language feedback is the one thing lost; the recording goes on.
+                }
+            };
             const send = async(attempt) => {
                 const recordingid = attempt.recordingid;
+                await sendFrames(attempt);
                 const target = await Ajax.call([{
                     methodname: 'mod_presenterai_start_upload',
                     args: {recordingid: recordingid, kind: 'recording', ext: pending.ext, sizebytes: pending.blob.size,
@@ -265,6 +345,7 @@ export const init = (root, config, hooks) => {
                     topicid: hooks.getTopicId(),
                     durationseconds: pending.duration,
                     slidetimeline: pending.timeline,
+                    visualoptout: pending.optout ? 1 : 0,
                 },
             }])[0];
 
@@ -301,6 +382,9 @@ export const init = (root, config, hooks) => {
 
             pending = null;
             window.removeEventListener('beforeunload', guard);
+            if (optoutbox) {
+                optoutbox.disabled = false;
+            }
             await say('rec_status_uploaded', null, true);
             // A reload is the simplest way to show the new row exactly as the
             // server renders it, deletion date and all.
@@ -318,6 +402,9 @@ export const init = (root, config, hooks) => {
                 // Sending the same bytes again cannot succeed, so there is
                 // nothing worth keeping a Retry button for.
                 pending = null;
+                if (optoutbox) {
+                    optoutbox.disabled = false;
+                }
                 return;
             }
             show(retrywrap, true);
@@ -344,12 +431,18 @@ export const init = (root, config, hooks) => {
             return;
         }
         const type = mime || (config.mode === 'audio' ? 'audio/webm' : 'video/webm');
+        const blob = new Blob(chunks, {type: type});
+        const optout = optedOut();
         pending = {
-            blob: new Blob(chunks, {type: type}),
+            blob: blob,
             mime: type,
             ext: _extFor(type),
             duration: elapsed,
             timeline: slides ? JSON.stringify(slides.getTimeline()) : '',
+            optout: optout,
+            // D24: an opted out recording is never sampled, so there is nothing to send.
+            sheet: takesFrames && !optout ? contactSheet(blob, {durationSeconds: elapsed}) : null,
+            framesTriedFor: 0,
         };
         chunks = [];
         await submit();
@@ -437,6 +530,7 @@ export const init = (root, config, hooks) => {
         }
 
         startedat = Date.now();
+        warm();
         const slides = hooks.getSlides();
         if (slides) {
             slides.startCapture(() => (Date.now() - startedat) / 1000);

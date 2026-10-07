@@ -17,10 +17,7 @@
 /**
  * Instance settings form for mod_presenterai.
  *
- * Recording, topics, retention, the grade and completion. The AI settings
- * (presentation type, rubric, speaking level, slide and video vision) arrive
- * with the features they configure, so the form never offers a setting that
- * does nothing. Their columns exist and keep their database defaults.
+ * Recording, AI feedback, topics, retention, the grade and completion.
  *
  * The grade is core's modgrade element plus a grading method saying how
  * attempts combine. Outcomes are core's too: declaring FEATURE_GRADE_OUTCOMES
@@ -74,6 +71,7 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $this->standard_intro_elements();
 
         $this->add_recording_elements();
+        $this->add_ai_elements();
         $this->add_topic_elements();
         $this->add_retention_elements();
 
@@ -323,6 +321,40 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $mform->addElement('advcheckbox', 'slidesenabled', get_string('slidesenabled', 'mod_presenterai'));
         $mform->setDefault('slidesenabled', 0);
         $mform->addHelpButton('slidesenabled', 'slidesenabled', 'mod_presenterai');
+    }
+
+    /**
+     * The AI feedback section.
+     *
+     * Body language feedback is opt in per activity (D17) and forced off for
+     * audio. Scoring it is a second, separate opt in (D23), and so is letting
+     * a learner opt an attempt out (D24). Both are hidden unless video vision
+     * is on and the activity records a camera; instance_manager::normalise()
+     * forces them to 0 otherwise.
+     *
+     * @return void
+     */
+    private function add_ai_elements(): void {
+        $mform = $this->_form;
+
+        $mform->addElement('header', 'aiheading_inst', get_string('aiheading_inst', 'mod_presenterai'));
+
+        $mform->addElement('advcheckbox', 'videovision', get_string('videovision', 'mod_presenterai'));
+        $mform->setDefault('videovision', 0);
+        $mform->addHelpButton('videovision', 'videovision', 'mod_presenterai');
+        $mform->hideIf('videovision', 'mode', 'eq', 'audio');
+
+        $mform->addElement('advcheckbox', 'visualscored', get_string('visualscored', 'mod_presenterai'));
+        $mform->setDefault('visualscored', 0);
+        $mform->addHelpButton('visualscored', 'visualscored', 'mod_presenterai');
+        $mform->hideIf('visualscored', 'videovision', 'notchecked');
+        $mform->hideIf('visualscored', 'mode', 'eq', 'audio');
+
+        $mform->addElement('advcheckbox', 'allowvisualoptout', get_string('allowvisualoptout', 'mod_presenterai'));
+        $mform->setDefault('allowvisualoptout', 0);
+        $mform->addHelpButton('allowvisualoptout', 'allowvisualoptout', 'mod_presenterai');
+        $mform->hideIf('allowvisualoptout', 'videovision', 'notchecked');
+        $mform->hideIf('allowvisualoptout', 'mode', 'eq', 'audio');
     }
 
     /**

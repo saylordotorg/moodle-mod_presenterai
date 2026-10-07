@@ -412,4 +412,87 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
         provider::get_users_in_context($userlist);
         $this->assertSame([(int) $this->alice->id], array_map('intval', $userlist->get_userids()));
     }
+
+    /**
+     * The phase 3 data is declared: the opt out, the summary and its status, the gate log and the AI service.
+     *
+     * @return void
+     */
+    public function test_get_metadata_visual(): void {
+        $collection = provider::get_metadata(new collection('mod_presenterai'));
+        $items = [];
+        foreach ($collection->get_collection() as $item) {
+            $items[$item->get_name()] = $item;
+        }
+
+        $this->assertArrayHasKey('visualoptout', $items['presenterai_recording']->get_privacy_fields());
+        $this->assertArrayHasKey('visualsummary', $items['presenterai_score']->get_privacy_fields());
+        $this->assertArrayHasKey('visualstatus', $items['presenterai_score']->get_privacy_fields());
+        $this->assertArrayHasKey('presenterai_gatelog', $items);
+        $this->assertEqualsCanonicalizing(
+            ['recordingid', 'target', 'layer', 'rule', 'rejectedtext', 'timecreated'],
+            array_keys($items['presenterai_gatelog']->get_privacy_fields())
+        );
+        $this->assertArrayHasKey('aiservice', $items);
+        $this->assertEqualsCanonicalizing(
+            ['audio', 'transcript', 'frames', 'feedback'],
+            array_keys($items['aiservice']->get_privacy_fields())
+        );
+    }
+
+    /**
+     * The export carries the summary, its status, the opt out and the withheld strings.
+     *
+     * @return void
+     */
+    public function test_export_visual_data(): void {
+        global $DB;
+
+        $DB->set_field('presenterai_recording', 'visualoptout', 1, ['id' => $this->alicefs->id]);
+        $DB->set_field('presenterai_score', 'visualsummary', 'Your hands stayed low.', ['recordingid' => $this->alicefs->id,
+            'origin' => 'ai']);
+        $DB->set_field('presenterai_score', 'visualstatus', 'summary', ['recordingid' => $this->alicefs->id, 'origin' => 'ai']);
+        $DB->insert_record('presenterai_gatelog', (object) [
+            'recordingid' => $this->alicefs->id, 'target' => 'summary', 'layer' => 2, 'rule' => 'clothing',
+            'rejectedtext' => 'You wore a dark shirt.', 'timecreated' => time(),
+        ]);
+
+        $this->export_context_data_for_user((int) $this->alice->id, $this->context, 'mod_presenterai');
+        $data = writer::with_context($this->context)->get_data($this->attempt_path($this->alicefs));
+
+        $this->assertSame(get_string('yes'), $data->visualoptout);
+        $ai = array_values(array_filter($data->scores, fn($score) => $score->origin === 'ai'))[0];
+        $this->assertSame('Your hands stayed low.', $ai->visualsummary);
+        $this->assertSame('summary', $ai->visualstatus);
+        $this->assertCount(1, $data->rejectedfeedback);
+        $this->assertSame('You wore a dark shirt.', $data->rejectedfeedback[0]->rejectedtext);
+        $this->assertSame('clothing', $data->rejectedfeedback[0]->rule);
+    }
+
+    /**
+     * A learner's deletion takes their gate log rows and nobody else's.
+     *
+     * @return void
+     */
+    public function test_delete_removes_gatelog_rows(): void {
+        global $DB;
+
+        foreach ([$this->alicefs, $this->bobfs] as $rec) {
+            $DB->insert_record('presenterai_gatelog', (object) [
+                'recordingid' => $rec->id, 'target' => 'summary', 'layer' => 4, 'rule' => 'judge',
+                'rejectedtext' => 'withheld for ' . $rec->userid, 'timecreated' => time(),
+            ]);
+        }
+
+        provider::delete_data_for_user(new approved_contextlist($this->alice, 'mod_presenterai', [$this->context->id]));
+        $this->resetDebugging();
+
+        $this->assertFalse($DB->record_exists('presenterai_gatelog', ['recordingid' => $this->alicefs->id]));
+        $this->assertTrue($DB->record_exists('presenterai_gatelog', ['recordingid' => $this->bobfs->id]));
+
+        provider::delete_data_for_all_users_in_context($this->context);
+        $this->resetDebugging();
+        $this->assertSame(0, $DB->count_records('presenterai_gatelog'));
+    }
 }
+

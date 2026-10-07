@@ -20,7 +20,7 @@ use mod_presenterai\local\storage\store_factory;
 use mod_presenterai\task\delete_orphaned_media;
 
 /**
- * Remove attempts completely: their media, their scores, their spend rows and the rows themselves.
+ * Remove attempts completely: their media, scores, gate log, spend rows and the rows themselves.
  *
  * The privacy provider and course reset both need this, and they need it in
  * the same order, which is the whole reason it is one class. Storage ALWAYS
@@ -116,8 +116,10 @@ final class media_purger {
 
         [$insql, $params] = $DB->get_in_or_equal($ids, SQL_PARAMS_NAMED, 'prid');
 
-        // Step d: scores belong to the attempt.
+        // Step d: scores belong to the attempt, and so do the feedback strings
+        // the visual gate rejected, which name nobody but are about this learner.
         $DB->delete_records_select('presenterai_score', "recordingid {$insql}", $params);
+        $DB->delete_records_select('presenterai_gatelog', "recordingid {$insql}", $params);
 
         // Step e: spend rows: removed for a privacy request, kept without a person for a reset.
         if ($aiusagemode === self::AIUSAGE_DELETE) {

@@ -304,11 +304,13 @@ final class attempt_row_test extends \advanced_testcase {
                 'name' => 'Content',
                 'scoretext' => get_string('feedback_criterion_score', 'mod_presenterai', (object) ['score' => 3, 'max' => 5]),
                 'feedback' => 'Clear <thesis>.',
+                'notcounted' => false,
             ],
             [
                 'name' => 'Delivery',
                 'scoretext' => get_string('feedback_notassessed', 'mod_presenterai'),
                 'feedback' => '',
+                'notcounted' => false,
             ],
         ], $export['feedback']['criteria']);
         $this->assertSame('Good.<br />' . "\n" . 'Slow down.', $export['feedback']['overall']);
@@ -354,5 +356,169 @@ final class attempt_row_test extends \advanced_testcase {
         $this->assertSame('', $export['score']);
         $this->assertTrue($export['hasfeedback']);
         $this->assertSame('', $export['feedback']['overall']);
+    }
+
+    /**
+     * A learner, an activity and a finished recording, for the feedback panel tests.
+     *
+     * @return array [\stdClass $rec, \context_module $context, \stdClass $learner]
+     */
+    private function panel_fixture(): array {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $learner = $generator->create_and_enrol($course, 'student');
+        $instance = $generator->create_module('presenterai', ['course' => $course->id, 'videovision' => 1]);
+        $context = \context_module::instance($instance->cmid);
+        $rec = $generator->get_plugin_generator('mod_presenterai')->create_recording([
+            'presenteraiid' => $instance->id,
+            'userid' => $learner->id,
+            'storagekey' => 'a.webm',
+            'status' => 'scored',
+            'visualevidence' => json_encode(['note' => 'RAW-NOTE-NEVER-SHOWN', 'confidence' => 'high', 'unusable_frames' => 0]),
+        ]);
+        $this->setUser($learner);
+
+        return [$rec, $context, $learner];
+    }
+
+    /**
+     * Insert an AI score row with a visual section.
+     *
+     * @param \stdClass $rec The recording.
+     * @param string $status The visualstatus.
+     * @param string|null $summary The visualsummary.
+     * @param array|null $criteria The criteria, or a default pair of one speech and one visual criterion.
+     * @param array|null $tips The tips list.
+     * @return void
+     */
+    private function ai_score(\stdClass $rec, string $status, ?string $summary, ?array $criteria = null, ?array $tips = null): void {
+        global $DB;
+
+        $criteria = $criteria ?? [
+            ['name' => 'Content', 'score' => 4, 'max_score' => 5, 'feedback' => 'Clear.', 'assessed' => true],
+            ['name' => 'Body Language & Gestures', 'score' => 2, 'max_score' => 5, 'feedback' => 'Hands low.',
+                'assessed' => true, 'visual' => true, 'counts' => false],
+        ];
+        $DB->insert_record('presenterai_score', (object) [
+            'recordingid' => $rec->id, 'userid' => $rec->userid, 'rubricid' => 0, 'origin' => 'ai',
+            'scores' => json_encode($criteria), 'rawsum' => 4, 'rawmax' => 5, 'overallpct' => 80.00,
+            'feedback' => 'Overall.', 'tips' => $tips === null ? null : json_encode($tips),
+            'visualsummary' => $summary, 'visualstatus' => $status, 'graderid' => 0, 'timecreated' => time(),
+        ]);
+    }
+
+    /**
+     * The attempts template rendered for one exported row.
+     *
+     * @param array $row An export() result.
+     * @return string HTML.
+     */
+    private function render_rows(array $row): string {
+        global $PAGE;
+
+        return $PAGE->get_renderer('core')->render_from_template('mod_presenterai/attempts', [
+            'hasattempts' => true,
+            'showdownloadoffnote' => false,
+            'rows' => [$row],
+        ]);
+    }
+
+    /**
+     * Every visual status and the sentence it shows.
+     *
+     * @return array
+     */
+    public static function visual_status_provider(): array {
+        return [
+            'summary' => ['summary', 'Your hands stayed below the desk, so gestures were hard to see.', null],
+            'fallback' => ['fallback', 'TEMPLATE-TEXT', null],
+            'not assessed' => ['notassessed', null, 'visual_not_assessed'],
+            'not analysed' => ['notanalysed', null, 'visual_not_analysed'],
+            'opted out' => ['optedout', null, 'visual_optedout'],
+        ];
+    }
+
+    /**
+     * Each visualstatus renders its own text under the heading, and never the raw note.
+     *
+     * @dataProvider visual_status_provider
+     * @param string $status The visualstatus.
+     * @param string|null $summary The stored summary.
+     * @param string|null $stringkey The lang string the panel must show, or null to show the summary.
+     * @return void
+     */
+    public function test_visual_section_for_every_status(string $status, ?string $summary, ?string $stringkey): void {
+        [$rec, $context, $learner] = $this->panel_fixture();
+        $this->ai_score($rec, $status, $summary);
+
+        $export = attempt_row::export($rec, $context, (int) $learner->id, time(), true);
+        $feedback = $export['feedback'];
+        $expected = $stringkey !== null ? get_string($stringkey, 'mod_presenterai') : $summary;
+
+        $this->assertTrue($feedback['hasvisual']);
+        $this->assertSame($status, $feedback['visualstatus']);
+        $this->assertSame(get_string('visual_summary_heading', 'mod_presenterai'), $feedback['visualheading']);
+        $this->assertSame($expected, $feedback['visualtext']);
+        // Only the model's own summary carries the note saying where it came from.
+        $this->assertSame(
+            $status === 'summary' ? get_string('visual_summary_note', 'mod_presenterai') : '',
+            $feedback['visualnote']
+        );
+
+        $html = $this->render_rows($export);
+        $this->assertStringContainsString('data-visualstatus="' . $status . '"', $html);
+        $this->assertStringContainsString(s($expected), $html);
+        $this->assertStringNotContainsString('RAW-NOTE-NEVER-SHOWN', $html, 'The raw note reached the learner.');
+    }
+
+    /**
+     * No visual status, no visual section at all, rather than an empty one.
+     *
+     * @return void
+     */
+    public function test_no_visual_section_without_a_status(): void {
+        [$rec, $context, $learner] = $this->panel_fixture();
+        $this->ai_score($rec, '', null);
+
+        $export = attempt_row::export($rec, $context, (int) $learner->id, time(), true);
+        $this->assertFalse($export['feedback']['hasvisual']);
+        $this->assertStringNotContainsString('data-region="visual-feedback"', $this->render_rows($export));
+    }
+
+    /**
+     * A status that promised words but has none still shows the template, never an empty panel.
+     *
+     * @return void
+     */
+    public function test_empty_summary_falls_back_to_the_template(): void {
+        [$rec, $context, $learner] = $this->panel_fixture();
+        $this->ai_score($rec, 'summary', '');
+
+        $feedback = attempt_row::export($rec, $context, (int) $learner->id, time(), true)['feedback'];
+        $this->assertTrue($feedback['hasvisual']);
+        $this->assertNotSame('', trim($feedback['visualtext']));
+        $this->assertSame('', $feedback['visualnote'], 'The template is not the AI\'s summary and must not say it is.');
+    }
+
+    /**
+     * A criterion that does not count says so in words (D23); tips render as a list.
+     *
+     * @return void
+     */
+    public function test_feedback_only_label_and_tips(): void {
+        [$rec, $context, $learner] = $this->panel_fixture();
+        $this->ai_score($rec, '', null, null, ['Pause after each point.', '', 'Look at the lens.']);
+
+        $export = attempt_row::export($rec, $context, (int) $learner->id, time(), true);
+        $criteria = $export['feedback']['criteria'];
+        $this->assertFalse($criteria[0]['notcounted']);
+        $this->assertTrue($criteria[1]['notcounted']);
+        $this->assertSame(['Pause after each point.', 'Look at the lens.'], $export['feedback']['tips']);
+
+        $html = $this->render_rows($export);
+        $this->assertSame(1, substr_count($html, get_string('feedback_criterion_notcounted', 'mod_presenterai')));
+        $this->assertStringContainsString(get_string('feedback_tips', 'mod_presenterai'), $html);
+        $this->assertStringContainsString('Look at the lens.', $html);
     }
 }
