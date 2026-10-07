@@ -272,6 +272,9 @@ final class review_release_test extends \advanced_testcase {
     public function test_release_does_everything_the_hold_skipped(): void {
         global $DB;
 
+        // The standard log writes outside the test's transaction, which only
+        // works when the reset isn't a rollback (on Postgres it is).
+        $this->preventResetByRollback();
         set_config('enabled_stores', 'logstore_standard', 'tool_log');
         set_config('buffersize', 0, 'logstore_standard');
         get_log_manager(true);
@@ -316,8 +319,10 @@ final class review_release_test extends \advanced_testcase {
         $this->assertTrue($row['hasscore']);
         $this->assertSame(self::AI_SUMMARY, $row['feedback']['visualtext']);
 
-        // Releasing again does nothing and says so.
+        // Releasing again does nothing, sends nothing and says so.
+        $again = $this->redirectMessages();
         $this->assertNull(score_manager::release($this->reload_rec($rec), $this->instance, $this->context));
+        $this->assertCount(0, $again->get_messages());
     }
 
     /**
