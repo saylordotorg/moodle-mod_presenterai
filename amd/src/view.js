@@ -66,6 +66,8 @@ const readConfig = (root) => {
         videovision: int(d.videovision),
         allowvisualoptout: int(d.allowvisualoptout),
         warmstt: int(d.warmstt),
+        audiotrack: int(d.audiotrack),
+        audiotrackkbps: int(d.audiotrackkbps),
     };
 };
 

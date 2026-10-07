@@ -20,8 +20,8 @@ use mod_presenterai\local\ai\ai_exception;
 use mod_presenterai\local\ai\json_parser;
 use mod_presenterai\local\ai\rate_limiter;
 use mod_presenterai\local\ai\route_resolver;
+use mod_presenterai\local\ai\stt_client;
 use mod_presenterai\local\ai\usage;
-use mod_presenterai\local\storage\store_factory;
 use mod_presenterai\local\vision\judge_unavailable_exception;
 use mod_presenterai\local\vision\visual_pipeline;
 
@@ -62,15 +62,6 @@ final class scorer {
 
     /** @var int Times a rate limited attempt is queued again after its retries run out, before it fails. */
     public const MAX_DEFERRALS = 3;
-
-    /** @var string[] MIME types for the recording extensions, for the transcription upload. */
-    private const MIMETYPES = [
-        'webm' => 'video/webm',
-        'mp4' => 'video/mp4',
-        'm4a' => 'audio/mp4',
-        'ogg' => 'audio/ogg',
-        'oga' => 'audio/ogg',
-    ];
 
     /**
      * Score one recording.
@@ -450,25 +441,35 @@ final class scorer {
             throw self::rate_limited('transcribe', $userid, rate_limiter::TRANSCRIBE_WINDOW);
         }
 
-        $key = (string) $rec->storagekey;
-        $ext = strtolower((string) pathinfo($key, PATHINFO_EXTENSION));
-        if (!isset(self::MIMETYPES[$ext])) {
-            $ext = 'webm';
+        // The separate audio track when there is one, else the recording, cut
+        // into segments under the service's limit when it's needed and ffmpeg
+        // is there to do it (transcription_source).
+        $limit = $stt->route() === 'openai' ? stt_client::OPENAI_MAX_BYTES : 0;
+        $prepared = transcription_source::prepare($rec, $limit);
+        $texts = [];
+        $model = $stt->model();
+        try {
+            foreach ($prepared['files'] as $file) {
+                $result = $stt->transcribe($file['path'], $file['mime']);
+                $model = (string) ($result['model'] ?? $model);
+                $text = trim((string) ($result['text'] ?? ''));
+                if ($text !== '') {
+                    $texts[] = $text;
+                }
+            }
+        } finally {
+            if ($prepared['workdir'] !== '') {
+                remove_dir($prepared['workdir']);
+            }
         }
-        $path = store_factory::for_recording($rec)->fetch_to_file($key, $ext);
-        if ($path === null) {
-            // On S3 this is a download that can fail for a while; the retry rule decides.
-            throw new ai_exception('network', true, 'The recording could not be fetched from storage.');
-        }
-
-        $result = $stt->transcribe($path, self::MIMETYPES[$ext]);
         usage::record($stt, usage::ACTION_TRANSCRIBE, (int) $instance->id, (int) $rec->id, $userid, [
             'route' => $stt->route(),
-            'model' => (string) ($result['model'] ?? $stt->model()),
+            'model' => $model,
             'audioseconds' => (int) ($rec->durationseconds ?? 0),
         ]);
 
-        $transcript = trim((string) ($result['text'] ?? ''));
+        // Segments are joined in the order they were cut.
+        $transcript = trim(implode(' ', $texts));
         $DB->update_record('presenterai_recording', (object) [
             'id' => (int) $rec->id,
             'transcript' => $transcript,

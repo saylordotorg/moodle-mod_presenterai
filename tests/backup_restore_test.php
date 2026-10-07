@@ -753,6 +753,50 @@ final class backup_restore_test extends \advanced_testcase {
     }
 
     /**
+     * The separate audio track travels with the recording on the File API, under a fresh key,
+     * and a track whose file didn't arrive is forgotten.
+     *
+     * @return void
+     */
+    public function test_audio_track_round_trips(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        [$course, , $context, $alice, $bob, , , , $fsrec, , $missingrec] = $this->course_with_learner_work();
+        $DB->set_field('presenterai_recording', 'audiokey', 'original-audio-key.ogg', ['id' => $fsrec->id]);
+        $this->media_file($context, 'audio', (int) $fsrec->id, 'original-audio-key.ogg', 'OggS the audio track');
+        $DB->set_field('presenterai_recording', 'audiokey', 'no-file-for-this-audio.ogg', ['id' => $missingrec->id]);
+
+        $newcourseid = $this->backup_and_restore_with_users($course);
+
+        $restored = $DB->get_record('presenterai', ['course' => $newcourseid], '*', MUST_EXIST);
+        $newcm = get_coursemodule_from_instance('presenterai', $restored->id, $newcourseid, false, MUST_EXIST);
+        $newcontext = \context_module::instance($newcm->id);
+        $newfs = $DB->get_record_select(
+            'presenterai_recording',
+            'presenteraiid = ? AND userid = ? AND backend = ?',
+            [$restored->id, $alice->id, 'fs'],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertNotEmpty($newfs->audiokey);
+        $this->assertNotSame('original-audio-key.ogg', $newfs->audiokey, 'Two rows now name one fs filename.');
+        $this->assertStringEndsWith('.ogg', $newfs->audiokey);
+        $file = get_file_storage()->get_file($newcontext->id, 'mod_presenterai', 'audio', $newfs->id, '/', $newfs->audiokey);
+        $this->assertNotFalse($file, 'The audio track was left out of the backup.');
+        $this->assertSame('OggS the audio track', $file->get_content());
+
+        $bobrow = $DB->get_record(
+            'presenterai_recording',
+            ['presenteraiid' => $restored->id, 'userid' => $bob->id],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertNull($bobrow->audiokey);
+    }
+
+    /**
      * Duplicating an activity that chose a course level rubric keeps that choice.
      *
      * The course rubric isn't in the activity's backup, so there is no

@@ -538,13 +538,14 @@ final class fs_store implements store_interface {
         $sql = "SELECT r.id, r.presenteraiid
                   FROM {presenterai_recording} r
                   JOIN {presenterai} p ON p.id = r.presenteraiid
-                 WHERE (r.storagekey = :k1 OR r.deckkey = :k2 OR r.frameskey = :k3)
+                 WHERE (r.storagekey = :k1 OR r.deckkey = :k2 OR r.frameskey = :k3 OR r.audiokey = :k4)
                        AND r.userid = :userid
                        AND p.course = :courseid";
         $rows = $DB->get_records_sql($sql, [
             'k1' => $key,
             'k2' => $key,
             'k3' => $key,
+            'k4' => $key,
             'userid' => $userid,
             'courseid' => $courseid,
         ]);
@@ -952,8 +953,8 @@ final class fs_store implements store_interface {
 
         return $DB->record_exists_select(
             'presenterai_recording',
-            'storagekey = :k1 OR deckkey = :k2 OR frameskey = :k3',
-            ['k1' => $key, 'k2' => $key, 'k3' => $key]
+            'storagekey = :k1 OR deckkey = :k2 OR frameskey = :k3 OR audiokey = :k4',
+            ['k1' => $key, 'k2' => $key, 'k3' => $key, 'k4' => $key]
         );
     }
 
@@ -1118,6 +1119,8 @@ final class fs_store implements store_interface {
                 return 'deck';
             case media_ref::KIND_FRAMES:
                 return 'frames';
+            case media_ref::KIND_AUDIO:
+                return 'audio';
             default:
                 throw new \coding_exception('Unknown media kind: ' . $kind);
         }
@@ -1141,11 +1144,11 @@ final class fs_store implements store_interface {
             return null;
         }
 
-        $sql = "SELECT r.id, r.presenteraiid, r.storagekey, r.deckkey, r.frameskey, p.course
+        $sql = "SELECT r.id, r.presenteraiid, r.storagekey, r.deckkey, r.frameskey, r.audiokey, p.course
                   FROM {presenterai_recording} r
                   JOIN {presenterai} p ON p.id = r.presenteraiid
-                 WHERE r.storagekey = :k1 OR r.deckkey = :k2 OR r.frameskey = :k3";
-        $rows = $DB->get_records_sql($sql, ['k1' => $key, 'k2' => $key, 'k3' => $key]);
+                 WHERE r.storagekey = :k1 OR r.deckkey = :k2 OR r.frameskey = :k3 OR r.audiokey = :k4";
+        $rows = $DB->get_records_sql($sql, ['k1' => $key, 'k2' => $key, 'k3' => $key, 'k4' => $key]);
 
         $fs = get_file_storage();
         foreach ($rows as $row) {
@@ -1157,6 +1160,8 @@ final class fs_store implements store_interface {
                 $area = 'recording';
             } else if ((string) $row->deckkey === $key) {
                 $area = 'deck';
+            } else if ((string) $row->audiokey === $key) {
+                $area = 'audio';
             } else {
                 $area = 'frames';
             }

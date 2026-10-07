@@ -224,6 +224,11 @@ final class view_page implements \renderable, \templatable {
                 && !empty($this->instance->allowvisualoptout) ? 1 : 0,
             // B7: warm the speech to text endpoint when recording starts.
             'warmstt' => (int) get_config('mod_presenterai', 'sttwarm'),
+            // A second, audio only recorder beside a camera recording, so a
+            // long video still transcribes under a 25 MB limit. An audio only
+            // activity's recording is small already and isn't recorded twice.
+            'audiotrack' => (string) $this->instance->mode === 'audio' ? 0 : 1,
+            'audiotrackkbps' => \mod_presenterai\local\transcription_source::AUDIO_TRACK_KBPS,
         ];
     }
 

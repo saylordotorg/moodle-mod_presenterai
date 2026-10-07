@@ -261,7 +261,7 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
 
         $this->add_related_files('mod_presenterai', 'intro', null);
         $this->add_related_files('mod_presenterai', 'topicfile', 'presenterai_topic');
-        foreach (['recording', 'deck', 'frames'] as $area) {
+        foreach (\mod_presenterai\local\storage\media_ref::KINDS as $area) {
             $this->add_related_files('mod_presenterai', $area, 'presenterai_recording');
         }
 
@@ -308,10 +308,11 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         [$insql, $params] = $DB->get_in_or_equal(array_keys($this->oldscoreids), SQL_PARAMS_NAMED, 'rid');
         $rows = $DB->get_records_select(
             'presenterai_recording',
-            "id {$insql} AND (storagekey IS NOT NULL OR deckkey IS NOT NULL OR frameskey IS NOT NULL)",
+            "id {$insql} AND (storagekey IS NOT NULL OR deckkey IS NOT NULL OR frameskey IS NOT NULL
+                OR audiokey IS NOT NULL)",
             $params,
             'id',
-            'id, backend, storagekey, deckkey, frameskey'
+            'id, backend, storagekey, deckkey, frameskey, audiokey'
         );
         foreach ($rows as $row) {
             if ((string) $row->backend === 's3') {
@@ -344,7 +345,7 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
 
             // The File API: whatever arrived gets a key no other row has.
             $update = ['id' => (int) $row->id];
-            $areas = ['storagekey' => 'recording', 'deckkey' => 'deck', 'frameskey' => 'frames'];
+            $areas = ['storagekey' => 'recording', 'deckkey' => 'deck', 'frameskey' => 'frames', 'audiokey' => 'audio'];
             $recordingarrived = false;
             foreach ($areas as $column => $area) {
                 $key = (string) ($row->$column ?? '');
@@ -365,8 +366,9 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
             }
 
             if (!$recordingarrived) {
-                // Without the recording the deck and frames are not an attempt's
-                // media, so they go too, rather than sit in an area nothing reads.
+                // Without the recording the deck, frames and audio track are not
+                // an attempt's media, so they go too, rather than sit in an area
+                // nothing reads.
                 foreach ($areas as $area) {
                     $fs->delete_area_files($contextid, 'mod_presenterai', $area, (int) $row->id);
                 }
@@ -393,13 +395,13 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
     /**
      * Whether each S3 object a restored row names is still in the bucket.
      *
-     * @param \stdClass $row The recording row, with storagekey, deckkey and frameskey.
+     * @param \stdClass $row The recording row, with storagekey, deckkey, frameskey and audiokey.
      * @param callable $exists Given a key, returns true, false when the object is gone, or null when unknown.
      * @return array Column => true, false or null, for each column that names a key.
      */
     private static function s3_media_present(\stdClass $row, callable $exists): array {
         $present = [];
-        foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
+        foreach (\mod_presenterai\local\recording_manager::MEDIA_COLUMNS as $column) {
             $key = (string) ($row->$column ?? '');
             if ($key !== '') {
                 $present[$column] = $exists($key);
@@ -450,6 +452,7 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
             'storagekey' => null,
             'deckkey' => null,
             'frameskey' => null,
+            'audiokey' => null,
             'mediadeletedat' => time(),
             'mediagonereason' => 'notbackedup',
             'visualevidence' => null,

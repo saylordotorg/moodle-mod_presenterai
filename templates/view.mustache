@@ -87,7 +87,9 @@
             "maxbytes": 157286400,
             "videovision": 1,
             "allowvisualoptout": 0,
-            "warmstt": 0
+            "warmstt": 0,
+            "audiotrack": 1,
+            "audiotrackkbps": 32
         },
         "attempts": {
             "hasattempts": true,
@@ -125,7 +127,7 @@
         }
     }
 }}
-<div id="mod-presenterai-view" class="mod-presenterai-view" data-cmid="{{cmid}}" {{#config}}data-mode="{{mode}}" data-minseconds="{{minseconds}}" data-maxseconds="{{maxseconds}}" data-width="{{width}}" data-height="{{height}}" data-videokbps="{{videokbps}}" data-audiokbps="{{audiokbps}}" data-slides="{{slides}}" data-maxbytes="{{maxbytes}}" data-videovision="{{videovision}}" data-allowvisualoptout="{{allowvisualoptout}}" data-warmstt="{{warmstt}}"{{/config}} {{#topics}}data-topicid="{{singletopicid}}"{{/topics}}>
+<div id="mod-presenterai-view" class="mod-presenterai-view" data-cmid="{{cmid}}" {{#config}}data-mode="{{mode}}" data-minseconds="{{minseconds}}" data-maxseconds="{{maxseconds}}" data-width="{{width}}" data-height="{{height}}" data-videokbps="{{videokbps}}" data-audiokbps="{{audiokbps}}" data-slides="{{slides}}" data-maxbytes="{{maxbytes}}" data-videovision="{{videovision}}" data-allowvisualoptout="{{allowvisualoptout}}" data-warmstt="{{warmstt}}" data-audiotrack="{{audiotrack}}" data-audiotrackkbps="{{audiotrackkbps}}"{{/config}} {{#topics}}data-topicid="{{singletopicid}}"{{/topics}}>
     {{#topics}}
     {{> mod_presenterai/topics }}
     {{/topics}}

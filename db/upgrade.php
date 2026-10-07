@@ -203,5 +203,21 @@ function xmldb_presenterai_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026100703, 'presenterai');
     }
 
+    if ($oldversion < 2026100704) {
+        // A separate audio only track beside a video recording, so a long
+        // video can be transcribed under OpenAI's 25 MB limit.
+        $table = new xmldb_table('presenterai_recording');
+        $field = new xmldb_field('audiokey', XMLDB_TYPE_CHAR, '255', null, null, null, null, 'frameskey');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $index = new xmldb_index('audiokey', XMLDB_INDEX_NOTUNIQUE, ['audiokey']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        upgrade_mod_savepoint(true, 2026100704, 'presenterai');
+    }
+
     return true;
 }

@@ -56,13 +56,13 @@ final class media_purger {
     public const BATCH = 200;
 
     /** @var string[] The file areas a recording's media can occupy on the File API, keyed by itemid = recording id. */
-    public const AREAS = ['recording', 'deck', 'frames'];
+    public const AREAS = ['recording', 'deck', 'frames', 'audio'];
 
     /**
      * Purge a set of recordings: storage first, then scores, spend rows and the rows themselves.
      *
      * @param \stdClass[] $recs presenterai_recording rows carrying at least id, presenteraiid,
-     *                         userid, backend, storagekey, deckkey, frameskey and uploadid.
+     *                         userid, backend, storagekey, deckkey, frameskey, audiokey and uploadid.
      * @param string $aiusagemode AIUSAGE_DELETE or AIUSAGE_ANONYMISE.
      * @return void
      */
@@ -203,7 +203,7 @@ final class media_purger {
         global $DB;
 
         $lastid = 0;
-        $fields = 'id, presenteraiid, userid, backend, storagekey, deckkey, frameskey, uploadid';
+        $fields = 'id, presenteraiid, userid, backend, ' . implode(', ', recording_manager::MEDIA_COLUMNS) . ', uploadid';
         while (true) {
             $batch = $DB->get_records_select(
                 'presenterai_recording',
@@ -232,7 +232,7 @@ final class media_purger {
     private static function delete_objects(\stdClass $rec, array $batchids): array {
         $backend = (string) $rec->backend;
         $keys = [];
-        foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
+        foreach (recording_manager::MEDIA_COLUMNS as $column) {
             $key = (string) ($rec->$column ?? '');
             // A key a row outside this batch also names (a restored copy on the
             // same site) stays in the bucket for that row.

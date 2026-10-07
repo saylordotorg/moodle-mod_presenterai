@@ -283,6 +283,15 @@ final class ai_route_resolver_test extends \advanced_testcase {
         set_config('sttendpoint', '', 'mod_presenterai');
         set_config('maxrecordingseconds', 60, 'mod_presenterai');
         $this->assertNotContains($warning, route_resolver::readiness()['messages']);
+
+        // With ffmpeg the server can extract and cut what doesn't fit, so there's nothing to warn about.
+        set_config('maxrecordingseconds', 720, 'mod_presenterai');
+        $this->assertContains($warning, route_resolver::readiness()['messages']);
+        $ffmpeg = make_request_directory() . '/ffmpeg';
+        file_put_contents($ffmpeg, '#!/bin/sh');
+        chmod($ffmpeg, 0755);
+        set_config('ffmpegpath', $ffmpeg, 'mod_presenterai');
+        $this->assertNotContains($warning, route_resolver::readiness()['messages']);
     }
 
     /**

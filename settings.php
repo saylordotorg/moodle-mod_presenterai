@@ -390,6 +390,17 @@ if ($ADMIN->fulltree) {
     ));
     $settings->hide_if('mod_presenterai/sttwarm', 'mod_presenterai/sttendpoint', 'eq', '');
 
+    // Optional. With ffmpeg the server can take the audio out of a video that
+    // has no separate audio track, and cut a recording that's still over the
+    // transcription service's limit into segments (transcription_source).
+    // Empty by default; the setting checks the path is an executable file.
+    $settings->add(new admin_setting_configexecutable(
+        'mod_presenterai/ffmpegpath',
+        get_string('ffmpegpath', 'mod_presenterai'),
+        get_string('ffmpegpath_desc', 'mod_presenterai'),
+        ''
+    ));
+
     $settings->add(new admin_setting_configtextarea(
         'mod_presenterai/trustedhosts',
         get_string('trustedhosts', 'mod_presenterai'),

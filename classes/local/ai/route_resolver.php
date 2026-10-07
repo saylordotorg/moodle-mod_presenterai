@@ -243,8 +243,10 @@ class route_resolver {
         if ($scoring !== null && $stt === null) {
             $messages[] = get_string('aireadiness_blocked', 'mod_presenterai');
         }
-        if ($stt !== null && $stt->route() === 'openai') {
-            // OpenAI takes at most 25 MB, and the whole recording is sent.
+        if ($stt !== null && $stt->route() === 'openai' && \mod_presenterai\local\transcription_source::ffmpeg_path() === '') {
+            // OpenAI takes at most 25 MB. A video with its separate audio track
+            // is transcribed from the track, which fits; one without it is
+            // sent whole, and without ffmpeg nothing can make it smaller.
             $fits = stt_client::openai_max_seconds('video');
             if ($fits < \mod_presenterai\local\config::max_recording_seconds()) {
                 $messages[] = get_string('aireadiness_sttsizelimit', 'mod_presenterai', (int) floor($fits / 60));

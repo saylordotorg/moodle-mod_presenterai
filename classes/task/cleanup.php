@@ -115,7 +115,7 @@ class cleanup extends \core\task\scheduled_task {
                 // fs_store resolve them, and a key whose bytes never arrived is
                 // already gone, so that delete succeeds too.
                 $deleted = true;
-                foreach (['storagekey', 'deckkey', 'frameskey'] as $column) {
+                foreach (recording_manager::MEDIA_COLUMNS as $column) {
                     if (!empty($rec->$column) && !$store->delete((string) $rec->$column)) {
                         $deleted = false;
                     }
@@ -129,6 +129,7 @@ class cleanup extends \core\task\scheduled_task {
                     'storagekey' => null,
                     'deckkey' => null,
                     'frameskey' => null,
+                    'audiokey' => null,
                     'uploadid' => null,
                     'status' => recording_manager::STATUS_ABANDONED,
                     'timemodified' => time(),

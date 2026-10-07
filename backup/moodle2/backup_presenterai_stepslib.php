@@ -32,8 +32,8 @@
  * attempt still uploading, which has no finished media and whose page cannot
  * come back to it on another course.
  *
- * Media follows plan section 4.7. On the File API the recording, deck and
- * frame sheet are annotated, so the bytes travel inside the .mbz. On S3 only
+ * Media follows plan section 4.7. On the File API the recording, deck,
+ * frame sheet and audio track are annotated, so the bytes travel inside the .mbz. On S3 only
  * the rows travel, carrying their keys, because the bytes are in a bucket the
  * backup cannot reach; the restore keeps the keys on the same site and drops
  * them elsewhere. No S3 setting, credential or other secret is ever written
@@ -87,7 +87,7 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         // would.
         $recordings = new backup_nested_element('recordings');
         $recording = new backup_nested_element('recording', ['id'], [
-            'userid', 'topicid', 'attemptnumber', 'mode', 'backend', 'storagekey', 'deckkey', 'frameskey',
+            'userid', 'topicid', 'attemptnumber', 'mode', 'backend', 'storagekey', 'deckkey', 'frameskey', 'audiokey',
             'slidetimeline', 'visualoptout', 'durationseconds', 'sizebytes', 'status',
             'transcript', 'scoreid', 'expiresat', 'mediadeletedat', 'mediagonereason', 'deletewarnedat',
             'legacyrecid', 'legacyscoreid', 'timecreated', 'timemodified',
@@ -144,6 +144,7 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         $recording->annotate_files('mod_presenterai', 'recording', 'id');
         $recording->annotate_files('mod_presenterai', 'deck', 'id');
         $recording->annotate_files('mod_presenterai', 'frames', 'id');
+        $recording->annotate_files('mod_presenterai', 'audio', 'id');
 
         return $this->prepare_activity_structure($presenterai);
     }

@@ -75,6 +75,7 @@
         <FIELD NAME="storagekey" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="deckkey" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="frameskey" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="audiokey" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="A low bitrate audio only copy of a video recording, recorded beside it for transcription. Null when there is none."/>
         <FIELD NAME="uploadid" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="Client-generated id for a resumable upload in progress; null once the upload is finalised or if it never started. Nullable rather than NOT NULL with an empty default: XMLDB rejects an empty-string default on a CHAR NOT NULL column and silently rewrites it to nullable anyway, so this declares what the database will actually hold."/>
         <FIELD NAME="clienttoken" TYPE="char" LENGTH="32" NOTNULL="false" SEQUENCE="false" COMMENT="Ties an unfinished attempt to the one page that holds it. Replaced each time begin_attempt hands the row out, required by start_upload and finalize, cleared at finalize. Nullable for the same XMLDB reason as uploadid."/>
         <FIELD NAME="slidetimeline" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
@@ -108,6 +109,7 @@
         <INDEX NAME="uploadid" UNIQUE="false" FIELDS="uploadid"/>
         <INDEX NAME="deckkey" UNIQUE="false" FIELDS="deckkey"/>
         <INDEX NAME="frameskey" UNIQUE="false" FIELDS="frameskey"/>
+        <INDEX NAME="audiokey" UNIQUE="false" FIELDS="audiokey"/>
         <INDEX NAME="legacyrec" UNIQUE="false" FIELDS="legacyrecid"/>
         <INDEX NAME="visualat" UNIQUE="false" FIELDS="visualevidenceat"/>
       </INDEXES>

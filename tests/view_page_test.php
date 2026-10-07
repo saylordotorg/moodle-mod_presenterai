@@ -382,4 +382,28 @@ final class view_page_test extends \advanced_testcase {
         set_config('sttwarm', 1, 'mod_presenterai');
         $this->assertSame(1, $this->export($instance, $course, $context, $student)['config']['warmstt']);
     }
+
+    /**
+     * A camera activity asks the browser for a separate audio track; an audio only one doesn't record twice.
+     *
+     * @return void
+     */
+    public function test_audiotrack_config(): void {
+        global $PAGE;
+
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student] = $this->setup_activity(['mode' => 'video']);
+        $config = $this->export($instance, $course, $context, $student)['config'];
+        $this->assertSame(1, $config['audiotrack']);
+        $this->assertSame(\mod_presenterai\local\transcription_source::AUDIO_TRACK_KBPS, $config['audiotrackkbps']);
+        $html = $PAGE->get_renderer('core')->render_from_template(
+            'mod_presenterai/view',
+            $this->export($instance, $course, $context, $student)
+        );
+        $this->assertStringContainsString('data-audiotrack="1"', $html);
+
+        [$course, $instance, $context, $student] = $this->setup_activity(['mode' => 'audio']);
+        $this->assertSame(0, $this->export($instance, $course, $context, $student)['config']['audiotrack']);
+    }
 }

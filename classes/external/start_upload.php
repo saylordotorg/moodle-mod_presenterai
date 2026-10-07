@@ -29,9 +29,11 @@ use mod_presenterai\local\recording_manager;
  * The response carries only what the browser needs to send bytes: a presigned
  * PUT on S3, or upload.php with an upload id and a chunk size on the File API.
  *
- * Three kinds of media, sent in this order: the slide deck when the learner
+ * Four kinds of media, sent in this order: the slide deck when the learner
  * picks one, the frame contact sheet after Stop when the activity asks for
- * body language feedback and the learner hasn't opted out, then the recording.
+ * body language feedback and the learner hasn't opted out, the audio only
+ * track of a video recording when the browser could make one, then the
+ * recording.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -46,7 +48,7 @@ class start_upload extends external_api {
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'recordingid' => new external_value(PARAM_INT, 'Recording id from begin_attempt'),
-            'kind' => new external_value(PARAM_ALPHA, 'What is being uploaded: recording, deck or frames'),
+            'kind' => new external_value(PARAM_ALPHA, 'What is being uploaded: recording, deck, frames or audio'),
             'ext' => new external_value(PARAM_ALPHANUM, 'File extension without the dot'),
             'sizebytes' => new external_value(PARAM_INT, 'Size the browser is about to send, in bytes'),
             'attempttoken' => new external_value(PARAM_ALPHANUM, 'The token begin_attempt returned with this recording id'),
@@ -57,7 +59,7 @@ class start_upload extends external_api {
      * Mint the key and return the upload target.
      *
      * @param int $recordingid Recording id.
-     * @param string $kind recording, deck or frames.
+     * @param string $kind recording, deck, frames or audio.
      * @param string $ext File extension.
      * @param int $sizebytes Declared size.
      * @param string $attempttoken The token from begin_attempt.

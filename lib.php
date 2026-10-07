@@ -242,6 +242,9 @@ function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $ar
 
     // The column on the recording row that must agree with the requested
     // filename, per file area. An area not listed here is not ours to serve.
+    // The audio area is deliberately absent: the separate audio track exists
+    // for transcription only, so nobody plays or downloads it from here, and
+    // a learner never gets a second copy of their recording through it.
     $keycolumns = [
         'recording' => 'storagekey',
         'deck' => 'deckkey',

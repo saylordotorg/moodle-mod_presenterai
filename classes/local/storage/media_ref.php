@@ -44,6 +44,15 @@ final class media_ref {
     public const KIND_FRAMES = 'frames';
 
     /**
+     * @var string A low bitrate audio only copy of a video recording, recorded
+     * beside it in the browser so transcription stays under a 25 MB upload limit.
+     */
+    public const KIND_AUDIO = 'audio';
+
+    /** @var string[] Every kind, which is also every File API area attempt media uses. */
+    public const KINDS = [self::KIND_RECORDING, self::KIND_DECK, self::KIND_FRAMES, self::KIND_AUDIO];
+
+    /**
      * Build a reference to one piece of media.
      *
      * @param int $recordingid The attempt this belongs to. Zero only during
@@ -127,6 +136,6 @@ final class media_ref {
      * @return bool
      */
     public function has_valid_kind(): bool {
-        return in_array($this->kind, [self::KIND_RECORDING, self::KIND_DECK, self::KIND_FRAMES], true);
+        return in_array($this->kind, self::KINDS, true);
     }
 }

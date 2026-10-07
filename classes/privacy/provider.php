@@ -72,7 +72,7 @@ class provider implements
     \core_privacy\local\request\core_userlist_provider,
     \core_privacy\local\request\plugin\provider {
     /** @var string[] The File API areas holding attempt media, keyed by itemid = recording id. */
-    private const AREAS = ['recording', 'deck', 'frames'];
+    private const AREAS = ['recording', 'deck', 'frames', 'audio'];
 
     /**
      * Describe every table, subsystem and external location that holds personal data.
@@ -135,6 +135,7 @@ class provider implements
             'media' => 'privacy:metadata:s3:media',
             'deck' => 'privacy:metadata:s3:deck',
             'frames' => 'privacy:metadata:s3:frames',
+            'audio' => 'privacy:metadata:s3:audio',
         ], 'privacy:metadata:s3');
 
         // The AI services transcription, scoring and body language feedback
