@@ -63,6 +63,19 @@ use mod_presenterai\local\storage\store_factory;
  * itself is an open question for the site; on the File API the bytes are
  * exported.
  *
+ * The Soapbox importer's two tables. presenterai_migration_map links a
+ * Soapbox row to the PresenterAI row made from it: ids, states and, for an
+ * assignment, its course page link's original address and visibility. It
+ * names no user and holds no learner text; the attempts it points at are the
+ * learner's and are exported and deleted with the activity as above.
+ * presenterai_migreport is the verification record, one row per run per
+ * course, of counts, mismatch codes with ids, and the operatorid of the admin
+ * who ran it. That id is the only user link. It's handled like graderid:
+ * found in the system context (the import is a site operation, and a report
+ * outlives its course), exported, and on deletion set to 0 rather than the
+ * row deleted, because the report is the site's evidence that a course's
+ * Soapbox data was carried over, which SOLA reads before it may drop it.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -124,6 +137,19 @@ class provider implements
             'privacy:metadata:presenterai_gatelog'
         );
 
+        $collection->add_database_table(
+            'presenterai_migration_map',
+            self::field_strings('presenterai_migration_map', ['sourcetable', 'sourceid', 'sourcesiteid', 'targetid',
+                'targetcmid', 'state', 'payload', 'timecreated']),
+            'privacy:metadata:presenterai_migration_map'
+        );
+        $collection->add_database_table(
+            'presenterai_migreport',
+            self::field_strings('presenterai_migreport', ['courseid', 'counts', 'mismatches', 'mismatchcount',
+                'storagesampled', 'storagefailures', 'passed', 'operatorid', 'timecreated']),
+            'privacy:metadata:presenterai_migreport'
+        );
+
         $collection->add_subsystem_link('core_files', [], 'privacy:metadata:core_files');
         $collection->add_subsystem_link('core_message', [], 'privacy:metadata:core_message');
         $collection->add_subsystem_link('core_grades', [], 'privacy:metadata:core_grades');
@@ -152,7 +178,8 @@ class provider implements
     }
 
     /**
-     * The module contexts where this user owns a recording, graded one, or owns a spend row.
+     * The module contexts where this user owns a recording, graded one, or owns a spend row, and the system
+     * context when they ran a Soapbox import verification.
      *
      * @param int $userid The user.
      * @return contextlist
@@ -179,6 +206,13 @@ class provider implements
             $base . " JOIN {presenterai_aiusage} u ON u.presenteraiid = cm.instance WHERE u.userid = :userid",
             $params
         );
+        $contextlist->add_from_sql(
+            "SELECT ctx.id
+               FROM {context} ctx
+              WHERE ctx.contextlevel = :system
+                AND EXISTS (SELECT 1 FROM {presenterai_migreport} r WHERE r.operatorid = :userid)",
+            ['system' => CONTEXT_SYSTEM, 'userid' => $userid]
+        );
 
         return $contextlist;
     }
@@ -191,6 +225,10 @@ class provider implements
      */
     public static function get_users_in_context(userlist $userlist) {
         $context = $userlist->get_context();
+        if ($context instanceof \context_system) {
+            $userlist->add_from_sql('operatorid', 'SELECT operatorid FROM {presenterai_migreport} WHERE operatorid > 0', []);
+            return;
+        }
         if (!$context instanceof \context_module) {
             return;
         }
@@ -232,6 +270,10 @@ class provider implements
         $user = $contextlist->get_user();
         $userid = (int) $user->id;
         foreach ($contextlist->get_contexts() as $context) {
+            if ($context instanceof \context_system) {
+                self::export_migration_reports($context, $userid);
+                continue;
+            }
             if (!$context instanceof \context_module) {
                 continue;
             }
@@ -266,6 +308,13 @@ class provider implements
      * @return void
      */
     public static function delete_data_for_all_users_in_context(\context $context) {
+        global $DB;
+
+        if ($context instanceof \context_system) {
+            // The reports stay as the site's evidence; only who ran them goes.
+            $DB->set_field_select('presenterai_migreport', 'operatorid', 0, 'operatorid <> 0');
+            return;
+        }
         if (!$context instanceof \context_module) {
             return;
         }
@@ -284,8 +333,14 @@ class provider implements
      * @return void
      */
     public static function delete_data_for_user(approved_contextlist $contextlist) {
+        global $DB;
+
         $userid = (int) $contextlist->get_user()->id;
         foreach ($contextlist->get_contexts() as $context) {
+            if ($context instanceof \context_system) {
+                $DB->set_field('presenterai_migreport', 'operatorid', 0, ['operatorid' => $userid]);
+                continue;
+            }
             $instanceid = self::instance_id($context);
             if ($instanceid !== null) {
                 self::delete_user_in_instance($instanceid, $userid);
@@ -300,6 +355,16 @@ class provider implements
      * @return void
      */
     public static function delete_data_for_users(approved_userlist $userlist) {
+        global $DB;
+
+        if ($userlist->get_context() instanceof \context_system) {
+            $userids = array_map('intval', $userlist->get_userids());
+            if ($userids) {
+                [$insql, $params] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED);
+                $DB->set_field_select('presenterai_migreport', 'operatorid', 0, "operatorid {$insql}", $params);
+            }
+            return;
+        }
         $instanceid = self::instance_id($userlist->get_context());
         if ($instanceid === null) {
             return;
@@ -568,6 +633,38 @@ class provider implements
         writer::with_context($context)->export_data(
             [get_string('privacy:path:aiusage', 'mod_presenterai')],
             (object) ['usage' => $out]
+        );
+    }
+
+    /**
+     * The Soapbox import verifications this user ran: the course, the result and the counts, no learner's data.
+     *
+     * @param \context_system $context The system context.
+     * @param int $userid The operator.
+     * @return void
+     */
+    private static function export_migration_reports(\context_system $context, int $userid): void {
+        global $DB;
+
+        $rows = $DB->get_records('presenterai_migreport', ['operatorid' => $userid], 'timecreated ASC, id ASC');
+        if (!$rows) {
+            return;
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = (object) [
+                'courseid' => (int) $row->courseid,
+                'passed' => transform::yesno(!empty($row->passed)),
+                'mismatchcount' => (int) $row->mismatchcount,
+                'storagesampled' => (int) $row->storagesampled,
+                'storagefailures' => (int) $row->storagefailures,
+                'timecreated' => transform::datetime($row->timecreated),
+            ];
+        }
+        writer::with_context($context)->export_data(
+            [get_string('privacy:path:migrationreports', 'mod_presenterai')],
+            (object) ['reports' => $out]
         );
     }
 

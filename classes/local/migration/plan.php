@@ -29,7 +29,8 @@ namespace mod_presenterai\local\migration;
  *   message (the refusal's message, or what SOLA gained since a verified import, '' otherwise);
  * - standin (a STANDIN_* value, '' for a skipped assignment), standincmid (the stand-in's cmid, 0 for none),
  *   standinmessage, section (the section number the activity goes into, or is in);
- * - counts: topics, recordings, bystatus (mapped status to count, sorted by status), scores, learners;
+ * - counts: topics, recordings, bystatus (mapped status to count, sorted by status), scores, learners,
+ *   unreconstructed (scores whose maxima can't be recovered: they keep SOLA's mean and get no percentage);
  * - outcome ('' when nothing was attempted, OUTCOME_DONE or OUTCOME_FAILED), error (the failure, as its class and
  *   a Moodle error code, never the exception's message), targetid and targetcmid (the activity, 0 when none),
  *   state (the map state after the run, '' when none);
@@ -175,17 +176,18 @@ final class plan {
     /**
      * The course's totals over the assignments read (a skipped one isn't read, so counts nothing).
      *
-     * @return array With assignments (every source assignment), topics, recordings, bystatus, scores, learners,
-     *               orphans, decisions (decision to how many), new_source_rows and newly_scored_rows.
+     * @return array With assignments (every source assignment), topics, recordings, bystatus, scores, unreconstructed,
+     *               learners, orphans, decisions (decision to how many), new_source_rows and newly_scored_rows.
      */
     public function counts(): array {
         $totals = ['assignments' => count($this->assignments), 'topics' => 0, 'recordings' => 0, 'bystatus' => [],
-            'scores' => 0, 'learners' => $this->learners, 'orphans' => $this->orphans, 'decisions' => [],
-            'new_source_rows' => 0, 'newly_scored_rows' => 0];
+            'scores' => 0, 'unreconstructed' => 0, 'learners' => $this->learners, 'orphans' => $this->orphans,
+            'decisions' => [], 'new_source_rows' => 0, 'newly_scored_rows' => 0];
         foreach ($this->assignments as $entry) {
             $totals['topics'] += $entry['counts']['topics'];
             $totals['recordings'] += $entry['counts']['recordings'];
             $totals['scores'] += $entry['counts']['scores'];
+            $totals['unreconstructed'] += $entry['counts']['unreconstructed'];
             $totals['new_source_rows'] += $entry['new_source_rows'];
             $totals['newly_scored_rows'] += $entry['newly_scored_rows'];
             foreach ($entry['counts']['bystatus'] as $status => $count) {
@@ -209,7 +211,8 @@ final class plan {
         return [
             'sourceid' => $sourceid, 'decision' => self::CREATE, 'code' => '', 'message' => '',
             'standin' => '', 'standincmid' => 0, 'standinmessage' => '', 'section' => 0,
-            'counts' => ['topics' => 0, 'recordings' => 0, 'bystatus' => [], 'scores' => 0, 'learners' => 0],
+            'counts' => ['topics' => 0, 'recordings' => 0, 'bystatus' => [], 'scores' => 0, 'learners' => 0,
+                'unreconstructed' => 0],
             'outcome' => '', 'error' => '', 'targetid' => 0, 'targetcmid' => 0, 'state' => '',
             'new_source_rows' => 0, 'newly_scored_rows' => 0,
         ];

@@ -294,8 +294,30 @@ class runner {
             $plan->assignments[$id] = $this->plan_assignment($course, $assign, $standins[$id] ?? [], $last, $learners);
         }
         $plan->learners = count($learners);
+        $this->count_unreconstructed($plan);
 
         return $plan;
+    }
+
+    /**
+     * Count, per assignment read, the scores the mapper can't rebuild a maximum for (they become unreconstructed:
+     * SOLA's mean is kept and no percentage is given). Pure mapping over rows already read; writes nothing.
+     *
+     * @param plan $plan The plan, its entries' counts filled in.
+     */
+    private function count_unreconstructed(plan $plan): void {
+        $preset = null;
+        foreach ($this->work as $id => $work) {
+            foreach ($work['scores'] as $score) {
+                $preset = $preset ?? $this->reader->preset_criteria($plan->speakinglevel);
+                $rubricid = (int) ($score['rubricid'] ?? 0);
+                $row = mapper::score_to_row($score, ['rubric' => $rubricid > 0 ? $this->rubric($rubricid) : null,
+                    'preset' => $preset, 'speaking_level' => $plan->speakinglevel, 'recordingid' => 0, 'userid' => 0]);
+                if ($row['scoreprovenance'] === mapper::PROVENANCE_NONE) {
+                    $plan->assignments[$id]['counts']['unreconstructed']++;
+                }
+            }
+        }
     }
 
     /**

@@ -521,4 +521,197 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
         $this->resetDebugging();
         $this->assertSame(0, $DB->count_records('presenterai_gatelog'));
     }
+
+    /**
+     * The migration tables, as declared: field to whether it may hold anything but ids, codes, counts and times.
+     *
+     * @return array Table to its allowed declared fields.
+     */
+    private static function migration_allowed_fields(): array {
+        return [
+            'presenterai_migration_map' => ['sourcetable', 'sourceid', 'sourcesiteid', 'targetid', 'targetcmid', 'state',
+                'payload', 'timecreated'],
+            'presenterai_migreport' => ['courseid', 'counts', 'mismatches', 'mismatchcount', 'storagesampled',
+                'storagefailures', 'passed', 'operatorid', 'timecreated'],
+        ];
+    }
+
+    /**
+     * Both migration tables are declared; the report names its operator; the map names no user and no text field.
+     *
+     * @return void
+     */
+    public function test_get_metadata_declares_the_migration_tables(): void {
+        $items = [];
+        foreach (provider::get_metadata(new collection('mod_presenterai'))->get_collection() as $item) {
+            $items[$item->get_name()] = $item;
+        }
+
+        foreach (self::migration_allowed_fields() as $table => $allowed) {
+            $this->assertArrayHasKey($table, $items);
+            $fields = array_keys($items[$table]->get_privacy_fields());
+            $this->assertNotEmpty($fields);
+            $this->assertSame([], array_diff($fields, $allowed), $table . ' declares a field that could hold learner text');
+            foreach ($items[$table]->get_privacy_fields() as $field => $stringid) {
+                $this->assertTrue(get_string_manager()->string_exists($stringid, 'mod_presenterai'), $stringid);
+            }
+            $this->assertTrue(get_string_manager()->string_exists($items[$table]->get_summary(), 'mod_presenterai'));
+        }
+        $this->assertContains('operatorid', array_keys($items['presenterai_migreport']->get_privacy_fields()));
+        foreach (['userid', 'transcript', 'feedback', 'name', 'firstname'] as $field) {
+            $this->assertArrayNotHasKey($field, $items['presenterai_migration_map']->get_privacy_fields());
+        }
+    }
+
+    /**
+     * A real import and verification of learner work leave no learner text in either table's rows.
+     *
+     * @return void
+     */
+    public function test_the_migration_tables_hold_no_learner_text(): void {
+        global $CFG, $DB;
+        require_once(__DIR__ . '/fixtures/migration/fake_source.php');
+
+        \core\session\manager::set_user(get_admin());
+        set_config('backend', 's3', 'mod_presenterai');
+        set_config('s3bucket', 'archive-course', 'mod_presenterai');
+        set_config('s3region', 'us-east-1', 'mod_presenterai');
+        set_config('s3prefix', 'soapbox', 'mod_presenterai');
+        $CFG->allowstealth = 1;
+        $learner = $this->getDataGenerator()->create_and_enrol($this->course, 'student',
+            ['firstname' => 'Wilhelmina', 'lastname' => 'Quarternight']);
+        $secrets = ['ZEBRA-TRANSCRIPT-7731', 'OKAPI-FEEDBACK-5512', 'NARWHAL-TIP-3301', 'IBEX-OBSERVATION-8820',
+            'Wilhelmina', 'Quarternight', 'Persuasive talk'];
+
+        $source = new \mod_presenterai\tests\fixtures\fake_source();
+        $assign = $source->add_assign((int) $this->course->id);
+        $source->add_topic($assign, ['title' => 'Persuasive talk topic']);
+        $score = $source->add_score((int) $this->course->id, (int) $learner->id, [
+            'ai_feedback' => 'OKAPI-FEEDBACK-5512',
+            'scores' => json_encode([['name' => 'Delivery & Fluency', 'score' => 4, 'feedback' => 'OKAPI-FEEDBACK-5512',
+                'max_score' => 5]]),
+            'session_meta' => json_encode(['tips' => ['NARWHAL-TIP-3301'], 'visual_observation' => 'IBEX-OBSERVATION-8820']),
+        ]);
+        $recid = $source->add_rec($assign, (int) $learner->id, ['status' => 'scored', 'scoreid' => $score,
+            'transcript' => 'ZEBRA-TRANSCRIPT-7731']);
+        $url = $this->getDataGenerator()->create_module('url', ['course' => $this->course->id,
+            'externalurl' => $CFG->wwwroot . '/local/ai_course_assistant/soapbox_present.php?id=' . $assign]);
+        $source->standins[(int) $this->course->id][] = ['cmid' => (int) $url->cmid, 'assignid' => $assign,
+            'externalurl' => $CFG->wwwroot . '/local/ai_course_assistant/soapbox_present.php?id=' . $assign, 'visible' => 1,
+            'visibleoncoursepage' => 1];
+        $checker = new class implements \mod_presenterai\local\migration\object_checker {
+            /**
+             * Every object is there.
+             *
+             * @param string $key The key.
+             * @param int $bytes The size.
+             * @return bool
+             */
+            public function exists_with_size(string $key, int $bytes): bool {
+                return true;
+            }
+        };
+
+        $plan = (new \mod_presenterai\local\migration\runner($source))->apply_course((int) $this->course->id);
+        $this->assertSame(\mod_presenterai\local\migration\plan::OUTCOME_DONE, $plan->assignments[$assign]['outcome']);
+        $this->assertSame('ZEBRA-TRANSCRIPT-7731',
+            $DB->get_field('presenterai_recording', 'transcript', ['legacyrecid' => $recid]));
+        (new \mod_presenterai\local\migration\verifier($source, $checker))->verify_course((int) $this->course->id,
+            (int) get_admin()->id);
+        $DB->set_field('presenterai_recording', 'transcript', 'ZEBRA-TRANSCRIPT-7731 doctored', ['legacyrecid' => $recid]);
+        (new \mod_presenterai\local\migration\verifier($source, $checker))->verify_course((int) $this->course->id,
+            (int) get_admin()->id);
+
+        $this->assertGreaterThan(0, $DB->count_records('presenterai_migration_map'));
+        $this->assertSame(2, $DB->count_records('presenterai_migreport'));
+        foreach (array_keys(self::migration_allowed_fields()) as $table) {
+            foreach ($DB->get_records($table) as $row) {
+                $flat = json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                foreach ($secrets as $secret) {
+                    $this->assertStringNotContainsString($secret, $flat, $table);
+                }
+                $this->assertStringNotContainsString('soapbox/', $flat, $table);
+            }
+        }
+    }
+
+    /**
+     * A migration report row.
+     *
+     * @param int $operatorid Who ran the verification.
+     * @param int $passed 1 or 0.
+     * @return int Its id.
+     */
+    private function migreport(int $operatorid, int $passed = 1): int {
+        global $DB;
+
+        return (int) $DB->insert_record('presenterai_migreport', (object) [
+            'runid' => random_string(32), 'courseid' => $this->course->id,
+            'counts' => '{"recordings":{"source":3,"destination":3}}',
+            'mismatches' => '[]', 'mismatchcount' => 0, 'storagesampled' => 2, 'storagefailures' => 0, 'passed' => $passed,
+            'operatorid' => $operatorid, 'timecreated' => time(),
+        ]);
+    }
+
+    /**
+     * The operator a report names is found in the system context, exported, and erased by dropping only their id.
+     *
+     * @return void
+     */
+    public function test_an_operator_is_found_exported_and_erased(): void {
+        global $DB;
+
+        $operator = $this->getDataGenerator()->create_user();
+        $other = $this->getDataGenerator()->create_user();
+        $mine = $this->migreport((int) $operator->id);
+        $theirs = $this->migreport((int) $other->id, 0);
+        $system = \context_system::instance();
+
+        $this->assertEquals([$system->id], array_values(provider::get_contexts_for_userid((int) $operator->id)->get_contextids()));
+        $this->assertEquals([$this->context->id],
+            array_values(provider::get_contexts_for_userid((int) $this->teacher->id)->get_contextids()));
+        $userlist = new userlist($system, 'mod_presenterai');
+        provider::get_users_in_context($userlist);
+        $this->assertEqualsCanonicalizing([(int) $operator->id, (int) $other->id], array_map('intval', $userlist->get_userids()));
+
+        provider::export_user_data(new approved_contextlist($operator, 'mod_presenterai', [$system->id]));
+        $data = writer::with_context($system)->get_data([get_string('privacy:path:migrationreports', 'mod_presenterai')]);
+        $this->assertCount(1, $data->reports);
+        $this->assertSame((int) $this->course->id, $data->reports[0]->courseid);
+        $this->assertSame(get_string('yes'), $data->reports[0]->passed);
+
+        // Erasing the operator keeps the report (the site's evidence) and drops only who ran it.
+        provider::delete_data_for_user(new approved_contextlist($operator, 'mod_presenterai', [$system->id]));
+        $this->assertSame(0, (int) $DB->get_field('presenterai_migreport', 'operatorid', ['id' => $mine]));
+        $this->assertSame((int) $other->id, (int) $DB->get_field('presenterai_migreport', 'operatorid', ['id' => $theirs]));
+        $this->assertSame(1, (int) $DB->get_field('presenterai_migreport', 'passed', ['id' => $mine]));
+        $this->assertEmpty(provider::get_contexts_for_userid((int) $operator->id)->get_contextids());
+
+        provider::delete_data_for_users(new approved_userlist($system, 'mod_presenterai', [(int) $other->id]));
+        $this->assertSame(0, (int) $DB->get_field('presenterai_migreport', 'operatorid', ['id' => $theirs]));
+        $this->assertSame(2, $DB->count_records('presenterai_migreport'));
+
+        $this->migreport((int) $operator->id);
+        provider::delete_data_for_all_users_in_context($system);
+        $this->assertSame(0, $DB->count_records_select('presenterai_migreport', 'operatorid <> 0'));
+        $this->assertSame(3, $DB->count_records('presenterai_migreport'));
+        // The activity's own data is untouched by a system context deletion.
+        $this->assertSame(3, $DB->count_records('presenterai_recording', ['presenteraiid' => $this->instance->id]));
+    }
+
+    /**
+     * A module context deletion or export doesn't touch or carry a report row.
+     *
+     * @return void
+     */
+    public function test_module_requests_leave_reports_alone(): void {
+        global $DB;
+
+        $this->migreport((int) $this->teacher->id);
+        provider::delete_data_for_user(new approved_contextlist($this->teacher, 'mod_presenterai', [$this->context->id]));
+        provider::delete_data_for_all_users_in_context($this->context);
+        $this->resetDebugging();
+
+        $this->assertSame((int) $this->teacher->id, (int) $DB->get_field('presenterai_migreport', 'operatorid', []));
+    }
 }

@@ -291,6 +291,61 @@ $string['message_recordingscored_small'] = 'Your attempt {$a->attempt} in {$a->a
 $string['message_recordingscored_subject'] = 'Your score is ready: {$a->activity}';
 $string['messageprovider:deletionwarning'] = 'Advance notice that one of your recordings is about to be deleted';
 $string['messageprovider:recordingscored'] = 'A score is ready for one of your recordings';
+$string['migration:cli_applied'] = 'Course {$a->course}: import applied, run {$a->runid}.';
+$string['migration:cli_assignment'] = 'Assignment {$a->id}: {$a->decision}{$a->code}. Section {$a->section}. Topics {$a->topics}, recordings {$a->recordings}, scores {$a->scores}, unreconstructed {$a->unreconstructed}, learners {$a->learners}.';
+$string['migration:cli_backend'] = 'The import doesn\'t take a storage backend option. It moves no bytes, so it works only with S3, using the same bucket, region and prefix as Soapbox.';
+$string['migration:cli_counts'] = 'Assignments: {$a->assignments}. Topics: {$a->topics}. Recordings: {$a->recordings} ({$a->bystatus}). Scores: {$a->scores}. Distinct learners: {$a->learners}.';
+$string['migration:cli_course'] = 'Give --course=<course id> or --course=all. Run with --help to see the options.';
+$string['migration:cli_drift'] = '  Added to Soapbox after the import: {$a->added}. Scored in Soapbox after the import: {$a->scored}.';
+$string['migration:cli_dryrun'] = 'Course {$a}: dry run. Nothing was changed.';
+$string['migration:cli_fallback'] = 'Assignments going into the course\'s last section, because no course page link points at them: {$a}.';
+$string['migration:cli_fallback_none'] = 'Assignments going into the course\'s last section: none.';
+$string['migration:cli_help'] = 'Import SOLA Soapbox assignments, topics, attempts and scores into PresenterAI activities.
+
+Read docs/MIGRATION-RUNBOOK.md before the first run. Without --apply it\'s a dry run that changes nothing.
+
+Options:
+--course=<id>|all  The course to work on, or every course with Soapbox data. Required.
+--apply            Import. Without it, print what an import would do and change nothing.
+--rollback         Remove what the import made in the course and restore its course page links.
+--verify           Compare the import with Soapbox and store a verification report.
+--report           Print the stored verification reports and change nothing.
+--json             Print the result as one JSON document.
+-h, --help         Print this help.
+
+Use only one of --apply, --rollback, --verify and --report. There\'s no storage backend option: the import works
+only with S3, using the same bucket, region and prefix as Soapbox.
+
+Exit codes: 0 done or a clean dry run, 1 an error or a refusal, 2 a precondition isn\'t met.
+
+Example:
+php mod/presenterai/cli/migrate_from_local.php --course=42';
+$string['migration:cli_message'] = '  {$a}';
+$string['migration:cli_mismatch'] = '  Mismatch: {$a}';
+$string['migration:cli_mismatches'] = 'Mismatches: {$a}.';
+$string['migration:cli_modes'] = 'Use only one of --apply, --rollback, --verify and --report.';
+$string['migration:cli_nocourses'] = 'No course on this site has Soapbox data.';
+$string['migration:cli_none'] = 'none';
+$string['migration:cli_note'] = 'Note ({$a->code}): {$a->message}';
+$string['migration:cli_orphans'] = 'Unowned speech scores (includes freeform practice): {$a}. They\'re counted and left in Soapbox, and they never stop the import.';
+$string['migration:cli_outcome'] = '  Outcome: {$a->outcome}. Import state: {$a->state}. Activity cmid: {$a->cmid}.';
+$string['migration:cli_precondition'] = 'Precondition not met ({$a->code}): {$a->message}';
+$string['migration:cli_refusal'] = 'Course refused ({$a->code}): {$a->message}';
+$string['migration:cli_report'] = 'Course {$a->course}, report {$a->id}, run {$a->runid}, {$a->time}: {$a->result}. Mismatches: {$a->mismatchcount}. Storage objects checked: {$a->sampled}, failures: {$a->failures}.';
+$string['migration:cli_report_codes'] = '  Mismatch codes: {$a}.';
+$string['migration:cli_report_failed'] = 'failed';
+$string['migration:cli_report_none'] = 'No verification reports for course {$a}.';
+$string['migration:cli_report_none_all'] = 'No verification reports on this site.';
+$string['migration:cli_report_passed'] = 'passed';
+$string['migration:cli_rollback'] = 'Course {$a->course}: rollback. Activities removed: {$a->removed}. Cleared: {$a->cleared}. Refused: {$a->refused}. Failed: {$a->failed}. Course page links restored: {$a->standinsrestored}. Import records deleted: {$a->maprowsdeleted}.';
+$string['migration:cli_rollback_entry'] = 'Assignment {$a->id}: {$a->outcome}{$a->code}. Course page link: {$a->standin}.';
+$string['migration:cli_standin'] = '  Course page link ({$a->decision}, cmid {$a->cmid}): {$a->message}';
+$string['migration:cli_unknownoption'] = 'Unknown option or argument. Run with --help to see the options.';
+$string['migration:cli_unreconstructed'] = 'Scores that can\'t be reconstructed: {$a}. Their rubric is gone and no preset matches, so they keep each criterion\'s Soapbox score out of 5 and get no percentage, as Soapbox showed them.';
+$string['migration:cli_verify_counts'] = 'Counts, Soapbox / PresenterAI: {$a}.';
+$string['migration:cli_verify_failed'] = 'Course {$a->course}: verification FAILED. Report {$a->report}, run {$a->runid}.';
+$string['migration:cli_verify_passed'] = 'Course {$a->course}: verification passed. Report {$a->report}, run {$a->runid}.';
+$string['migration:cli_verify_storage'] = 'Storage objects checked: {$a->sampled}. Storage failures: {$a->failures}.';
 $string['migration:failed_error'] = 'Importing Soapbox assignment {$a->id} failed: {$a->error}. Whatever it had finished is kept, and running the import again resumes it.';
 $string['migration:note_orphans'] = '{$a} unowned speech scores (includes freeform practice). They\'re counted and left where they are.';
 $string['migration:note_unmappablelevel'] = 'The course\'s Soapbox speaking level "{$a}" has no PresenterAI equivalent, so its activities get the general level.';
@@ -399,6 +454,25 @@ $string['privacy:metadata:presenterai_gatelog:recordingid'] = 'The attempt the f
 $string['privacy:metadata:presenterai_gatelog:rejectedtext'] = 'The withheld text.';
 $string['privacy:metadata:presenterai_gatelog:target'] = 'Whether it was the summary or the comment on one criterion.';
 $string['privacy:metadata:presenterai_gatelog:timecreated'] = 'When it was withheld.';
+$string['privacy:metadata:presenterai_migration_map'] = 'One row for each Soapbox assignment, topic and recording the import carried over, linking it to the PresenterAI row made from it. It holds ids and the import\'s progress, never a user id or learner text.';
+$string['privacy:metadata:presenterai_migration_map:payload'] = 'For an assignment, the original address and visibility of the course page link the import pointed at the new activity, so a rollback can restore it.';
+$string['privacy:metadata:presenterai_migration_map:sourceid'] = 'The id of the Soapbox row.';
+$string['privacy:metadata:presenterai_migration_map:sourcesiteid'] = 'Which site the Soapbox row was read on.';
+$string['privacy:metadata:presenterai_migration_map:sourcetable'] = 'Which Soapbox table the row came from.';
+$string['privacy:metadata:presenterai_migration_map:state'] = 'How far the import of the row got.';
+$string['privacy:metadata:presenterai_migration_map:targetcmid'] = 'The activity the row was imported into.';
+$string['privacy:metadata:presenterai_migration_map:targetid'] = 'The id of the PresenterAI row made from it.';
+$string['privacy:metadata:presenterai_migration_map:timecreated'] = 'When the row was imported.';
+$string['privacy:metadata:presenterai_migreport'] = 'One row for each verification of a course\'s Soapbox import: counts and mismatch codes with ids, and the administrator who ran it. It holds no learner text.';
+$string['privacy:metadata:presenterai_migreport:counts'] = 'How many assignments, topics, recordings, scores and learners Soapbox and PresenterAI each hold for the course.';
+$string['privacy:metadata:presenterai_migreport:courseid'] = 'The course that was verified.';
+$string['privacy:metadata:presenterai_migreport:mismatchcount'] = 'How many differences were found.';
+$string['privacy:metadata:presenterai_migreport:mismatches'] = 'Each difference found, as a code and the ids of the rows involved.';
+$string['privacy:metadata:presenterai_migreport:operatorid'] = 'The administrator who ran the verification.';
+$string['privacy:metadata:presenterai_migreport:passed'] = 'Whether the verification passed.';
+$string['privacy:metadata:presenterai_migreport:storagefailures'] = 'How many stored media objects were missing or the wrong size.';
+$string['privacy:metadata:presenterai_migreport:storagesampled'] = 'How many stored media objects were checked.';
+$string['privacy:metadata:presenterai_migreport:timecreated'] = 'When the verification ran.';
 $string['privacy:metadata:presenterai_recording'] = 'A recorded presentation attempt: the media reference, its length, its state and the transcript produced from it.';
 $string['privacy:metadata:presenterai_recording:attemptnumber'] = 'Which attempt this is for the learner.';
 $string['privacy:metadata:presenterai_recording:deletewarnedat'] = 'When the learner was sent the advance message about the recording\'s deletion date.';
@@ -440,6 +514,7 @@ $string['privacy:metadata:s3:frames'] = 'Still frames sampled from the recording
 $string['privacy:metadata:s3:media'] = 'The recorded video or audio.';
 $string['privacy:path:aiusage'] = 'AI usage';
 $string['privacy:path:attempts'] = 'Attempts';
+$string['privacy:path:migrationreports'] = 'Soapbox import verifications';
 $string['privacy:path:scoresgiven'] = 'Scores given';
 $string['privacy_delete'] = 'It is deleted automatically {$a} days after you record it.';
 $string['privacy_download_off'] = 'Downloading is switched off for this activity, so you cannot save a copy to your own device.';
