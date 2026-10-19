@@ -73,6 +73,9 @@ final class migration_runner_test extends \advanced_testcase {
         global $CFG;
         parent::setUp();
         $this->resetAfterTest();
+        // The importer refuses to start inside a database transaction (each assignment commits on its own), and on
+        // PostgreSQL every test runs inside one, so these tests reset the slow way.
+        $this->preventResetByRollback();
         \core\session\manager::set_user(get_admin());
 
         set_config('backend', 's3', 'mod_presenterai');

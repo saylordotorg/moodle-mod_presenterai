@@ -569,6 +569,9 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
      * @return void
      */
     public function test_the_migration_tables_hold_no_learner_text(): void {
+        // The import commits per assignment and refuses to start inside a database transaction; PostgreSQL wraps every
+        // test in one, so this test resets the slow way.
+        $this->preventResetByRollback();
         global $CFG, $DB;
         require_once(__DIR__ . '/fixtures/migration/fake_source.php');
 
