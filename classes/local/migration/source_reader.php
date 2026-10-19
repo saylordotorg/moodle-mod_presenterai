@@ -43,6 +43,16 @@ interface source_reader {
     public function site_id(): string;
 
     /**
+     * Whether SOLA's Soapbox tables are on this site, which every other method assumes.
+     *
+     * Check this first. A site without SOLA's Soapbox has none of the tables the other methods read, and they
+     * fail with a database error there.
+     *
+     * @return bool True only when SOLA's three sbx_* tables and practice_scores all exist.
+     */
+    public function tables_present(): bool;
+
+    /**
      * The courses that hold any Soapbox assignment.
      *
      * @return int[] Course ids, ascending.
@@ -107,9 +117,11 @@ interface source_reader {
     public function orphan_score_count(int $courseid): int;
 
     /**
-     * The scores that more than one recording of the course points at.
+     * The scores that more than one recording points at, among those of the course's own recordings.
      *
-     * Migrating such a pair would make two score rows from one source row, so the course is refused.
+     * The count is across all courses, so this is a superset of "a score used twice inside the course": a score
+     * the course shares with another course is reported to both, because either alone would copy the source
+     * row. Migrating such a pair would make two score rows from one source row, so the course is refused.
      *
      * @param int $courseid The course.
      * @return int[] Score ids.

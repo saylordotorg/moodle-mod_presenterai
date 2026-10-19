@@ -46,11 +46,18 @@ final class migration_no_source_write_test extends \advanced_testcase {
     /** @var string The reader. */
     private const READER = 'classes/local/migration/local_aica_reader.php';
 
-    /** @var string[] Database methods that write, change the schema or run raw SQL. */
-    private const WRITE_METHODS = [
+    /** @var string[] Database methods that write or run raw SQL, whose first argument is a table or a statement. */
+    private const TABLE_WRITE_METHODS = [
         'insert_record_raw', 'insert_record', 'insert_records', 'bulk_insert_records', 'import_record',
         'update_record_raw', 'update_record', 'set_field_select', 'set_field', 'delete_records_select',
-        'delete_records_list', 'delete_records', 'execute_sql', 'execute', 'get_manager',
+        'delete_records_list', 'delete_records', 'execute_sql', 'execute',
+    ];
+
+    /** @var string[] Methods of the database manager that change the schema. */
+    private const DDL_METHODS = [
+        'create_table', 'drop_table', 'rename_table', 'add_field', 'drop_field', 'rename_field', 'change_field_type',
+        'change_field_precision', 'change_field_notnull', 'change_field_default', 'add_index', 'drop_index', 'add_key',
+        'drop_key', 'install_from_xmldb_file',
     ];
 
     /** @var string[] Functions that write a setting. */
@@ -116,10 +123,39 @@ final class migration_no_source_write_test extends \advanced_testcase {
      */
     private static function writes(string $code): array {
         $found = [];
+        // Any use of the database manager counts, because it is how a table is dropped, and a bare or backslashed
+        // global function counts too.
         $patterns = [
-            '/(?:->|::)\s*(' . implode('|', self::WRITE_METHODS) . ')\s*\(/i',
-            '/(?<![\w>:$\\\\])(' . implode('|', self::WRITE_FUNCTIONS) . ')\s*\(/i',
+            '/(?:->|::)\s*(' . implode('|', array_merge(self::TABLE_WRITE_METHODS, ['get_manager'])) . ')\s*\(/i',
+            '/(?<![\w>:$])(' . implode('|', self::WRITE_FUNCTIONS) . ')\s*\(/i',
             '/\b(INSERT\s+INTO|DELETE\s+FROM|TRUNCATE|DROP\s+TABLE|ALTER\s+TABLE|REPLACE\s+INTO|UPDATE\s+\S+\s+SET)\b/i',
+        ];
+        foreach ($patterns as $pattern) {
+            if (preg_match_all($pattern, $code, $matches)) {
+                $found = array_merge($found, $matches[1]);
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * Calls that could reach a write without naming it: call_user_func(), a method named by a variable or an
+     * expression, and the name of a write method or function as a string (a callable).
+     *
+     * A scan for a method name can't see through these, so the importer uses none of them.
+     *
+     * @param string $code Code, from code_of().
+     * @return string[] What was found.
+     */
+    private static function dynamic_dispatch(string $code): array {
+        $found = [];
+        $names = implode('|', array_merge(array_diff(self::TABLE_WRITE_METHODS, ['execute']), self::WRITE_FUNCTIONS));
+        $patterns = [
+            '/\b(call_user_func(?:_array)?)\s*\(/i',
+            '/(->\s*\$\w+\s*\()/',
+            '/(->\s*\{[^}]*\}\s*\()/',
+            '/([\'"](?:' . $names . ')[\'"])/i',
         ];
         foreach ($patterns as $pattern) {
             if (preg_match_all($pattern, $code, $matches)) {
@@ -134,14 +170,16 @@ final class migration_no_source_write_test extends \advanced_testcase {
      * The write calls whose table or statement is a SOLA table, named by its string or by an ids constant.
      *
      * Only the first argument is read, which is the table for a write method and the statement for execute, so a
-     * map row that merely carries ids::SOURCE_REC as a value isn't a write to that table.
+     * map row that merely carries ids::SOURCE_REC as a value isn't a write to that table. A schema method counts
+     * (drop_table of a SOLA table), but table_exists() is a read and doesn't.
      *
      * @param string $code Code, from code_of().
      * @return string[] The offending calls.
      */
     private static function sola_table_writes(string $code): array {
         $found = [];
-        $pattern = '/(?:->|::)\s*(?:' . implode('|', self::WRITE_METHODS) . ')\s*\(\s*([^,;]*)/i';
+        $methods = implode('|', array_merge(self::TABLE_WRITE_METHODS, self::DDL_METHODS));
+        $pattern = '/(?:->|::)\s*(?:' . $methods . ')\s*\(\s*([^,;]*)/i';
         preg_match_all($pattern, $code, $calls, PREG_SET_ORDER);
         foreach ($calls as $call) {
             if (preg_match('/SOURCE_(?:REC|ASSIGN|TOPIC)\b|' . self::SOLA_PREFIX . '|practice_scores/i', $call[1])) {
@@ -197,6 +235,15 @@ final class migration_no_source_write_test extends \advanced_testcase {
     }
 
     /**
+     * Test no migration file reaches a write without naming it, which the other scans could not see.
+     */
+    public function test_no_migration_file_dispatches_a_call_dynamically(): void {
+        foreach (self::migration_files() as $relative => $path) {
+            $this->assertSame([], self::dynamic_dispatch(self::code_of((string) file_get_contents($path))), $relative);
+        }
+    }
+
+    /**
      * Code that writes, in each of the ways the scan knows.
      *
      * @return array Name to [code].
@@ -220,6 +267,10 @@ final class migration_no_source_write_test extends \advanced_testcase {
             'a static call' => ['\\moodle_database::update_record(\'x\', $row);'],
             'set_config' => ['set_config(\'a\', 1, \'local_ai_course_assistant\');'],
             'unset_config' => ['unset_config(\'a\', \'local_ai_course_assistant\');'],
+            'set_config with a leading backslash' => ['\\set_config(\'a\', 1, \'local_ai_course_assistant\');'],
+            'unset_config with a leading backslash' => ['\\unset_config(\'a\', \'local_ai_course_assistant\');'],
+            'add_to_config_log with a leading backslash' => ['\\add_to_config_log(\'a\', 1, 2, \'x\');'],
+            'a namespaced set_config' => ['\\core\\set_config(\'a\', 1);'],
             'a raw delete' => ['$DB->get_records_sql(\'DELETE FROM {x} WHERE id > 0\');'],
             'a raw insert' => ['$sql = "INSERT INTO {x} (a) VALUES (1)";'],
             'a raw update' => ['$sql = \'UPDATE {x} SET a = 1\';'],
@@ -258,6 +309,55 @@ PHP;
     }
 
     /**
+     * Code that could reach a write without naming it.
+     *
+     * @return array Name to [code].
+     */
+    public static function dispatch_provider(): array {
+        return [
+            'call_user_func' => ['call_user_func(\'set_config\', \'a\', 1);'],
+            'call_user_func_array' => ['call_user_func_array([$DB, $method], $args);'],
+            'a method in a variable' => ['$DB->$method(\'x\', $row);'],
+            'a method in a spaced variable' => ["\$DB->\n    \$method  (\n'x', \$row);"],
+            'a method in braces' => ['$DB->{$method}(\'x\', $row);'],
+            'a method built from strings' => ['$DB->{\'upd\' . \'ate_record\'}(\'x\', $row);'],
+            'a callable array' => ['array_map([$DB, \'update_record\'], $rows);'],
+            'a callable string' => ['array_map("set_config", $names);'],
+            'a callable delete' => ['$f = [$DB, "delete_records_select"];'],
+        ];
+    }
+
+    /**
+     * Test the dispatch scan catches each way of calling without naming.
+     *
+     * @dataProvider dispatch_provider
+     * @param string $snippet The code.
+     */
+    public function test_the_dispatch_scan_catches_a_planted_call(string $snippet): void {
+        $this->assertNotSame([], self::dynamic_dispatch(self::code_of('<?php ' . $snippet)));
+    }
+
+    /**
+     * Test the dispatch scan lets plain calls, property reads and closures through.
+     */
+    public function test_the_dispatch_scan_passes_plain_code(): void {
+        $php = <<<'PHP'
+<?php
+// A comment about call_user_func() and $DB->$method().
+$rows = $DB->get_records('x', ['id' => 1]);
+$name = $record->$column;
+$record->{$column} = 1;
+$closure = $this->presets;
+$source = ($this->presets)($level);
+$preset = $class::speech_preset($level);
+$text = 'update the record';
+$message = get_string('update_record_help', 'mod_presenterai');
+PHP;
+
+        $this->assertSame([], self::dynamic_dispatch(self::code_of($php)));
+    }
+
+    /**
      * Test the table check fails on a write to a SOLA table by name or by constant, and passes a map row.
      */
     public function test_the_table_check_tells_a_sola_write_from_a_map_row(): void {
@@ -268,13 +368,21 @@ PHP;
             '$DB->insert_record(\'local_ai_course_assistant_practice_scores\', $row);',
             '$DB->update_record(\'local_ai_course_assistant_sbx_rec\', $row);',
             '$DB->execute("UPDATE {" . ids::SOURCE_REC . "} SET status = 1");',
+            '$DB->get_manager()->drop_table(new \\xmldb_table(ids::SOURCE_REC));',
+            '$DB->get_manager()->drop_table(new \\xmldb_table(\'local_ai_course_assistant_sbx_rec\'));',
         ];
         foreach ($bad as $snippet) {
             $this->assertNotSame([], self::sola_table_writes(self::code_of('<?php ' . $snippet)), $snippet);
         }
 
-        $good = '$DB->insert_record(\'presenterai_migration_map\', [\'sourcetable\' => ids::SOURCE_REC, \'sourceid\' => 5]);';
-        $this->assertSame([], self::sola_table_writes(self::code_of('<?php ' . $good)));
+        $good = [
+            '$DB->insert_record(\'presenterai_migration_map\', [\'sourcetable\' => ids::SOURCE_REC, \'sourceid\' => 5]);',
+            '$exists = $DB->get_manager()->table_exists(ids::SOURCE_REC);',
+            'if (!$DB->get_manager()->table_exists(\\mod_presenterai\\local\\migration\\ids::SOURCE_ASSIGN)) { return; }',
+        ];
+        foreach ($good as $snippet) {
+            $this->assertSame([], self::sola_table_writes(self::code_of('<?php ' . $snippet)), $snippet);
+        }
     }
 
     /**

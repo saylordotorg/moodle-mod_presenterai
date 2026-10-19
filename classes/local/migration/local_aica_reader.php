@@ -25,7 +25,10 @@ namespace mod_presenterai\local\migration;
  *
  * SOLA's own classes are asked only for what has no other home (the level presets and the names of the two visual
  * criteria), only behind class_exists() and defined(), and only for plain data. This plugin keeps no runtime
- * dependency on SOLA (D3): on a site without it, every method of this class still answers, with nothing found.
+ * dependency on SOLA (D3): nothing here loads SOLA's code unless it is installed. But the tables are another
+ * matter: tables_present() must be checked first, and every other method assumes SOLA's Soapbox tables exist,
+ * so on a site without them each of those fails with a database error.
+ *
  * Where SOLA computes something from its settings (the attempt cap, the storage location) the same rule is
  * restated here, so the importer reads SOLA's settings the way SOLA does without calling it, and a test pins
  * that the two agree whenever SOLA is installed.
@@ -71,6 +74,9 @@ final class local_aica_reader implements source_reader {
     /** @var string SOLA's soapbox_storage::DEFAULT_PREFIX. */
     private const DEFAULT_PREFIX = 'soapbox/';
 
+    /** @var string SOLA's practice score table, which holds Soapbox scores among others. */
+    private const SCORES_TABLE = 'local_ai_course_assistant_practice_scores';
+
     /** @var string The score type SOLA's speech scoring writes. */
     private const SPEECH = 'speech';
 
@@ -109,20 +115,30 @@ final class local_aica_reader implements source_reader {
     /** @var string The class constant whose existence says SOLA carries the interlock. */
     private $interlock;
 
+    /** @var \Closure|null Replaces the list of the site's table names, for tests. */
+    private $tables;
+
     /**
      * Create a reader.
      *
-     * Both arguments exist so a test can stand in for SOLA's classes, which a site may or may not have.
-     * Production code passes nothing.
+     * The arguments exist so a test can stand in for what a site may or may not have (SOLA's classes, and its
+     * tables). Production code passes nothing.
      *
      * @param \Closure|null $presets A function from a level key to ['criteria' => the level preset's definitions,
      *        'visual' => the visual criteria's definitions] (each a list of arrays with a name and a max_score), or
      *        to null when it can't say, used instead of asking SOLA's rubric manager.
      * @param string $interlock The class constant, as a string, whose existence means the interlock is present.
+     * @param \Closure|null $tables A function returning the names of the tables on the site, without the prefix,
+     *        used instead of asking the database.
      */
-    public function __construct(?\Closure $presets = null, string $interlock = self::INTERLOCK_CONSTANT) {
+    public function __construct(
+        ?\Closure $presets = null,
+        string $interlock = self::INTERLOCK_CONSTANT,
+        ?\Closure $tables = null
+    ) {
         $this->presets = $presets;
         $this->interlock = $interlock;
+        $this->tables = $tables;
     }
 
     /**
@@ -132,6 +148,24 @@ final class local_aica_reader implements source_reader {
      */
     public function site_id(): string {
         return ids::site_id();
+    }
+
+    /**
+     * Whether SOLA's three sbx tables and its practice score table are all on this site.
+     *
+     * Reads the list of table names, which isn't a schema call, so the reader stays free of the database
+     * manager. The tables are listed without the site's prefix.
+     *
+     * @return bool
+     */
+    public function tables_present(): bool {
+        global $DB;
+
+        $names = $this->tables !== null ? ($this->tables)() : $DB->get_tables(false);
+        $existing = array_map('strval', array_values($names));
+        $required = [ids::SOURCE_REC, ids::SOURCE_ASSIGN, ids::SOURCE_TOPIC, self::SCORES_TABLE];
+
+        return array_diff($required, $existing) === [];
     }
 
     /**
@@ -348,6 +382,9 @@ final class local_aica_reader implements source_reader {
 
     /**
      * Whether SOLA carries the interlock constant.
+     *
+     * defined() on a class constant triggers the autoloader for SOLA's class, so SOLA's class file is loaded when
+     * SOLA is installed. None of its methods run, and a class that doesn't exist is a silent false.
      *
      * @return bool
      */

@@ -192,6 +192,7 @@ final class migration_mapper_test extends \advanced_testcase {
             'speaking_level_for_course' => '(int $courseid): string',
             'standins' => '(int $courseid): array',
             'storage_settings' => '(): array',
+            'tables_present' => '(): bool',
             'topics' => '(int $assignid): array',
         ], $signatures);
     }

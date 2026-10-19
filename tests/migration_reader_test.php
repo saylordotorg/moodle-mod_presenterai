@@ -85,6 +85,81 @@ final class migration_reader_test extends \advanced_testcase {
     }
 
     /**
+     * A reader that sees only the named tables on the site.
+     *
+     * @param array $names Table names, without the prefix, as the database lists them.
+     * @return local_aica_reader
+     */
+    private function reader_with_tables(array $names): local_aica_reader {
+        return new local_aica_reader(null, local_aica_reader::INTERLOCK_CONSTANT, static fn(): array => $names);
+    }
+
+    /**
+     * Test the tables count as present only when all four are listed, extra tables and list shape notwithstanding.
+     */
+    public function test_tables_are_present_when_all_four_are_listed(): void {
+        $four = [sola_rows::ASSIGN, sola_rows::TOPIC, sola_rows::REC, sola_rows::SCORES];
+
+        $this->assertTrue($this->reader_with_tables($four)->tables_present());
+        $this->assertTrue($this->reader_with_tables(array_merge(['course', 'user', sola_rows::RUBRICS], $four))->tables_present());
+        $this->assertTrue($this->reader_with_tables(array_combine($four, $four))->tables_present(), 'a name => name map');
+    }
+
+    /**
+     * Test the tables count as present on a site that has SOLA's Soapbox tables.
+     */
+    public function test_tables_are_present_on_a_site_with_sola(): void {
+        $this->require_sola_tables();
+
+        $this->assertTrue((new local_aica_reader())->tables_present());
+    }
+
+    /**
+     * Which tables are listed in each case where the tables don't all exist.
+     *
+     * @return array Name to [the table names listed].
+     */
+    public static function missing_tables_provider(): array {
+        $assign = 'local_ai_course_assistant_sbx_assign';
+        $topic = 'local_ai_course_assistant_sbx_topic';
+        $rec = 'local_ai_course_assistant_sbx_rec';
+        $scores = 'local_ai_course_assistant_practice_scores';
+
+        return [
+            'no tables' => [[]],
+            'only core tables' => [['course', 'user', 'url']],
+            'no assignment table' => [[$topic, $rec, $scores]],
+            'no topic table' => [[$assign, $rec, $scores]],
+            'no recording table' => [[$assign, $topic, $scores]],
+            'no score table' => [[$assign, $topic, $rec]],
+            'a similar name is not the table' => [[$assign . '_old', $topic, $rec, $scores]],
+        ];
+    }
+
+    /**
+     * Test one missing table is enough to say they aren't there (the false branch, tested where the tables exist).
+     *
+     * @dataProvider missing_tables_provider
+     * @param array $names The table names listed.
+     */
+    public function test_tables_are_not_present_when_one_is_missing(array $names): void {
+        $this->assertFalse($this->reader_with_tables($names)->tables_present());
+    }
+
+    /**
+     * Test the answer from the database is the truth, on a site with SOLA's tables and on one without.
+     */
+    public function test_tables_present_agrees_with_the_database(): void {
+        global $DB;
+        $expected = true;
+        foreach ([sola_rows::ASSIGN, sola_rows::TOPIC, sola_rows::REC, sola_rows::SCORES] as $table) {
+            $expected = $expected && $DB->get_manager()->table_exists($table);
+        }
+
+        $this->assertSame($expected, (new local_aica_reader())->tables_present());
+    }
+
+    /**
      * Test the courses with data come back once each, ascending.
      */
     public function test_course_ids_with_data_lists_each_course_once_ascending(): void {
@@ -257,13 +332,13 @@ final class migration_reader_test extends \advanced_testcase {
      * Test a recording whose score row no longer exists comes back with scoreid null (the mapper reads that as no score).
      */
     public function test_a_recording_whose_score_row_is_gone_has_scoreid_null(): void {
-        global $DB;
         $this->require_sola_tables();
         $assign = sola_rows::assign(3);
         $score = sola_rows::score(3, 11);
+        // No row has this id, which is what a recording is left with when its score row has been deleted.
+        $vanished = $score + 500;
         $with = sola_rows::rec($assign, 11, ['status' => 'scored', 'scoreid' => $score]);
-        $without = sola_rows::rec($assign, 12, ['status' => 'scored', 'scoreid' => $score + 500]);
-        $DB->delete_records(sola_rows::SCORES, ['id' => $score + 500]);
+        $without = sola_rows::rec($assign, 12, ['status' => 'scored', 'scoreid' => $vanished]);
 
         $rows = (new local_aica_reader())->recordings($assign);
 
