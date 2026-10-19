@@ -141,6 +141,30 @@ final class attempt_row_test extends \advanced_testcase {
             'abandoned' => [
                 ['status' => 'abandoned', 'storagekey' => null], true, 'attempt_never_uploaded', null,
             ],
+            'abandoned, empty reason string' => [
+                ['status' => 'abandoned', 'storagekey' => null, 'mediagonereason' => ''], true,
+                'attempt_never_uploaded', null,
+            ],
+            'abandoned, migrated, media expired before it was scored' => [
+                ['status' => 'abandoned', 'storagekey' => null, 'mediadeletedat' => $past, 'mediagonereason' => 'retention'],
+                true, 'attempt_deleted_on', $past,
+            ],
+            'abandoned, migrated, a date and no reason' => [
+                ['status' => 'abandoned', 'storagekey' => null, 'mediadeletedat' => $past, 'mediagonereason' => null],
+                true, 'attempt_deleted_on', $past,
+            ],
+            'abandoned, migrated, no deletion date' => [
+                ['status' => 'abandoned', 'storagekey' => null, 'mediadeletedat' => 0, 'mediagonereason' => 'retention'],
+                true, 'attempt_deleted', null,
+            ],
+            'abandoned, migrated, a reason with its own sentence' => [
+                ['status' => 'abandoned', 'storagekey' => null, 'mediadeletedat' => $past, 'mediagonereason' => 'pruned'],
+                true, 'attempt_gone_pruned', $past,
+            ],
+            'uploading, a deletion recorded (nothing writes this)' => [
+                ['status' => 'uploading', 'storagekey' => null, 'mediadeletedat' => $past, 'mediagonereason' => 'retention'],
+                true, 'attempt_never_uploaded', null,
+            ],
             'scored with media, cleanup on' => [
                 ['status' => 'scored', 'expiresat' => $future], true, 'attempt_deletes_on', $future,
             ],
@@ -248,6 +272,45 @@ final class attempt_row_test extends \advanced_testcase {
         $this->assertFalse(attempt_row::has_media($this->row(['storagekey' => ''])));
         $this->assertFalse(attempt_row::has_media($this->row(['status' => 'uploading'])));
         $this->assertFalse(attempt_row::has_media($this->row(['status' => 'abandoned'])));
+    }
+
+    /**
+     * An abandoned row that never uploaded says so, and one a migration abandoned after its media expired says deleted.
+     *
+     * Both are numbered '-' (neither used an attempt), but only the second has a recording that's "no longer
+     * available", so only it gets that note.
+     *
+     * @return void
+     */
+    public function test_export_of_abandoned_rows(): void {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $learner = $generator->create_and_enrol($course, 'student');
+        $instance = $generator->create_module('presenterai', ['course' => $course->id]);
+        $context = \context_module::instance($instance->cmid);
+        $plugin = $generator->get_plugin_generator('mod_presenterai');
+        $deletedat = time() - 3 * DAYSECS;
+        $natural = $plugin->create_recording([
+            'presenteraiid' => $instance->id, 'userid' => $learner->id, 'status' => 'abandoned', 'attemptnumber' => 0,
+        ]);
+        $migrated = $plugin->create_recording([
+            'presenteraiid' => $instance->id, 'userid' => $learner->id, 'status' => 'abandoned', 'attemptnumber' => 0,
+            'mediadeletedat' => $deletedat, 'mediagonereason' => 'retention', 'legacyrecid' => 77,
+        ]);
+        $this->setUser($learner);
+
+        $row = attempt_row::export($natural, $context, (int) $learner->id, time(), true);
+        $this->assertSame('attempt_never_uploaded', $row['statekey']);
+        $this->assertSame('-', $row['attempt']);
+        $this->assertSame('', $row['gonenote']);
+
+        $row = attempt_row::export($migrated, $context, (int) $learner->id, time(), true);
+        $this->assertSame('attempt_deleted_on', $row['statekey']);
+        $this->assertSame(get_string('attempt_deleted_on', 'mod_presenterai', $this->date($deletedat)), $row['state']);
+        $this->assertSame('-', $row['attempt']);
+        $this->assertSame(get_string('attempt_gone_note', 'mod_presenterai'), $row['gonenote']);
+        $this->assertFalse($row['mediaavailable']);
     }
 
     /**
