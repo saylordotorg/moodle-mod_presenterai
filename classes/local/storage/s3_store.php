@@ -281,6 +281,31 @@ class s3_store implements store_interface {
     }
 
     /**
+     * One signed HEAD, as the bucket answered it: the HTTP status and the reported length.
+     *
+     * For a caller that has to tell "not there" (404) from "couldn't ask" (anything else) and say which status it
+     * got, such as the migration's storage check. Status 0 means no answer: an empty key, an unconfigured store or
+     * a transport error. Reads only.
+     *
+     * @param string $key The stored key.
+     * @return array ['status' => int, 'bytes' => int|null], bytes being the content length when S3 gave one.
+     */
+    public function head(string $key): array {
+        if ($key === '' || !$this->is_configured()) {
+            return ['status' => 0, 'bytes' => null];
+        }
+        $curl = self::new_curl();
+        $curl->head($this->sign('HEAD', $key, 300));
+        if ($curl->get_errno()) {
+            return ['status' => 0, 'bytes' => null];
+        }
+        $info = $curl->get_info();
+        $size = $info['download_content_length'] ?? null;
+
+        return ['status' => (int) ($info['http_code'] ?? 0), 'bytes' => ($size !== null && $size >= 0) ? (int) $size : null];
+    }
+
+    /**
      * Size of the stored object in bytes, or null if it is gone.
      *
      * A signed HEAD. The method is part of the SigV4 canonical request, so a
@@ -765,7 +790,18 @@ class s3_store implements store_interface {
      * @return string
      */
     private function prefix(): string {
-        $value = $this->config('prefix');
+        return self::normalise_prefix($this->config('prefix'));
+    }
+
+    /**
+     * A prefix setting as the store uses it: the default when empty, never a leading slash, one trailing slash.
+     *
+     * Public so the Soapbox importer compares a prefix exactly as this store would read it.
+     *
+     * @param string $value The prefix setting, already trimmed.
+     * @return string
+     */
+    public static function normalise_prefix(string $value): string {
         if ($value === '') {
             $value = self::DEFAULT_PREFIX;
         }

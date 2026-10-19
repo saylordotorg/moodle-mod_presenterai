@@ -65,6 +65,8 @@ final class attempt_row {
      * Never returns an empty key. An empty cell is announced as blank, which a
      * screen reader user cannot tell apart from "not applicable" (design 11, rule 6).
      *
+     * An abandoned row that records its media as deleted isn't "not uploaded": see never_uploaded().
+     *
      * @param \stdClass $rec A presenterai_recording row.
      * @param int $now The time to compare expiresat against.
      * @param bool $cleanupenabled Whether the cleanup task that honours expiresat is enabled.
@@ -73,8 +75,7 @@ final class attempt_row {
      * @return array ['key' => lang string key, 'a' => its {$a} or null]
      */
     public static function state(\stdClass $rec, int $now, bool $cleanupenabled, bool $s3lifecycle = false): array {
-        $status = (string) ($rec->status ?? '');
-        if (in_array($status, self::NEVER_UPLOADED, true)) {
+        if (self::never_uploaded($rec)) {
             return ['key' => 'attempt_never_uploaded', 'a' => null];
         }
 
@@ -114,6 +115,30 @@ final class attempt_row {
         // Retention, and any reason a later version writes that this one does
         // not know, both read as a plain dated deletion rather than as nothing.
         return ['key' => 'attempt_deleted_on', 'a' => self::date($deletedat)];
+    }
+
+    /**
+     * Whether a row never received its bytes, so there's no media for it to have lost.
+     *
+     * An uploading row never did, and neither does an abandoned one that records no deletion. An abandoned row
+     * that does record one, a date in mediadeletedat or a reason in mediagonereason, is a migrated Soapbox
+     * attempt whose media expired before it was scored. It did upload, SOLA deleted the video, and the importer
+     * stores such an attempt as abandoned on purpose (IMPLEMENTATION-PLAN 7.4), so it reads as deleted rather
+     * than as "not uploaded". Nothing here writes either column on an abandoned row: drop_media() needs media
+     * and an abandoned row has none, and the cleanup sweep leaves both alone for exactly this reason.
+     *
+     * @param \stdClass $rec A presenterai_recording row.
+     * @return bool
+     */
+    private static function never_uploaded(\stdClass $rec): bool {
+        $status = (string) ($rec->status ?? '');
+        if ($status === 'uploading') {
+            return true;
+        }
+
+        return $status === 'abandoned'
+            && (int) ($rec->mediadeletedat ?? 0) <= 0
+            && (string) ($rec->mediagonereason ?? '') === '';
     }
 
     /**
@@ -183,7 +208,8 @@ final class attempt_row {
     ): array {
         $state = self::state($rec, $now, $cleanupenabled, $s3lifecycle);
         $hasmedia = self::has_media($rec);
-        $neveruploaded = in_array((string) $rec->status, self::NEVER_UPLOADED, true);
+        $unnumbered = in_array((string) $rec->status, self::NEVER_UPLOADED, true);
+        $neveruploaded = self::never_uploaded($rec);
 
         // The same string as the visible Recorded cell, so the accessible name
         // of each Watch or Download link identifies its row even when two
@@ -207,7 +233,8 @@ final class attempt_row {
             'recid' => (int) $rec->id,
             // Abandoned rows never consumed an attempt number (it is assigned at
             // finalize), so the default of 1 on the row would be a false claim.
-            'attempt' => $neveruploaded ? '-' : (string) (int) $rec->attemptnumber,
+            // That holds for a migrated abandoned row too, which carries 0.
+            'attempt' => $unnumbered ? '-' : (string) (int) $rec->attemptnumber,
             'recorded' => $recorded,
             'length' => self::duration((int) ($rec->durationseconds ?? 0)),
             'status' => $inreview ? get_string('status_awaitingreview', 'mod_presenterai') : self::status_label($rec),

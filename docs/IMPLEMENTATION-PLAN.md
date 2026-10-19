@@ -389,7 +389,7 @@ Three columns exist only because of the migration, and they are worth the space:
 </TABLE>
 ```
 
-The map exists because `legacyassignid` alone is not sufficient, for a reason that will actually happen. `sbx_assign` and `sbx_topic` are carried in course backups (`backup/moodle2/backup_local_ai_course_assistant_plugin.class.php:180,189`) while `sbx_rec` deliberately is not (`:39-42`). So restoring or duplicating a course after migration produces fresh `sbx_assign` rows with new ids, no recordings, and no `presenterai` instance, and a `legacyassignid` only check would see them as unmigrated and create duplicate empty activities in the copy. `sourcesiteid` (`$CFG->wwwroot` plus the site identifier) is what makes a course restored from degrees onto learn recognisable as foreign data rather than as a completed migration.
+The map exists because `legacyassignid` alone is not sufficient, for a reason that will actually happen. `sbx_assign` and `sbx_topic` are carried in course backups (`backup/moodle2/backup_local_ai_course_assistant_plugin.class.php:180,189`) while `sbx_rec` deliberately is not (`:39-42`). So restoring or duplicating a course after migration produces fresh `sbx_assign` rows with new ids, no recordings, and no `presenterai` instance, and a `legacyassignid` only check would see them as unmigrated and create duplicate empty activities in the copy. `sourcesiteid` (the sha1 of the site identifier, deliberately not the address, so a host rename can't change it) is what makes a course restored from degrees onto learn recognisable as foreign data rather than as a completed migration.
 
 `presenterai_migreport` is deliberately short of `presenterai_migration_report` (28 characters). The limit is 53 so the long name is legal, but generated key names are truncated at 30 (`lib/ddl/sql_generator.php:128`) and there is no reason to sit near a ceiling.
 
@@ -762,7 +762,7 @@ Building both stores here is a change from the prior plan, which had S3 in phase
 The prior plan had body language as its own phase because it was new work. It is a port with named source files and shipped tests, so it folds in here, which also means both features in the original brief are delivered before migration work starts, a better place to be if migration slips.
 *Ships:* everything today's Soapbox does, as an activity, with grades.
 
-**Phase 4. Migration. No longer on SOLA 8.0's critical path, see 9.15.** `migration/from_local_aica`, `presenterai_migration_map`, `presenterai_migreport`, `cli/migrate_from_local.php`, `migrate.php`, the verification tiers, `--rollback`, the SOLA side interlock in `soapbox_cleanup::execute()`, `migration_test`, and the written runbook. Rollout dev, degrees, learn.
+**Phase 4. Migration. BUILT in 0.5.0 (2026-10-19): see `docs/superpowers/specs/2026-10-19-soapbox-importer-design.md` and `docs/MIGRATION-RUNBOOK.md`; where they differ from this section, they win. No longer on SOLA 8.0's critical path, see 9.15.** `migration/from_local_aica`, `presenterai_migration_map`, `presenterai_migreport`, `cli/migrate_from_local.php`, `migrate.php`, the verification tiers, `--rollback`, the SOLA side interlock in `soapbox_cleanup::execute()`, `migration_test`, and the written runbook. Rollout dev, degrees, learn.
 *Ships:* Saylor can cut over, and SOLA 8.0 is unblocked for any site that has Soapbox data.
 
 This phase was written when migration was believed to gate SOLA 8.0. The measured answer to

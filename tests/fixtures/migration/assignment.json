@@ -1,0 +1,20 @@
+{
+    "id": 7,
+    "courseid": 12,
+    "name": "Pitch day",
+    "intro": "<p>Give a five minute pitch.</p>",
+    "introformat": 1,
+    "ptype": "persuasive",
+    "mode": "video",
+    "min_seconds": 240,
+    "max_seconds": 360,
+    "max_attempts": 3,
+    "stored_attempts": 2,
+    "rubricid": 9,
+    "speaking_level": "esl_beginner",
+    "slides_enabled": 1,
+    "slide_vision": 1,
+    "visible": 1,
+    "timecreated": 1790000000,
+    "timemodified": 1790100000
+}
