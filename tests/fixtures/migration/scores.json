@@ -1,0 +1,126 @@
+{
+    "new_shape": {
+        "id": 501,
+        "rubricid": 0,
+        "userid": 101,
+        "courseid": 12,
+        "scores": [
+            {"name": "Delivery & Fluency", "score": 4, "feedback": "Steady pace.", "max_score": 5, "assessed": true},
+            {"name": "Structure & Organization", "score": 4, "feedback": "Clear opening.", "max_score": 5, "assessed": true},
+            {"name": "Content & Relevance", "score": 4, "feedback": "On topic.", "max_score": 5, "assessed": true},
+            {"name": "Language & Vocabulary", "score": 4, "feedback": "Precise words.", "max_score": 5, "assessed": true},
+            {"name": "Time Management", "score": 4, "feedback": "Right on target.", "max_score": 5, "assessed": true},
+            {"name": "Body Language & Gestures", "score": 5, "feedback": "Open hands.", "max_score": 5, "assessed": true},
+            {"name": "Eye Contact & Camera Presence", "score": 0, "feedback": "Could not judge.", "max_score": 5, "assessed": false}
+        ],
+        "overall_score": 4,
+        "ai_feedback": "Clear and confident.",
+        "session_meta": {
+            "name": "Walking talk",
+            "topic": "Why we should walk more",
+            "target": 300,
+            "mode": "persuasive",
+            "tips": ["Slow down at the close.", "Pause after each point."],
+            "assessed_count": 6,
+            "pct": 83,
+            "visual_assessed": true,
+            "visual_observation": "Hands open at chest height, steady stance, looked at the lens."
+        },
+        "timecreated": 1790500100
+    },
+    "old_shape_rubric": {
+        "id": 503,
+        "rubricid": 9,
+        "userid": 101,
+        "courseid": 12,
+        "scores": [
+            {"name": "Delivery &  Fluency ", "score": 8, "feedback": "Strong."},
+            {"name": "STRUCTURE & Organization", "score": 4, "feedback": "Good."},
+            {"name": "Content & Relevance", "score": 5, "feedback": "Full marks."}
+        ],
+        "overall_score": 6,
+        "ai_feedback": "A solid talk.",
+        "session_meta": {
+            "name": "Old talk",
+            "topic": "Walking",
+            "target": 240,
+            "tips": ["Use a stronger close."]
+        },
+        "timecreated": 1788000100
+    },
+    "old_shape_preset": {
+        "id": 504,
+        "rubricid": 0,
+        "userid": 101,
+        "courseid": 12,
+        "scores": [
+            {"name": "Delivery & Fluency", "score": 3, "feedback": "Some hesitation."},
+            {"name": "Structure & Organization", "score": 4, "feedback": "Good flow."},
+            {"name": "Content & Relevance", "score": 2, "feedback": "Thin examples."},
+            {"name": "Language & Vocabulary", "score": 5, "feedback": "Rich."},
+            {"name": "Time Management", "score": 4, "feedback": "Close to target."}
+        ],
+        "overall_score": 4,
+        "ai_feedback": "Good effort.",
+        "session_meta": {
+            "name": "Preset talk",
+            "topic": "Cities",
+            "target": 300,
+            "mode": "informative",
+            "tips": ["Add one example per point."]
+        },
+        "timecreated": 1788100100
+    },
+    "old_shape_deleted_rubric": {
+        "id": 505,
+        "rubricid": 14,
+        "userid": 101,
+        "courseid": 12,
+        "scores": [
+            {"name": "Delivery & Fluency", "score": 4, "feedback": "Fine."},
+            {"name": "Structure & Organization", "score": 3, "feedback": "Loose."},
+            {"name": "Content & Relevance", "score": 5, "feedback": "Strong."}
+        ],
+        "overall_score": 4,
+        "ai_feedback": "Mixed.",
+        "session_meta": {
+            "name": "Lost rubric",
+            "topic": "Trains",
+            "target": 300,
+            "tips": []
+        },
+        "timecreated": 1788200100
+    },
+    "unknown_criterion": {
+        "id": 506,
+        "rubricid": 9,
+        "userid": 101,
+        "courseid": 12,
+        "scores": [
+            {"name": "Delivery & Fluency", "score": 8, "feedback": "Strong."},
+            {"name": "Structure & Organization", "score": 4, "feedback": "Good."},
+            {"name": "Pronunciation Clarity", "score": 5, "feedback": "Awarded from the transcript alone."}
+        ],
+        "overall_score": 6,
+        "ai_feedback": "A solid talk.",
+        "session_meta": {"name": "Odd talk", "topic": "Boats", "target": 300, "tips": ["Breathe."]},
+        "timecreated": 1788300100
+    },
+    "null_meta": {
+        "id": 507,
+        "rubricid": 0,
+        "userid": 101,
+        "courseid": 12,
+        "scores": [
+            {"name": "Delivery & Fluency", "score": 5, "feedback": "Excellent."},
+            {"name": "Structure & Organization", "score": 5, "feedback": "Excellent."},
+            {"name": "Content & Relevance", "score": 5, "feedback": "Excellent."},
+            {"name": "Language & Vocabulary", "score": 5, "feedback": "Excellent."},
+            {"name": "Time Management", "score": 5, "feedback": "Excellent."}
+        ],
+        "overall_score": 5,
+        "ai_feedback": "Outstanding.",
+        "session_meta": null,
+        "timecreated": 1788400100
+    }
+}

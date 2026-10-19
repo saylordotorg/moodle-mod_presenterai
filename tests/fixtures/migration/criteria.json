@@ -1,0 +1,23 @@
+{
+    "general_preset": {
+        "delivery & fluency": 5,
+        "structure & organization": 5,
+        "content & relevance": 5,
+        "language & vocabulary": 5,
+        "time management": 5
+    },
+    "video_preset": {
+        "delivery & fluency": 5,
+        "structure & organization": 5,
+        "content & relevance": 5,
+        "language & vocabulary": 5,
+        "time management": 5,
+        "body language & gestures": 5,
+        "eye contact & camera presence": 5
+    },
+    "custom_rubric": {
+        "delivery & fluency": 10,
+        "structure & organization": 5,
+        "content & relevance": 5
+    }
+}
