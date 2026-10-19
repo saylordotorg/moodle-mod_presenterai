@@ -762,7 +762,7 @@ Building both stores here is a change from the prior plan, which had S3 in phase
 The prior plan had body language as its own phase because it was new work. It is a port with named source files and shipped tests, so it folds in here, which also means both features in the original brief are delivered before migration work starts, a better place to be if migration slips.
 *Ships:* everything today's Soapbox does, as an activity, with grades.
 
-**Phase 4. Migration. No longer on SOLA 8.0's critical path, see 9.15.** `migration/from_local_aica`, `presenterai_migration_map`, `presenterai_migreport`, `cli/migrate_from_local.php`, `migrate.php`, the verification tiers, `--rollback`, the SOLA side interlock in `soapbox_cleanup::execute()`, `migration_test`, and the written runbook. Rollout dev, degrees, learn.
+**Phase 4. Migration. BUILT in 0.5.0 (2026-10-19): see `docs/superpowers/specs/2026-10-19-soapbox-importer-design.md` and `docs/MIGRATION-RUNBOOK.md`; where they differ from this section, they win. No longer on SOLA 8.0's critical path, see 9.15.** `migration/from_local_aica`, `presenterai_migration_map`, `presenterai_migreport`, `cli/migrate_from_local.php`, `migrate.php`, the verification tiers, `--rollback`, the SOLA side interlock in `soapbox_cleanup::execute()`, `migration_test`, and the written runbook. Rollout dev, degrees, learn.
 *Ships:* Saylor can cut over, and SOLA 8.0 is unblocked for any site that has Soapbox data.
 
 This phase was written when migration was believed to gate SOLA 8.0. The measured answer to

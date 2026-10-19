@@ -2,9 +2,14 @@
 
 An activity module in which a learner records a video or audio presentation in the browser, optionally presents a PDF slide deck while speaking, and receives a transcript, a rubric score and written per criterion feedback.
 
-> **Status: first release, v0.4.0 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, the migrator from SOLA's Soapbox feature isn't built yet, and it's English only for now. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
+> **Status: v0.5.0 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 adds the importer for SOLA's Soapbox feature (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
 
-## What's new in 0.4.0
+## What's new in 0.5.0
+
+- **An importer for SOLA's Soapbox feature.** Dry run by default, resumable, reversible, verified, and it never writes to SOLA. See [the runbook](docs/MIGRATION-RUNBOOK.md).
+- **A migrated attempt that expired before it was scored reads "Deleted on <date>"** instead of "Not uploaded".
+
+## What was new in 0.4.0
 
 - **Teacher review before release** (new, off by default). An activity can hold the AI's score and feedback until a teacher has checked them. See "Teacher review before release" below. DECISIONS.md D28.
 - **Long videos transcribe.** OpenAI's transcription service takes files of up to 25 MB, and a long video used to fail as too large. The browser now records a second, audio only track beside every video recording, at about 32 kbps (roughly 100 minutes fits under 25 MB), and transcription uses that. For older recordings, or a browser that couldn't record both, an optional path to ffmpeg lets the server take the audio out of the video, and cut a very long recording into parts that each fit.
@@ -131,7 +136,9 @@ Where the media leaves your site: to your chosen storage backend, to your chosen
 
 PresenterAI replaces "Soapbox", a feature inside `local_ai_course_assistant` (the SOLA course assistant plugin). Soapbox is deprecated as of SOLA v7.5.2, its code is removed in v8.0, and its database tables are dropped later, per course, only once a migration has been verified for that course.
 
-A migrator is planned for the next release. It will import existing Soapbox activities, topics, recordings, transcripts, scores and feedback, including attempts whose video has already been deleted. It will be dry run by default, idempotent and reversible, and it won't write anything to the SOLA tables. It will be metadata only for sites that keep their recordings in the same S3 bucket. PresenterAI has no runtime dependency on SOLA: it does not call its code and does not require it to be installed.
+Since 0.5.0 the importer is built: `php mod/presenterai/cli/migrate_from_local.php`. It imports existing Soapbox assignments, topics, recordings, transcripts, scores and feedback into PresenterAI activities in the same courses, including attempts whose video has already been deleted. It's a dry run unless you pass `--apply`, it's safe to run again and resumes after an interruption, it can be rolled back, and it verifies its own work (`--verify`). It writes nothing to SOLA's tables, and it moves no recording: a site that keeps its recordings in S3 points the new activities at the same objects, so it needs PresenterAI's S3 bucket, region and prefix to match SOLA's. It needs SOLA 7.12.1 or later, whose nightly cleanup then leaves the recordings PresenterAI holds alone. Read [the runbook](docs/MIGRATION-RUNBOOK.md) before you run it on a real site.
+
+PresenterAI works without SOLA installed. Only the importer looks at SOLA: it checks for SOLA's cleanup interlock and asks it for the shared site id, and it reads SOLA's Soapbox tables through one reader class. Nothing else in the plugin calls SOLA's code.
 
 ## Installation
 
