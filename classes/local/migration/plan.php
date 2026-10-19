@@ -26,12 +26,15 @@ namespace mod_presenterai\local\migration;
  * Shape of one entry of $assignments, keyed by the source assignment id:
  *
  * - sourceid (int), decision (CREATE, RESUME, SKIP_VERIFIED or REFUSE), code (the refusal code, '' otherwise),
- *   message (the refusal's message, '' otherwise);
+ *   message (the refusal's message, or what SOLA gained since a verified import, '' otherwise);
  * - standin (a STANDIN_* value, '' for a skipped assignment), standincmid (the stand-in's cmid, 0 for none),
  *   standinmessage, section (the section number the activity goes into, or is in);
  * - counts: topics, recordings, bystatus (mapped status to count, sorted by status), scores, learners;
- * - outcome ('' when nothing was attempted, OUTCOME_DONE or OUTCOME_FAILED), error (the failure's message),
- *   targetid and targetcmid (the activity, 0 when none), state (the map state after the run, '' when none).
+ * - outcome ('' when nothing was attempted, OUTCOME_DONE or OUTCOME_FAILED), error (the failure, as its class and
+ *   a Moodle error code, never the exception's message), targetid and targetcmid (the activity, 0 when none),
+ *   state (the map state after the run, '' when none);
+ * - new_source_rows and newly_scored_rows: for a SKIP_VERIFIED assignment, the SOLA recordings added since it was
+ *   imported and the imported ones SOLA scored since (neither is imported); message then says so. 0 otherwise.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -58,6 +61,9 @@ final class plan {
 
     /** @var string No stand-in: the activity goes into the course's last section. */
     public const STANDIN_NONE = 'none_fallback_last_section';
+
+    /** @var string The stand-in isn't on the course page (being deleted, say): it's left alone, last section. */
+    public const STANDIN_UNAVAILABLE = 'leave_unavailable_fallback_last_section';
 
     /** @var string More than one stand-in points at the assignment, so it's refused. */
     public const STANDIN_DUPLICATE = 'refuse_duplicate_standins';
@@ -167,15 +173,18 @@ final class plan {
      * The course's totals over the assignments read (a skipped one isn't read, so counts nothing).
      *
      * @return array With assignments (every source assignment), topics, recordings, bystatus, scores, learners,
-     *               orphans, and decisions (decision to how many).
+     *               orphans, decisions (decision to how many), new_source_rows and newly_scored_rows.
      */
     public function counts(): array {
         $totals = ['assignments' => count($this->assignments), 'topics' => 0, 'recordings' => 0, 'bystatus' => [],
-            'scores' => 0, 'learners' => $this->learners, 'orphans' => $this->orphans, 'decisions' => []];
+            'scores' => 0, 'learners' => $this->learners, 'orphans' => $this->orphans, 'decisions' => [],
+            'new_source_rows' => 0, 'newly_scored_rows' => 0];
         foreach ($this->assignments as $entry) {
             $totals['topics'] += $entry['counts']['topics'];
             $totals['recordings'] += $entry['counts']['recordings'];
             $totals['scores'] += $entry['counts']['scores'];
+            $totals['new_source_rows'] += $entry['new_source_rows'];
+            $totals['newly_scored_rows'] += $entry['newly_scored_rows'];
             foreach ($entry['counts']['bystatus'] as $status => $count) {
                 $totals['bystatus'][$status] = ($totals['bystatus'][$status] ?? 0) + $count;
             }
@@ -199,6 +208,7 @@ final class plan {
             'standin' => '', 'standincmid' => 0, 'standinmessage' => '', 'section' => 0,
             'counts' => ['topics' => 0, 'recordings' => 0, 'bystatus' => [], 'scores' => 0, 'learners' => 0],
             'outcome' => '', 'error' => '', 'targetid' => 0, 'targetcmid' => 0, 'state' => '',
+            'new_source_rows' => 0, 'newly_scored_rows' => 0,
         ];
     }
 }

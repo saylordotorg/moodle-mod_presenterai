@@ -24,7 +24,11 @@ use mod_presenterai\local\migration\source_reader;
  *
  * Every public property is the data one method returns. The add_* helpers fill them with SOLA-shaped rows whose
  * ids start high, so they never look like a real row of this site. Every call is recorded in $calls, which is how a
- * test proves a method was not asked.
+ * test proves a method wasn't asked.
+ *
+ * It keeps the real reader's contracts: recordings() returns scoreid null when the score row is gone, score()
+ * returns only a score some recording points at, and assignments() hands max_attempts over as given (the real
+ * reader's is already the effective cap). $vanishing simulates a score deleted between those two reads.
  *
  * @package    mod_presenterai
  * @category   test
@@ -73,6 +77,9 @@ final class fake_source implements source_reader {
 
     /** @var array Course id to stand-in rows. */
     public array $standins = [];
+
+    /** @var int[] Score ids score() says are gone although a recording still pointed at them a moment ago. */
+    public array $vanishing = [];
 
     /** @var string[] The name of every method called, in order. */
     public array $calls = [];
@@ -262,7 +269,14 @@ final class fake_source implements source_reader {
      */
     public function recordings(int $assignid): array {
         $this->called(__FUNCTION__);
-        return $this->recs[$assignid] ?? [];
+        $rows = [];
+        foreach ($this->recs[$assignid] ?? [] as $rec) {
+            if (!empty($rec['scoreid']) && !isset($this->scores[(int) $rec['scoreid']])) {
+                $rec['scoreid'] = null;
+            }
+            $rows[] = $rec;
+        }
+        return $rows;
     }
 
     /**
@@ -273,7 +287,17 @@ final class fake_source implements source_reader {
      */
     public function score(int $scoreid): ?array {
         $this->called(__FUNCTION__);
-        return $this->scores[$scoreid] ?? null;
+        if (in_array($scoreid, $this->vanishing, true)) {
+            return null;
+        }
+        foreach ($this->recs as $rows) {
+            foreach ($rows as $rec) {
+                if ((int) ($rec['scoreid'] ?? 0) === $scoreid) {
+                    return $this->scores[$scoreid] ?? null;
+                }
+            }
+        }
+        return null;
     }
 
     /**

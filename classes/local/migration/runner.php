@@ -17,37 +17,43 @@
 namespace mod_presenterai\local\migration;
 
 use mod_presenterai\local\rubric_manager;
-use mod_presenterai\local\storage\s3_store;
-use mod_presenterai\local\storage\store_factory;
 
 /**
  * Imports one course's Soapbox assignments into PresenterAI activities (IMPLEMENTATION-PLAN 7.1, 7.3 and 7.5).
  *
  * plan_course() is the dry run: it reads SOLA through the source reader and this site's tables, and writes nothing,
  * takes no lock and fires no event. apply_course() checks the same things, takes a per-course lock, plans again
- * under it and then imports each assignment the plan says to create or resume.
+ * under it and then imports each assignment the plan says to create or resume. The site-wide checks live in
+ * preconditions, the read-only questions about this site in destination.
  *
  * Each assignment is imported in two delegated transactions, never one around the whole run:
  *
- * 1. Attach: create_module() makes the activity (grade 0, retention following the site, legacyassignid set), the
- *    assignment's map row is written (state created), then the topics and a map row for each (state attached),
- *    and the assignment's row moves to attached.
+ * 1. Attach: create_module() makes the activity HIDDEN (grade 0, retention following the site, legacyassignid
+ *    set), the assignment's map row is written (state created), then the topics and a map row for each (state
+ *    attached), and the assignment's row moves to attached.
  * 2. Finish: every recording, its score and its map row (state verified); then the stand-in's original URL and
  *    visibility go into the assignment's map payload, and only after that is the stand-in rewritten; then the
- *    topic rows and the assignment row move to verified.
+ *    activity takes the source assignment's visibility; then the topic rows and the assignment row move to
+ *    verified.
  *
- * The split is what makes resume possible: an interruption between the two leaves the activity and its topics
- * committed and the assignment's row at attached, and the next run finishes it. A recording's map row is only ever
- * written inside the finishing transaction, so an assignment that fails part way leaves none; SOLA's cleanup
- * interlock treats any map row as "PresenterAI owns this media", so a stray one would keep media forever.
+ * The split is what makes resume possible: an interruption between the two leaves the activity (still hidden)
+ * and its topics committed and the assignment's row at attached, and the next run finishes it, unless the source
+ * changed meanwhile or the activity has been used. A recording's map row is only ever written inside the finishing
+ * transaction, so an assignment that fails part way leaves none; SOLA's cleanup interlock treats any map row as
+ * "PresenterAI owns this media", so a stray one would keep media forever.
  *
  * Map rows (presenterai_migration_map): sourcetable is ids::SOURCE_ASSIGN, SOURCE_TOPIC or SOURCE_REC, sourceid the
  * SOLA id, sourcesiteid ids::site_id(), targetid the presenterai, presenterai_topic or presenterai_recording id,
  * targetcmid the activity's cmid on every row, runid the run that last wrote the row. timecreated is when the row
- * was first written, which for an assignment is when it was migrated: a source assignment whose timemodified is
- * later than that is refused rather than resumed. payload is JSON or null: an assignment row may carry
- * {"standin": {"cmid", "externalurl", "visible", "visibleoncoursepage"}} (the stand-in's ORIGINAL values, for
- * rollback) and, once failed, {"failed": "<refusal code>"}. Never learner text.
+ * was first written, which for an assignment is when it was migrated: a source assignment or topic modified later
+ * than that is refused rather than resumed.
+ *
+ * payload is JSON or null, and only an assignment row ever has one. Its keys, either or both:
+ * - PAYLOAD_STANDIN ("standin"): {"cmid": int, "externalurl": string, "visible": int, "visibleoncoursepage": int},
+ *   the stand-in's ORIGINAL values, written before it's rewritten, for rollback.
+ * - PAYLOAD_FAILED ("failed"): the refusal code that moved the row to failed (today only "targetgone"), written
+ *   beside any "standin" key already there.
+ * Never learner text.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -76,7 +82,7 @@ class runner {
     public const STATE_FAILED = 'failed';
 
     /** @var string The map table. */
-    private const MAP = 'presenterai_migration_map';
+    private const MAP = destination::MAP;
 
     /** @var source_reader Every read of SOLA. */
     protected source_reader $reader;
@@ -108,7 +114,7 @@ class runner {
      */
     public function preconditions(): array {
         $plan = new plan(0);
-        $this->check_preconditions($plan);
+        preconditions::check($this->reader, $plan);
 
         return $plan->unmet();
     }
@@ -126,15 +132,14 @@ class runner {
     /**
      * Import one course: plan, lock, plan again under the lock, then create or resume each assignment.
      *
-     * One assignment failing doesn't stop or undo another. Nothing happens when a precondition is unmet or the
-     * course is refused.
+     * One assignment failing doesn't stop or undo another. Nothing happens when a precondition is unmet, the course
+     * is refused, or the caller is inside a database transaction (which would hold every assignment's commit back).
      *
      * @param int $courseid The course.
      * @return plan The plan, with each assignment's outcome.
      */
     public function apply_course(int $courseid): plan {
-        $plan = $this->build($courseid);
-        $plan->applied = true;
+        $plan = $this->build_for_apply($courseid);
         if (!$plan->can_proceed()) {
             return $plan;
         }
@@ -146,8 +151,7 @@ class runner {
             return $plan;
         }
         try {
-            $plan = $this->build($courseid);
-            $plan->applied = true;
+            $plan = $this->build_for_apply($courseid);
             if (!$plan->can_proceed()) {
                 return $plan;
             }
@@ -219,54 +223,20 @@ class runner {
     }
 
     /**
-     * Check every site-wide precondition into a plan. With no Soapbox tables nothing else is asked.
+     * A plan built for an apply: the same reads as the dry run, plus the transaction guard.
      *
-     * @param plan $plan The plan.
+     * @param int $courseid The course.
+     * @return plan
      */
-    private function check_preconditions(plan $plan): void {
-        if (!$this->reader->tables_present()) {
-            $plan->precondition('sourcetables', false, self::str('precondition_sourcetables'));
-            return;
-        }
-        $plan->precondition('sourcetables', true);
+    private function build_for_apply(int $courseid): plan {
+        global $DB;
 
-        $backend = store_factory::default_backend();
-        $plan->precondition('backend', $backend === store_factory::BACKEND_S3, self::str('precondition_backend', $backend));
+        $plan = $this->build($courseid);
+        $plan->applied = true;
+        $outside = !$DB->is_transaction_started();
+        $plan->precondition('transaction', $outside, $outside ? '' : self::str('precondition_transaction'));
 
-        $sola = $this->reader->storage_settings();
-        $sola = ['bucket' => trim((string) ($sola['bucket'] ?? '')), 'region' => trim((string) ($sola['region'] ?? '')),
-            'prefix' => trim((string) ($sola['prefix'] ?? ''))];
-        $own = self::own_storage();
-        $plan->precondition('storage', $sola === $own, self::str('precondition_storage', (object) [
-            'sola' => self::str('storagevalues', (object) $sola),
-            'presenterai' => self::str('storagevalues', (object) $own),
-        ]));
-
-        $plan->precondition('interlock', $this->reader->interlock_present(), self::str('precondition_interlock'));
-        $queued = $this->reader->queued_scoring_task_count();
-        $plan->precondition('scoringqueued', $queued === 0, self::str('precondition_scoringqueued', $queued));
-
-        foreach ($plan->preconditions as $index => $check) {
-            if ($check['met']) {
-                $plan->preconditions[$index]['message'] = '';
-            }
-        }
-    }
-
-    /**
-     * This plugin's S3 bucket, region and prefix, read raw and normalised as s3_store reads them. Never a key.
-     *
-     * @return array With bucket, region and prefix.
-     */
-    private static function own_storage(): array {
-        $setting = static fn(string $name): string => trim((string) get_config('mod_presenterai', 's3' . $name));
-        $region = $setting('region');
-
-        return [
-            'bucket' => $setting('bucket'),
-            'region' => $region !== '' ? $region : s3_store::DEFAULT_REGION,
-            'prefix' => s3_store::normalise_prefix($setting('prefix')),
-        ];
+        return $plan;
     }
 
     /**
@@ -280,7 +250,7 @@ class runner {
 
         $this->work = [];
         $plan = new plan($courseid);
-        $this->check_preconditions($plan);
+        preconditions::check($this->reader, $plan);
         if (!$plan->preconditions[0]['met']) {
             return $plan;
         }
@@ -314,7 +284,7 @@ class runner {
                 $standins[(int) $standin['assignid']][] = $standin;
             }
         }
-        $last = self::last_section($course);
+        $last = destination::last_section($course);
         $learners = [];
         foreach ($assigns as $assign) {
             $id = (int) $assign['id'];
@@ -338,21 +308,26 @@ class runner {
     private function plan_assignment(\stdClass $course, array $assign, array $standins, int $last, array &$learners): array {
         $id = (int) $assign['id'];
         $entry = plan::blank_entry($id);
-        $map = $this->map_row(ids::SOURCE_ASSIGN, $id);
+        $map = destination::map_row(ids::SOURCE_ASSIGN, $id);
         if ($map) {
             $entry['state'] = $map->state;
             $entry['targetid'] = (int) $map->targetid;
             $entry['targetcmid'] = (int) $map->targetcmid;
             if ($map->state === self::STATE_VERIFIED) {
-                $entry['decision'] = plan::SKIP_VERIFIED;
-                return $entry;
+                return $this->plan_verified($entry, $map);
             }
+        }
+
+        $topics = $this->reader->topics($id);
+        if ($map) {
             if ($map->state === self::STATE_FAILED) {
                 self::refuse_entry($entry, 'failed', $id);
-            } else if ((int) $assign['timemodified'] > (int) $map->timecreated) {
+            } else if (destination::source_changed($map, $assign, $topics)) {
                 self::refuse_entry($entry, 'stale', $id);
-            } else if (!self::target_resolves($map, $id)) {
+            } else if (!destination::target_resolves($map, $id)) {
                 self::refuse_entry($entry, 'targetgone', $id);
+            } else if (destination::target_used($map)) {
+                self::refuse_entry($entry, 'targetused', $id);
             } else {
                 $entry['decision'] = plan::RESUME;
             }
@@ -360,7 +335,6 @@ class runner {
 
         $entry = $this->plan_standin($course, $entry, $standins, $last);
 
-        $topics = $this->reader->topics($id);
         $recs = $this->reader->recordings($id);
         $scores = [];
         $entry['counts']['topics'] = count($topics);
@@ -390,7 +364,26 @@ class runner {
         $entry['counts']['scores'] = count($scores);
         $entry['counts']['learners'] = count($users);
         $this->work[$id] = ['assign' => $assign, 'topics' => $topics, 'recs' => $recs, 'scores' => $scores,
-            'standin' => count($standins) === 1 ? $standins[0] : null];
+            'standin' => in_array($entry['standin'], [plan::STANDIN_REWRITE, plan::STANDIN_VISIBLE], true) ? $standins[0] : null];
+
+        return $entry;
+    }
+
+    /**
+     * A verified assignment is skipped. One read says what SOLA gained since, which nothing imports.
+     *
+     * @param array $entry The plan entry.
+     * @param \stdClass $map The assignment's map row.
+     * @return array The entry.
+     */
+    private function plan_verified(array $entry, \stdClass $map): array {
+        $entry['decision'] = plan::SKIP_VERIFIED;
+        [$new, $scored] = destination::drift($map, $this->reader->recordings($entry['sourceid']));
+        $entry['new_source_rows'] = $new;
+        $entry['newly_scored_rows'] = $scored;
+        if ($new > 0 || $scored > 0) {
+            $entry['message'] = self::str('verified_drift', (object) ['added' => $new, 'scored' => $scored]);
+        }
 
         return $entry;
     }
@@ -411,10 +404,15 @@ class runner {
             self::refuse_entry($entry, 'duplicatestandins', $entry['sourceid']);
         } else if (count($standins) === 1) {
             $cmid = (int) $standins[0]['cmid'];
-            $cm = get_fast_modinfo($course)->cms[$cmid] ?? null;
             $entry['standincmid'] = $cmid;
-            $entry['section'] = $cm ? (int) $cm->sectionnum : $last;
-            $entry['standin'] = self::stealth_allowed($course, $cm) ? plan::STANDIN_REWRITE : plan::STANDIN_VISIBLE;
+            $cm = get_fast_modinfo($course)->cms[$cmid] ?? null;
+            if ($cm === null) {
+                // Being deleted, or otherwise not on the course page: left alone.
+                $entry['standin'] = plan::STANDIN_UNAVAILABLE;
+            } else {
+                $entry['section'] = (int) $cm->sectionnum;
+                $entry['standin'] = destination::stealth_allowed($course, $cm) ? plan::STANDIN_REWRITE : plan::STANDIN_VISIBLE;
+            }
         } else {
             $entry['standin'] = plan::STANDIN_NONE;
         }
@@ -450,19 +448,19 @@ class runner {
             $entry['outcome'] = plan::OUTCOME_DONE;
         } catch (\Throwable $e) {
             $entry['outcome'] = plan::OUTCOME_FAILED;
-            $entry['error'] = self::str('failed_error', (object) ['id' => $id, 'error' => $e->getMessage()]);
+            $entry['error'] = self::str('failed_error', (object) ['id' => $id, 'error' => self::describe($e)]);
         }
         // A rolled back transaction can leave the course cache describing modules that no longer exist.
         \course_modinfo::purge_course_cache((int) $course->id);
         rebuild_course_cache((int) $course->id, true);
-        $map = $this->map_row(ids::SOURCE_ASSIGN, $id);
+        $map = destination::map_row(ids::SOURCE_ASSIGN, $id);
         $entry['state'] = $map ? $map->state : '';
 
         return $entry;
     }
 
     /**
-     * The first transaction: the activity (unless resuming), its map row, the topics and theirs.
+     * The first transaction: the activity, hidden (unless resuming), its map row, the topics and theirs.
      *
      * @param array $entry The plan entry.
      * @param plan $plan The plan.
@@ -477,9 +475,11 @@ class runner {
         $now = time();
         $transaction = $DB->start_delegated_transaction();
         try {
-            $map = $this->map_row(ids::SOURCE_ASSIGN, $id);
+            $map = destination::map_row(ids::SOURCE_ASSIGN, $id);
             if (!$map) {
                 $moduleinfo = (object) mapper::assignment_to_instance($work['assign']);
+                // Hidden until finish() has put every attempt in, which then gives it the source's visibility.
+                $moduleinfo->visible = 0;
                 $moduleinfo->section = $entry['section'];
                 $moduleinfo->speakinglevel = $plan->speakinglevel;
                 $moduleinfo->introeditor['itemid'] = file_get_unused_draft_itemid();
@@ -488,7 +488,7 @@ class runner {
                     self::STATE_CREATED, $plan->runid, $now);
             }
             foreach ($work['topics'] as $topic) {
-                if (!$this->map_row(ids::SOURCE_TOPIC, (int) $topic['id'])) {
+                if (!destination::map_row(ids::SOURCE_TOPIC, (int) $topic['id'])) {
                     $topicid = $DB->insert_record('presenterai_topic', (object) mapper::topic_to_row($topic, (int) $map->targetid));
                     $this->new_map(ids::SOURCE_TOPIC, (int) $topic['id'], (int) $topicid, (int) $map->targetcmid,
                         self::STATE_ATTACHED, $plan->runid, $now);
@@ -506,7 +506,8 @@ class runner {
     }
 
     /**
-     * The second transaction: recordings, scores and their map rows, then the stand-in, then every row verified.
+     * The second transaction: recordings, scores and their map rows, then the stand-in, then the activity's
+     * visibility, then every row verified.
      *
      * @param array $entry The plan entry.
      * @param \stdClass $map The assignment's map row.
@@ -522,12 +523,12 @@ class runner {
         try {
             $topics = [];
             foreach ($work['topics'] as $topic) {
-                $topics[(int) $topic['id']] = (int) $this->map_row(ids::SOURCE_TOPIC, (int) $topic['id'])->targetid;
+                $topics[(int) $topic['id']] = (int) destination::map_row(ids::SOURCE_TOPIC, (int) $topic['id'])->targetid;
             }
             $numbers = mapper::attempt_numbers($work['recs']);
             $preset = $this->reader->preset_criteria($plan->speakinglevel);
             foreach ($work['recs'] as $rec) {
-                if (!$this->map_row(ids::SOURCE_REC, (int) $rec['id'])) {
+                if (!destination::map_row(ids::SOURCE_REC, (int) $rec['id'])) {
                     $recid = $this->import_recording($rec, $map, $topics, $numbers, $preset, $plan->speakinglevel, $now);
                     $this->new_map(ids::SOURCE_REC, (int) $rec['id'], $recid, (int) $map->targetcmid,
                         self::STATE_VERIFIED, $plan->runid, $now);
@@ -535,12 +536,15 @@ class runner {
             }
             $this->after_recordings($id);
 
-            if ($work['standin'] !== null && in_array($entry['standin'], [plan::STANDIN_REWRITE, plan::STANDIN_VISIBLE], true)) {
+            if ($work['standin'] !== null) {
                 $this->record_standin((int) $map->id, (int) $work['standin']['cmid']);
                 $this->rewrite_standin((int) $map->id, (int) $work['standin']['cmid'], (int) $map->targetcmid,
                     $entry['standin'] === plan::STANDIN_REWRITE);
             }
 
+            $visible = empty($work['assign']['visible']) ? 0 : 1;
+            $DB->update_record('course_modules', (object) ['id' => $map->targetcmid, 'visible' => $visible,
+                'visibleold' => $visible]);
             foreach (array_keys($topics) as $topicid) {
                 $DB->set_field(self::MAP, 'state', self::STATE_VERIFIED,
                     ['sourcetable' => ids::SOURCE_TOPIC, 'sourceid' => $topicid, 'sourcesiteid' => ids::site_id()]);
@@ -609,7 +613,7 @@ class runner {
     }
 
     /**
-     * Move an assignment whose activity is gone to failed, with the reason in its payload.
+     * Move an assignment whose activity is gone to failed, with the reason in its payload beside any stand-in record.
      *
      * @param int $sourceid The source assignment.
      * @param string $code The refusal code.
@@ -618,7 +622,7 @@ class runner {
     private function mark_failed(int $sourceid, string $code, string $runid): void {
         global $DB;
 
-        $map = $this->map_row(ids::SOURCE_ASSIGN, $sourceid);
+        $map = destination::map_row(ids::SOURCE_ASSIGN, $sourceid);
         $payload = $this->payload((int) $map->id);
         $payload[self::PAYLOAD_FAILED] = $code;
         $DB->update_record(self::MAP, (object) ['id' => $map->id, 'state' => self::STATE_FAILED, 'runid' => $runid,
@@ -664,21 +668,6 @@ class runner {
     }
 
     /**
-     * The map row of one source row on this site.
-     *
-     * @param string $table An ids::SOURCE_* value.
-     * @param int $sourceid The source id.
-     * @return \stdClass|null
-     */
-    private function map_row(string $table, int $sourceid): ?\stdClass {
-        global $DB;
-
-        $row = $DB->get_record(self::MAP, ['sourcetable' => $table, 'sourceid' => $sourceid, 'sourcesiteid' => ids::site_id()]);
-
-        return $row ?: null;
-    }
-
-    /**
      * A rubric's criteria, read once.
      *
      * @param int $rubricid The SOLA rubric.
@@ -693,57 +682,14 @@ class runner {
     }
 
     /**
-     * Whether an earlier run's activity still exists and is still the one made from this assignment.
+     * What a failure is reported as: the class, and a Moodle exception's error code. Never the message, which can
+     * carry SQL, values or other text that has no place in output an operator pastes into a ticket.
      *
-     * @param \stdClass $map The assignment's map row.
-     * @param int $sourceid The source assignment.
-     * @return bool
+     * @param \Throwable $e The failure.
+     * @return string
      */
-    private static function target_resolves(\stdClass $map, int $sourceid): bool {
-        global $DB;
-
-        $cm = $DB->get_record('course_modules', ['id' => $map->targetcmid]);
-        $module = $DB->get_field('modules', 'id', ['name' => 'presenterai']);
-        if (!$cm || (int) $cm->module !== (int) $module || (int) $cm->instance !== (int) $map->targetid
-                || !empty($cm->deletioninprogress)) {
-            return false;
-        }
-
-        return (int) $DB->get_field('presenterai', 'legacyassignid', ['id' => $map->targetid]) === $sourceid;
-    }
-
-    /**
-     * Whether a stand-in can be hidden from the course page and stay reachable (D15).
-     *
-     * @param \stdClass $course The course.
-     * @param \cm_info|null $cm The stand-in.
-     * @return bool
-     */
-    private static function stealth_allowed(\stdClass $course, ?\cm_info $cm): bool {
-        global $CFG;
-
-        if ($cm === null || empty($CFG->allowstealth)) {
-            return false;
-        }
-
-        return (bool) course_get_format($course)->allow_stealth_module_visibility($cm, $cm->get_section_info());
-    }
-
-    /**
-     * The course's last existing section that isn't a subsection's. A section is never created.
-     *
-     * @param \stdClass $course The course.
-     * @return int
-     */
-    private static function last_section(\stdClass $course): int {
-        $last = 0;
-        foreach (get_fast_modinfo($course)->get_section_info_all() as $section) {
-            if (!$section->is_delegated()) {
-                $last = max($last, (int) $section->section);
-            }
-        }
-
-        return $last;
+    private static function describe(\Throwable $e): string {
+        return $e instanceof \moodle_exception ? get_class($e) . ' (' . $e->errorcode . ')' : get_class($e);
     }
 
     /**

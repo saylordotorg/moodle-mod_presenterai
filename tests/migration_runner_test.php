@@ -98,6 +98,9 @@ final class migration_runner_test extends \advanced_testcase {
     /**
      * SOLA's tables, fingerprinted, or nothing on a site without them.
      *
+     * Every test that plans or applies compares this before and after. On a site without SOLA's tables (CI) both
+     * sides are empty and the comparison proves nothing; on a site with them it catches any SOLA write.
+     *
      * @return array
      */
     private function sola_print(): array {
@@ -338,10 +341,12 @@ final class migration_runner_test extends \advanced_testcase {
     public function test_the_dry_run_takes_no_lock(): void {
         $this->seed();
         $locks = $this->lock_double();
+        $sola = $this->sola_print();
 
         $this->runner($locks)->plan_course($this->course->id);
 
         $this->assertSame([], $locks->taken);
+        $this->assertSame($sola, $this->sola_print());
     }
 
     /**
@@ -534,7 +539,8 @@ final class migration_runner_test extends \advanced_testcase {
     /**
      * A runner that fails at a chosen point, once.
      *
-     * @param string $where 'topics' to fail after the topics commit, 'recordings' inside the recordings step.
+     * @param string $where 'topics' to fail after the topics commit, 'recordings' inside the recordings step,
+     *        'runtime' to throw a plain RuntimeException carrying a secret-looking message after the topics.
      * @param int|null $only Fail only for this source assignment, every one when null.
      * @param \core\lock\lock_factory|null $locks A lock double, a fresh one when null.
      * @return runner
@@ -566,8 +572,14 @@ final class migration_runner_test extends \advanced_testcase {
              * @param int $sourceid The source assignment.
              */
             protected function after_topics(int $sourceid): void {
-                if ($this->where === 'topics' && ($this->only === null || $this->only === $sourceid)) {
+                if ($this->only !== null && $this->only !== $sourceid) {
+                    return;
+                }
+                if ($this->where === 'topics') {
                     throw new \moodle_exception('error', 'error', '', null, 'forced after topics');
+                }
+                if ($this->where === 'runtime') {
+                    throw new \RuntimeException('token sk-SECRET-4242 leaked');
                 }
             }
 
@@ -739,10 +751,12 @@ final class migration_runner_test extends \advanced_testcase {
         foreach ($settings as $name => $value) {
             set_config($name, $value, 'mod_presenterai');
         }
+        $sola = $this->sola_print();
 
         $codes = array_column($this->runner()->preconditions(), 'code');
 
         $this->assertSame(!$met, in_array('storage', $codes, true));
+        $this->assertSame($sola, $this->sola_print());
     }
 
     /**
@@ -825,9 +839,11 @@ final class migration_runner_test extends \advanced_testcase {
         global $DB;
         $ids = $this->seed();
         $this->source->orphans[$this->course->id] = 28;
+        $sola = $this->sola_print();
 
         $plan = $this->runner()->apply_course($this->course->id);
 
+        $this->assertSame($sola, $this->sola_print());
         $this->assertSame(28, $plan->counts()['orphans']);
         $notes = array_column($plan->notes, 'message', 'code');
         $this->assertStringContainsString('unowned speech scores (includes freeform practice)', $notes['orphans']);
@@ -905,9 +921,11 @@ final class migration_runner_test extends \advanced_testcase {
     public function test_a_standin_for_another_courses_assignment_is_ignored(): void {
         $ids = $this->seed();
         $this->standin(424242, 1);
+        $sola = $this->sola_print();
 
         $plan = $this->runner()->plan_course($this->course->id);
 
+        $this->assertSame($sola, $this->sola_print());
         $this->assertSame(plan::STANDIN_NONE, $this->entry($plan, $ids['assign'])['standin']);
     }
 
@@ -1008,9 +1026,11 @@ final class migration_runner_test extends \advanced_testcase {
         global $DB;
         $this->seed();
         $locks = $this->lock_double();
+        $sola = $this->sola_print();
 
         $this->runner($locks)->apply_course($this->course->id);
 
+        $this->assertSame($sola, $this->sola_print());
         $this->assertSame(['course_' . $this->course->id], $locks->taken);
         $this->assertSame($locks->taken, $locks->released);
 
@@ -1020,6 +1040,7 @@ final class migration_runner_test extends \advanced_testcase {
         $plan = $this->runner($held)->apply_course($this->course->id);
         $this->assertSame(['locked'], array_column($plan->refusals, 'code'));
         $this->assertSame($count, $DB->count_records('presenterai'));
+        $this->assertSame($sola, $this->sola_print());
     }
 
     /**
@@ -1028,10 +1049,12 @@ final class migration_runner_test extends \advanced_testcase {
     public function test_the_lock_is_released_after_a_failure(): void {
         $this->seed();
         $locks = $this->lock_double();
+        $sola = $this->sola_print();
 
         $this->failing_runner('topics', null, $locks)->apply_course($this->course->id);
 
         $this->assertSame(['course_' . $this->course->id], $locks->released);
+        $this->assertSame($sola, $this->sola_print());
     }
 
     /**
@@ -1041,14 +1064,325 @@ final class migration_runner_test extends \advanced_testcase {
         global $DB;
         $ids = $this->seed();
         $this->standin($ids['assign']);
+        $sola = $this->sola_print();
 
         $this->runner()->apply_course($this->course->id);
 
+        $this->assertSame($sola, $this->sola_print());
         $all = implode('|', array_map(fn($m) => (string) $m->payload, $DB->get_records('presenterai_migration_map')));
         $this->assertStringContainsString(runner::PAYLOAD_STANDIN, $all);
         foreach ([self::SECRET_TRANSCRIPT, 'ZEBRA', $this->alice->firstname, $this->alice->lastname, 'Slow down',
                 'A good talk', 'Leans on the desk'] as $text) {
             $this->assertStringNotContainsString($text, $all);
         }
+    }
+
+    /**
+     * The visibility of the activity an assignment's map row points at.
+     *
+     * @param int $assignid The source assignment.
+     * @return array [visible, visibleold].
+     */
+    private function target_visibility(int $assignid): array {
+        global $DB;
+
+        $cm = $DB->get_record('course_modules', ['id' => $this->map(ids::SOURCE_ASSIGN, $assignid)->targetcmid], '*', MUST_EXIST);
+
+        return [(int) $cm->visible, (int) $cm->visibleold];
+    }
+
+    /**
+     * Test the activity stays hidden while its import is unfinished and takes the source's visibility at the end.
+     */
+    public function test_the_activity_is_hidden_until_the_import_finishes(): void {
+        $ids = $this->seed();
+        $sola = $this->sola_print();
+
+        $this->failing_runner('topics')->apply_course($this->course->id);
+        $this->assertSame([0, 0], $this->target_visibility($ids['assign']));
+
+        $this->failing_runner('recordings')->apply_course($this->course->id);
+        $this->assertSame([0, 0], $this->target_visibility($ids['assign']));
+        $this->assertSame(runner::STATE_ATTACHED, $this->map(ids::SOURCE_ASSIGN, $ids['assign'])->state);
+
+        $plan = $this->runner()->apply_course($this->course->id);
+
+        $this->assertSame(plan::OUTCOME_DONE, $this->entry($plan, $ids['assign'])['outcome']);
+        $this->assertSame([1, 1], $this->target_visibility($ids['assign']));
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Test a source assignment that was hidden stays hidden after the import finishes.
+     */
+    public function test_a_hidden_source_assignment_stays_hidden(): void {
+        $ids = $this->seed();
+        $this->source->set_assign($ids['assign'], ['visible' => 0]);
+        $sola = $this->sola_print();
+
+        $plan = $this->runner()->apply_course($this->course->id);
+
+        $this->assertSame(plan::OUTCOME_DONE, $this->entry($plan, $ids['assign'])['outcome']);
+        $this->assertSame([0, 0], $this->target_visibility($ids['assign']));
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Ways an unfinished activity can have been used.
+     *
+     * @return array
+     */
+    public static function used_provider(): array {
+        return ['a learner made an attempt' => ['attempt'], 'grading was turned on' => ['grade']];
+    }
+
+    /**
+     * Test resuming into an activity that has been used since is refused and writes nothing.
+     *
+     * @dataProvider used_provider
+     * @param string $how How it was used.
+     */
+    public function test_a_used_activity_is_not_resumed(string $how): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->failing_runner('topics')->apply_course($this->course->id);
+        $map = $this->map(ids::SOURCE_ASSIGN, $ids['assign']);
+        if ($how === 'attempt') {
+            $row = mapper::recording_to_row(['id' => 0, 'userid' => $this->bob->id, 'status' => 'uploaded',
+                'timecreated' => time()], (int) $map->targetid, null, 1, false);
+            $DB->insert_record('presenterai_recording', (object) $row);
+        } else {
+            $DB->set_field('presenterai', 'grade', 100, ['id' => $map->targetid]);
+        }
+        $before = $this->table_counts();
+        $sola = $this->sola_print();
+
+        $plan = $this->runner()->apply_course($this->course->id);
+
+        $entry = $this->entry($plan, $ids['assign']);
+        $this->assertSame(plan::REFUSE, $entry['decision']);
+        $this->assertSame('targetused', $entry['code']);
+        $this->assertSame($before, $this->table_counts());
+        $this->assertSame(runner::STATE_ATTACHED, $this->map(ids::SOURCE_ASSIGN, $ids['assign'])->state);
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Test a verified assignment reports the recordings SOLA gained and scored since, imports neither, writes nothing.
+     */
+    public function test_a_verified_assignment_reports_what_sola_gained(): void {
+        $ids = $this->seed();
+        $this->runner()->apply_course($this->course->id);
+        $this->source->add_rec($ids['assign'], $this->bob->id);
+        $score = $this->source->add_score($this->course->id, $this->bob->id);
+        $this->source->set_rec($ids['uploaded'], ['scoreid' => $score, 'status' => 'scored']);
+        $before = $this->table_counts();
+        $sola = $this->sola_print();
+
+        $dry = $this->runner()->plan_course($this->course->id);
+        $plan = $this->runner()->apply_course($this->course->id);
+
+        foreach ([$dry, $plan] as $result) {
+            $entry = $this->entry($result, $ids['assign']);
+            $this->assertSame(plan::SKIP_VERIFIED, $entry['decision']);
+            $this->assertSame(1, $entry['new_source_rows']);
+            $this->assertSame(1, $entry['newly_scored_rows']);
+            $this->assertStringContainsString('1 Soapbox recordings were added after this assignment was imported',
+                $entry['message']);
+            $this->assertStringContainsString('1 were scored after', $entry['message']);
+            $this->assertSame(1, $result->counts()['new_source_rows']);
+        }
+        $this->assertSame($before, $this->table_counts());
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Test a verified assignment SOLA hasn't changed reports nothing gained.
+     */
+    public function test_an_unchanged_verified_assignment_reports_nothing(): void {
+        $ids = $this->seed();
+        $this->runner()->apply_course($this->course->id);
+
+        $entry = $this->entry($this->runner()->plan_course($this->course->id), $ids['assign']);
+
+        $this->assertSame([0, 0, ''], [$entry['new_source_rows'], $entry['newly_scored_rows'], $entry['message']]);
+    }
+
+    /**
+     * Attempt caps as the reader hands them over (already the effective cap).
+     *
+     * @return array
+     */
+    public static function cap_provider(): array {
+        return ['unlimited' => [0], 'capped' => [5]];
+    }
+
+    /**
+     * Test the attempt cap arrives as the effective cap and is copied as it stands.
+     *
+     * @dataProvider cap_provider
+     * @param int $cap The cap.
+     */
+    public function test_the_attempt_cap_is_copied(int $cap): void {
+        global $DB;
+        $assign = $this->source->add_assign($this->course->id, ['max_attempts' => $cap]);
+        $sola = $this->sola_print();
+
+        $this->runner()->apply_course($this->course->id);
+
+        $this->assertSame($cap, (int) $DB->get_field('presenterai', 'maxattempts', ['legacyassignid' => $assign]));
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Test a recording whose score row is gone (the reader hands it over with scoreid null) is an unscored attempt.
+     */
+    public function test_a_recording_whose_score_row_is_gone_is_imported_unscored(): void {
+        global $DB;
+        $assign = $this->source->add_assign($this->course->id);
+        $rec = $this->source->add_rec($assign, $this->alice->id, ['status' => 'scored', 'scoreid' => 777777]);
+        $sola = $this->sola_print();
+
+        $plan = $this->runner()->apply_course($this->course->id);
+
+        $this->assertSame(plan::OUTCOME_DONE, $this->entry($plan, $assign)['outcome']);
+        $row = $DB->get_record('presenterai_recording', ['legacyrecid' => $rec], '*', MUST_EXIST);
+        $this->assertSame(mapper::recording_status(['status' => 'scored'], false), $row->status);
+        $this->assertSame(0, (int) $row->legacyscoreid);
+        $this->assertNull($row->scoreid);
+        $this->assertSame(0, $DB->count_records('presenterai_score'));
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Assert an apply refused one assignment with a code and wrote nothing.
+     *
+     * @param int $assignid The assignment.
+     * @param string $code The refusal code.
+     */
+    private function assert_assignment_refused_without_writes(int $assignid, string $code): void {
+        $before = $this->table_counts();
+        $sola = $this->sola_print();
+
+        $plan = $this->runner()->apply_course($this->course->id);
+
+        $entry = $this->entry($plan, $assignid);
+        $this->assertSame(plan::REFUSE, $entry['decision']);
+        $this->assertSame($code, $entry['code']);
+        $this->assertSame($before, $this->table_counts());
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Test a score that vanishes between the reader's two reads refuses the assignment (the defensive check).
+     */
+    public function test_a_score_that_vanishes_refuses_the_assignment(): void {
+        $ids = $this->seed();
+        $this->source->vanishing = [(int) $this->source->recs[$ids['assign']][0]['scoreid']];
+
+        $this->assert_assignment_refused_without_writes($ids['assign'], 'scoremissing');
+    }
+
+    /**
+     * Test a recording status SOLA doesn't have refuses the assignment.
+     */
+    public function test_an_unknown_status_refuses_the_assignment(): void {
+        $ids = $this->seed();
+        $this->source->set_rec($ids['failed'], ['status' => 'bogus']);
+
+        $this->assert_assignment_refused_without_writes($ids['assign'], 'badstatus');
+    }
+
+    /**
+     * Test an apply called inside a database transaction refuses before writing anything.
+     */
+    public function test_apply_inside_a_transaction_refuses(): void {
+        global $DB;
+        $this->seed();
+        $before = $this->table_counts();
+        $sola = $this->sola_print();
+
+        $transaction = $DB->start_delegated_transaction();
+        $plan = $this->runner()->apply_course($this->course->id);
+        $transaction->allow_commit();
+
+        $this->assertSame(['transaction'], array_column($plan->unmet(), 'code'));
+        $this->assertFalse($plan->can_proceed());
+        $this->assertSame($before, $this->table_counts());
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Ways a topic can change between attach and resume.
+     *
+     * @return array
+     */
+    public static function topic_change_provider(): array {
+        return ['a topic was edited' => ['edited'], 'an attached topic was removed' => ['removed']];
+    }
+
+    /**
+     * Test a topic that changed after the attach makes the resume stale.
+     *
+     * @dataProvider topic_change_provider
+     * @param string $change What happened to the topic.
+     */
+    public function test_a_topic_change_makes_the_resume_stale(string $change): void {
+        $ids = $this->seed();
+        $this->failing_runner('topics')->apply_course($this->course->id);
+        if ($change === 'edited') {
+            $this->source->topics[$ids['assign']][1]['timemodified'] = time() + 600;
+        } else {
+            array_pop($this->source->topics[$ids['assign']]);
+        }
+
+        $this->assert_assignment_refused_without_writes($ids['assign'], 'stale');
+    }
+
+    /**
+     * Test a stand-in that isn't on the course page is left alone and the activity goes into the last section.
+     */
+    public function test_a_standin_not_on_the_course_page_is_left_alone(): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->source->standins[$this->course->id][] = ['cmid' => 987654321, 'assignid' => $ids['assign'],
+            'externalurl' => 'https://example.com' . self::PRESENT . '?id=' . $ids['assign'], 'visible' => 1,
+            'visibleoncoursepage' => 1];
+        $last = (int) $DB->get_field('course_sections', 'MAX(section)', ['course' => $this->course->id]);
+        $sola = $this->sola_print();
+
+        $plan = $this->runner()->apply_course($this->course->id);
+
+        $entry = $this->entry($plan, $ids['assign']);
+        $this->assertSame(plan::STANDIN_UNAVAILABLE, $entry['standin']);
+        $this->assertStringContainsString('left alone', $entry['standinmessage']);
+        $this->assertSame(plan::OUTCOME_DONE, $entry['outcome']);
+        $map = $this->map(ids::SOURCE_ASSIGN, $ids['assign']);
+        $this->assertNull($map->payload);
+        $sectionid = $DB->get_field('course_modules', 'section', ['id' => $map->targetcmid]);
+        $this->assertSame($last, (int) $DB->get_field('course_sections', 'section', ['id' => $sectionid]));
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Test a failure is reported by its class and a Moodle error code, never by its message.
+     */
+    public function test_a_failure_is_reported_without_its_message(): void {
+        $ids = $this->seed();
+        $sola = $this->sola_print();
+
+        $plan = $this->failing_runner('runtime')->apply_course($this->course->id);
+
+        $error = $this->entry($plan, $ids['assign'])['error'];
+        $this->assertStringContainsString('RuntimeException', $error);
+        $this->assertStringNotContainsString('sk-SECRET', $error);
+        $this->assertStringNotContainsString('leaked', $error);
+
+        $plan = $this->failing_runner('topics')->apply_course($this->course->id);
+
+        $error = $this->entry($plan, $ids['assign'])['error'];
+        $this->assertStringContainsString('moodle_exception (error)', $error);
+        $this->assertStringNotContainsString('forced after topics', $error);
+        $this->assertSame($sola, $this->sola_print());
     }
 }
