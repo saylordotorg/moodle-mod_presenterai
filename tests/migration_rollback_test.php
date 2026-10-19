@@ -348,13 +348,15 @@ final class migration_rollback_test extends \advanced_testcase {
     /**
      * Ways a migrated activity becomes someone's work after the import.
      *
-     * @return array Name to [code].
+     * @return array Name to [what happened, code].
      */
     public static function used_provider(): array {
         return [
-            'grading turned on' => [rollback::REFUSE_GRADED],
-            'a learner made an attempt' => [rollback::REFUSE_LEARNERATTEMPTS],
-            'a teacher scored an attempt' => [rollback::REFUSE_TEACHERSCORES],
+            'grading turned on' => ['graded', rollback::REFUSE_GRADED],
+            'a learner made an attempt' => ['attempt', rollback::REFUSE_LEARNERATTEMPTS],
+            'a teacher scored an attempt' => ['teacher', rollback::REFUSE_TEACHERSCORES],
+            'an AI score on an attempt SOLA never scored' => ['unscored', rollback::REFUSE_TEACHERSCORES],
+            'a second score on an attempt' => ['second', rollback::REFUSE_TEACHERSCORES],
         ];
     }
 
@@ -362,22 +364,29 @@ final class migration_rollback_test extends \advanced_testcase {
      * Test an activity that became someone's work is refused, reported by code, and left exactly as it was.
      *
      * @dataProvider used_provider
+     * @param string $how What happened to it.
      * @param string $code The refusal expected.
      */
-    public function test_an_activity_in_use_is_refused(string $code): void {
+    public function test_an_activity_in_use_is_refused(string $how, string $code): void {
         global $DB;
         $ids = $this->seed();
         $standin = $this->standin($ids['assign']);
         $this->apply();
         $map = $this->assign_map($ids['assign']);
         $gen = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
-        if ($code === rollback::REFUSE_GRADED) {
+        $uploaded = $DB->get_record('presenterai_recording', ['legacyrecid' => $ids['uploaded']], '*', MUST_EXIST);
+        $scored = $DB->get_record('presenterai_recording', ['legacyrecid' => $ids['scored']], '*', MUST_EXIST);
+        $this->assertSame(0, (int) $uploaded->legacyscoreid);
+        if ($how === 'graded') {
             $DB->set_field('presenterai', 'grade', 100, ['id' => $map->targetid]);
-        } else if ($code === rollback::REFUSE_LEARNERATTEMPTS) {
+        } else if ($how === 'attempt') {
             $gen->create_recording(['presenteraiid' => $map->targetid, 'userid' => $this->alice->id]);
+        } else if ($how === 'teacher') {
+            $gen->create_score(['recordingid' => $uploaded->id, 'origin' => 'teacher']);
+        } else if ($how === 'unscored') {
+            $gen->create_score(['recordingid' => $uploaded->id, 'origin' => 'ai']);
         } else {
-            $rec = $DB->get_record('presenterai_recording', ['legacyrecid' => $ids['uploaded']], '*', MUST_EXIST);
-            $gen->create_score(['recordingid' => $rec->id, 'userid' => $rec->userid, 'origin' => 'teacher']);
+            $gen->create_score(['recordingid' => $scored->id, 'origin' => 'ai']);
         }
         $before = $this->table_counts();
         $standinbefore = $this->standin_now($standin['cmid']);
@@ -700,5 +709,209 @@ final class migration_rollback_test extends \advanced_testcase {
         $this->assertSame(rollback::REFUSE_LOCKED, $result['refusal']);
         $this->assertNotSame('', $result['message']);
         $this->assertSame($before, $this->table_counts());
+    }
+
+    /**
+     * The media keys and upload id of every attempt of an activity, by attempt id.
+     *
+     * @param int $instanceid The activity instance.
+     * @return array
+     */
+    private function keys_of(int $instanceid): array {
+        global $DB;
+
+        return $DB->get_records_menu('presenterai_recording', ['presenteraiid' => $instanceid], 'id',
+            'id, ' . $DB->sql_concat_join("'|'", ['COALESCE(storagekey, \'\')', 'COALESCE(deckkey, \'\')',
+                'COALESCE(frameskey, \'\')', 'COALESCE(audiokey, \'\')', 'COALESCE(uploadid, \'\')']));
+    }
+
+    /**
+     * Test an activity whose deletion is only queued (Moodle's course page deletes in the background while the recycle
+     * bin is on) has its migrated keys released, so the queued deletion, when cron runs it, sends nothing to the bucket.
+     */
+    public function test_a_queued_deletion_cannot_reach_solas_media(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/course/lib.php');
+        $ids = $this->seed();
+        $standin = $this->standin($ids['assign']);
+        $original = $this->standin_now($standin['cmid']);
+        $this->apply();
+        $map = $this->assign_map($ids['assign']);
+        course_delete_module((int) $map->targetcmid, true);
+        $this->assertSame(1, (int) $DB->get_field('course_modules', 'deletioninprogress', ['id' => $map->targetcmid]));
+        $this->assertCount(1, \core\task\manager::get_adhoc_tasks(\core_course\task\course_delete_modules::class));
+        self::set_mocks([self::SENTINEL]);
+        $sola = $this->sola_print();
+
+        $result = $this->rollback()->rollback_course($this->course->id);
+
+        $entry = $result['entries'][$ids['assign']];
+        $this->assertSame(rollback::OUTCOME_CLEARED, $entry['outcome']);
+        $this->assertSame(rollback::NOTE_KEYSRELEASED, $entry['code']);
+        $this->assertSame(rollback::STANDIN_RESTORED, $entry['standin']);
+        $this->assertSame($original, $this->standin_now($standin['cmid']));
+        $this->assertSame(0, $DB->count_records('presenterai_migration_map'));
+        foreach ($this->keys_of((int) $map->targetid) as $keys) {
+            $this->assertSame('||||', $keys);
+        }
+
+        $this->runAdhocTasks(\core_course\task\course_delete_modules::class);
+
+        $this->assertFalse($DB->record_exists('presenterai', ['id' => $map->targetid]));
+        $this->assertSame([self::SENTINEL], self::mocks(), 'a request was sent to the bucket');
+        $this->assertSame([], \core\task\manager::get_adhoc_tasks(\mod_presenterai\task\delete_orphaned_media::class));
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Test releasing keys touches only the attempts the import made: one a learner uploaded to the activity itself
+     * holds this plugin's own media, which its deletion should remove.
+     */
+    public function test_only_migrated_attempts_have_their_keys_released(): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->apply();
+        $map = $this->assign_map($ids['assign']);
+        $own = $this->getDataGenerator()->get_plugin_generator('mod_presenterai')->create_recording([
+            'presenteraiid' => $map->targetid, 'userid' => $this->alice->id, 'backend' => 's3',
+            'storagekey' => 'presenterai/own.webm']);
+        // The module no longer resolves (being deleted), but the instance is still the import's.
+        $DB->set_field('course_modules', 'deletioninprogress', 1, ['id' => $map->targetcmid]);
+
+        $result = $this->rollback()->rollback_course($this->course->id);
+
+        $this->assertSame(rollback::NOTE_KEYSRELEASED, $result['entries'][$ids['assign']]['code']);
+        $keys = $this->keys_of((int) $map->targetid);
+        $this->assertSame('presenterai/own.webm||||', $keys[$own->id]);
+        unset($keys[$own->id]);
+        $this->assertCount(3, $keys);
+        foreach ($keys as $value) {
+            $this->assertSame('||||', $value);
+        }
+    }
+
+    /**
+     * Test an attempt a learner starts after the first check is caught by the second, inside the transaction, and
+     * nothing is changed: no key released, no row deleted, the stand-in left pointing at the activity.
+     */
+    public function test_an_attempt_started_during_the_rollback_is_refused(): void {
+        global $DB;
+        $ids = $this->seed();
+        $standin = $this->standin($ids['assign']);
+        $this->apply();
+        $map = $this->assign_map($ids['assign']);
+        $keys = $this->keys_of((int) $map->targetid);
+        $standinbefore = $this->standin_now($standin['cmid']);
+        $maps = $DB->count_records('presenterai_migration_map');
+        $rollback = new class ($this->source) extends rollback {
+            /** @var array What to insert once the transaction has begun. */
+            public array $attempt = [];
+
+            /**
+             * A learner starts an attempt.
+             *
+             * @param int $sourceid The source assignment.
+             */
+            protected function in_transaction(int $sourceid): void {
+                global $DB;
+                $DB->insert_record('presenterai_recording', (object) $this->attempt);
+            }
+        };
+        $rollback->attempt = ['presenteraiid' => $map->targetid, 'userid' => $this->alice->id, 'attemptnumber' => 1,
+            'mode' => 'video', 'backend' => 's3', 'storagekey' => 'presenterai/new.webm', 'status' => 'uploaded',
+            'timecreated' => time(), 'timemodified' => time()];
+
+        $result = $rollback->rollback_course($this->course->id);
+
+        $entry = $result['entries'][$ids['assign']];
+        $this->assertSame(rollback::OUTCOME_REFUSED, $entry['outcome']);
+        $this->assertSame(rollback::REFUSE_LEARNERATTEMPTS, $entry['code']);
+        $after = $this->keys_of((int) $map->targetid);
+        $this->assertCount(count($keys) + 1, $after);
+        $this->assertSame($keys, array_intersect_key($after, $keys));
+        $this->assertTrue($DB->record_exists('course_modules', ['id' => $map->targetcmid]));
+        $this->assertSame($maps, $DB->count_records('presenterai_migration_map'));
+        $this->assertSame($standinbefore, $this->standin_now($standin['cmid']));
+    }
+
+    /**
+     * Test a deletion that throws rolls its assignment back whole (keys, map rows, stand-in as they were), puts the
+     * recycle bin setting back, and the course's other assignments are still rolled back.
+     */
+    public function test_a_failed_deletion_changes_nothing_and_the_rest_goes_on(): void {
+        global $CFG, $DB;
+        $first = $this->seed();
+        $standin = $this->standin($first['assign']);
+        $second = $this->seed();
+        $this->apply();
+        $map = $this->assign_map($first['assign']);
+        $keys = $this->keys_of((int) $map->targetid);
+        $standinbefore = $this->standin_now($standin['cmid']);
+        $this->assertArrayNotHasKey('tool_recyclebin', $CFG->forced_plugin_settings);
+        $rollback = new class ($this->source) extends rollback {
+            /** @var int The module whose deletion fails. */
+            public int $failing = 0;
+
+            /**
+             * Delete, then fail for one module, after the deletion has done its work.
+             *
+             * @param int $cmid The course module.
+             */
+            protected function delete_module(int $cmid): void {
+                parent::delete_module($cmid);
+                if ($cmid === $this->failing) {
+                    throw new \RuntimeException('SECRET-FAILURE-TEXT');
+                }
+            }
+        };
+        $rollback->failing = (int) $map->targetcmid;
+
+        $result = $rollback->rollback_course($this->course->id);
+
+        $entry = $result['entries'][$first['assign']];
+        $this->assertSame(rollback::OUTCOME_FAILED, $entry['outcome']);
+        $this->assertSame(0, $entry['maprows']);
+        $this->assertStringNotContainsString('SECRET-FAILURE-TEXT', $entry['message']);
+        $this->assertSame(1, $result['failed']);
+        $this->assertSame(rollback::OUTCOME_REMOVED, $result['entries'][$second['assign']]['outcome']);
+        $this->assertSame(1, $result['removed']);
+        $this->assertSame($keys, $this->keys_of((int) $map->targetid));
+        $this->assertTrue($DB->record_exists('course_modules', ['id' => $map->targetcmid]));
+        $this->assertSame(1 + 1 + 3, $DB->count_records('presenterai_migration_map'));
+        $this->assertSame(runner::STATE_VERIFIED, $this->assign_map($first['assign'])->state);
+        $this->assertSame($standinbefore, $this->standin_now($standin['cmid']));
+        $this->assertArrayNotHasKey('tool_recyclebin', $CFG->forced_plugin_settings);
+    }
+
+    /**
+     * Test a recycle bin setting already forced in config.php is exactly as it was after a rollback.
+     */
+    public function test_a_forced_recycle_bin_setting_is_put_back(): void {
+        global $CFG;
+        $this->seed();
+        $this->apply();
+        $CFG->forced_plugin_settings['tool_recyclebin'] = ['coursebinenable' => 1, 'coursebinexpiry' => 86400];
+
+        $result = $this->rollback()->rollback_course($this->course->id);
+
+        $this->assertSame(1, $result['removed']);
+        $this->assertSame(['coursebinenable' => 1, 'coursebinexpiry' => 86400], $CFG->forced_plugin_settings['tool_recyclebin']);
+    }
+
+    /**
+     * Test a stand-in written before the site's address changed still counts as pointing at the activity.
+     */
+    public function test_a_standin_survives_an_address_change(): void {
+        global $CFG;
+        $ids = $this->seed();
+        $standin = $this->standin($ids['assign']);
+        $original = $this->standin_now($standin['cmid']);
+        $this->apply();
+        $CFG->wwwroot = 'https://renamed.example.org/moodle';
+
+        $result = $this->rollback()->rollback_course($this->course->id);
+
+        $this->assertSame(rollback::STANDIN_RESTORED, $result['entries'][$ids['assign']]['standin']);
+        $this->assertSame($original, $this->standin_now($standin['cmid']));
     }
 }

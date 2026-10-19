@@ -494,6 +494,27 @@ final class migration_verifier_test extends \advanced_testcase {
     }
 
     /**
+     * Test a reconstructed row with no maximum is a mismatch: a row that can't show a percentage has to say it's
+     * unreconstructed.
+     */
+    public function test_a_reconstructed_row_without_a_maximum_fails(): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->apply();
+        $score = $this->score_row($ids['expired']);
+        $this->assertSame('preset_backfill', $score->scoreprovenance);
+        $this->assertSame(5, (int) $score->rawmax);
+        $DB->update_record('presenterai_score', (object) ['id' => $score->id, 'rawmax' => 0, 'overallpct' => null]);
+
+        $result = $this->verify();
+
+        $this->assertFalse($result['passed']);
+        $this->assertSame(['rawmax_zero_not_unreconstructed'], self::codes($result));
+        $this->assertSame(['code' => 'rawmax_zero_not_unreconstructed', 'assignid' => $ids['assign'],
+            'recid' => $ids['expired'], 'recordingid' => (int) $this->dest($ids['expired'])->id], $result['mismatches'][0]);
+    }
+
+    /**
      * Test a recording SOLA gained after the assignment was verified is a mismatch, named by ids only.
      */
     public function test_a_recording_added_after_the_import_is_reported(): void {

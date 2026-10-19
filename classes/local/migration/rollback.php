@@ -40,10 +40,12 @@ use mod_presenterai\local\recording_manager;
  * Why it deletes no media. The migrated rows' keys name objects SOLA wrote and SOLA's bucket still holds: the import
  * re-pointed keys and moved no byte, so the objects are SOLA's again the moment the map rows go. Deleting the module
  * normally runs presenterai_delete_instance(), which hands every key it finds to the store to delete. So, inside the
- * same transaction and before the module is deleted, every media key and upload id on the activity's recording rows
- * is set to null, and nothing else on them changes; recording_manager::delete_all_media_for_instance() then finds no
- * row with a key and builds no store at all. The audio key and the upload id are only ever set by an upload to the
- * activity, which makes a legacyrecid 0 row and so a refusal; on a migrated row they're null already.
+ * same transaction and before the module is deleted, every media key and upload id on the activity's migrated
+ * recording rows (legacyrecid above 0) is set to null, and nothing else on them changes;
+ * recording_manager::delete_all_media_for_instance() then finds no row with a key and builds no store at all. The
+ * audio key and the upload id are only ever set by an upload to the activity, which makes a legacyrecid 0 row and so
+ * a refusal; on a migrated row they're null already. The refusal checks run once before the transaction and again
+ * inside it, so an attempt a learner starts in between is still refused and nothing is changed.
  *
  * The recycle bin is bypassed for this one delete, the way the recycle bin itself forces backup settings
  * ($CFG->forced_plugin_settings, read by get_config(), restored straight after; nothing is saved). A recycle bin copy
@@ -58,11 +60,15 @@ use mod_presenterai\local\recording_manager;
  *
  * The stand-in comes back from the payload's runner::PAYLOAD_STANDIN record, read the same way whether or not the
  * payload also has runner::PAYLOAD_FAILED: its externalurl, visible and visibleoncoursepage. It's restored only while
- * it still points at the activity the import made; one someone pointed elsewhere since is left as they set it
+ * it still points at the activity the import made (the learner page path and its id; host and scheme aside); one
+ * someone pointed elsewhere since is left as they set it
  * (STANDIN_CHANGED), and one that's gone is reported (STANDIN_MISSING), not an error.
  *
  * An entry whose activity no longer resolves (deleted by a teacher, or failed) has nothing to remove: its stand-in is
- * restored and its map rows deleted (OUTCOME_CLEARED, code NOTE_TARGETGONE).
+ * restored and its map rows deleted (OUTCOME_CLEARED, code NOTE_TARGETGONE). When the module doesn't resolve but the
+ * import's instance row is still there (Moodle's course page deletes asynchronously: deletioninprogress is set and an
+ * adhoc task deletes the instance later), the migrated attempts' keys are released in the same transaction, so that
+ * deletion finds nothing of SOLA's to purge (code NOTE_KEYSRELEASED).
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -98,6 +104,12 @@ class rollback {
 
     /** @var string Cleared: the activity the row names no longer resolves. */
     public const NOTE_TARGETGONE = 'targetgone';
+
+    /**
+     * @var string Cleared: the module no longer resolves (its deletion is queued, say) but the import's instance is
+     *      still there, so its migrated attempts' keys were released before that deletion could purge them.
+     */
+    public const NOTE_KEYSRELEASED = 'keys_released';
 
     /** @var string The stand-in was put back. */
     public const STANDIN_RESTORED = 'restored';
@@ -150,7 +162,7 @@ class rollback {
      *     'standinsrestored' => int,
      *     'maprowsdeleted' => int,
      *     'entries' => array, source assignment id to ['sourceid' => int, 'state' => string, 'cmid' => int,
-     *         'outcome' => an OUTCOME_*, 'code' => a REFUSE_* or NOTE_TARGETGONE or '', 'standin' => a STANDIN_*
+     *         'outcome' => an OUTCOME_*, 'code' => a REFUSE_* or a NOTE_* or '', 'standin' => a STANDIN_*
      *         or '' when nothing was done, 'maprows' => int deleted, 'message' => string],
      * ]. Ids, codes and counts only, never learner text.
      */
@@ -227,7 +239,7 @@ class rollback {
     }
 
     /**
-     * Roll back one assignment: check, then remove, restore and delete in one transaction.
+     * Roll back one assignment: check, then (in one transaction) check again, remove, restore and delete.
      *
      * @param \stdClass $map The assignment's map row.
      * @return array The entry (see rollback_course()).
@@ -239,19 +251,27 @@ class rollback {
         $entry = ['sourceid' => $sourceid, 'state' => (string) $map->state, 'cmid' => (int) $map->targetcmid,
             'outcome' => self::OUTCOME_REFUSED, 'code' => '', 'standin' => '', 'maprows' => 0, 'message' => ''];
         $resolves = destination::target_resolves($map, $sourceid);
-        if ($resolves) {
-            $refusal = self::refusal($map);
-            if ($refusal !== '') {
-                $entry['code'] = $refusal;
-                $entry['message'] = self::str('rollback_refuse_' . $refusal, $sourceid);
-                return $entry;
-            }
+        // The module is being deleted (queued, deletioninprogress) or otherwise broken, but the instance is still
+        // the import's: when its deletion runs it would purge SOLA's objects, so its keys are released too.
+        $pending = !$resolves && $DB->record_exists('presenterai', ['id' => (int) $map->targetid, 'legacyassignid' => $sourceid]);
+        if ($resolves && ($refusal = self::refusal($map)) !== '') {
+            return self::refused($entry, $refusal);
         }
 
         $transaction = $DB->start_delegated_transaction();
         try {
+            $this->in_transaction($sourceid);
             if ($resolves) {
-                self::remove_activity($map);
+                // Again, now that nothing else can slip in: an attempt started since the check above is a refusal.
+                $refusal = self::refusal($map);
+                if ($refusal !== '') {
+                    // Nothing of the rollback's was written yet; committing keeps whatever the caller's seam did.
+                    $transaction->allow_commit();
+                    return self::refused($entry, $refusal);
+                }
+                $this->remove_activity($map);
+            } else if ($pending) {
+                self::release_keys((int) $map->targetid);
             }
             $entry['standin'] = self::restore_standin($map);
             $entry['maprows'] = self::delete_map_rows($map);
@@ -272,11 +292,60 @@ class rollback {
         }
         $entry['outcome'] = $resolves ? self::OUTCOME_REMOVED : self::OUTCOME_CLEARED;
         if (!$resolves) {
-            $entry['code'] = self::NOTE_TARGETGONE;
-            $entry['message'] = self::str('rollback_targetgone', $sourceid);
+            $entry['code'] = $pending ? self::NOTE_KEYSRELEASED : self::NOTE_TARGETGONE;
+            $entry['message'] = self::str($pending ? 'rollback_keysreleased' : 'rollback_targetgone', $sourceid);
         }
 
         return $entry;
+    }
+
+    /**
+     * A seam called first inside each assignment's transaction, before the activity is checked again.
+     *
+     * @param int $sourceid The source assignment.
+     */
+    protected function in_transaction(int $sourceid): void {
+    }
+
+    /**
+     * Delete the course module. A seam, so a test can make the deletion fail inside the transaction.
+     *
+     * @param int $cmid The course module.
+     */
+    protected function delete_module(int $cmid): void {
+        course_delete_module($cmid);
+    }
+
+    /**
+     * An entry refused with a code.
+     *
+     * @param array $entry The entry.
+     * @param string $code A REFUSE_* code.
+     * @return array
+     */
+    private static function refused(array $entry, string $code): array {
+        $entry['outcome'] = self::OUTCOME_REFUSED;
+        $entry['code'] = $code;
+        $entry['message'] = self::str('rollback_refuse_' . $code, $entry['sourceid']);
+
+        return $entry;
+    }
+
+    /**
+     * Forget the keys of the attempts the import made in an activity, so no deletion of it reaches SOLA's objects.
+     *
+     * Only rows with a legacy recording id: an attempt made in the activity itself holds this plugin's own media,
+     * which its deletion should remove.
+     *
+     * @param int $instanceid The activity instance.
+     */
+    private static function release_keys(int $instanceid): void {
+        global $DB;
+
+        foreach (array_merge(recording_manager::MEDIA_COLUMNS, ['uploadid']) as $column) {
+            $DB->set_field_select('presenterai_recording', $column, null, 'presenteraiid = :p AND legacyrecid > 0',
+                ['p' => $instanceid]);
+        }
     }
 
     /**
@@ -317,24 +386,23 @@ class rollback {
      *
      * @param \stdClass $map The assignment's map row.
      */
-    private static function remove_activity(\stdClass $map): void {
-        global $CFG, $DB;
+    private function remove_activity(\stdClass $map): void {
+        global $CFG;
         require_once($CFG->dirroot . '/course/lib.php');
 
         // The objects these keys name are SOLA's: forget them before deletion would delete them.
-        foreach (array_merge(recording_manager::MEDIA_COLUMNS, ['uploadid']) as $column) {
-            $DB->set_field('presenterai_recording', $column, null, ['presenteraiid' => (int) $map->targetid]);
-        }
+        self::release_keys((int) $map->targetid);
 
-        $forced = $CFG->forced_plugin_settings['tool_recyclebin'] ?? null;
-        $CFG->forced_plugin_settings['tool_recyclebin']['coursebinenable'] = 0;
+        $had = array_key_exists('tool_recyclebin', $CFG->forced_plugin_settings);
+        $forced = $had ? $CFG->forced_plugin_settings['tool_recyclebin'] : null;
+        $CFG->forced_plugin_settings['tool_recyclebin'] = ['coursebinenable' => 0] + (array) $forced;
         try {
-            course_delete_module((int) $map->targetcmid);
+            $this->delete_module((int) $map->targetcmid);
         } finally {
-            if ($forced === null) {
-                unset($CFG->forced_plugin_settings['tool_recyclebin']);
-            } else {
+            if ($had) {
                 $CFG->forced_plugin_settings['tool_recyclebin'] = $forced;
+            } else {
+                unset($CFG->forced_plugin_settings['tool_recyclebin']);
             }
         }
     }
@@ -357,8 +425,7 @@ class rollback {
         if (!$url) {
             return self::STANDIN_MISSING;
         }
-        $ours = (new \moodle_url('/mod/presenterai/view.php', ['id' => (int) $map->targetcmid]))->out(false);
-        if ((string) $url->externalurl !== $ours) {
+        if (!self::points_at((string) $url->externalurl, (int) $map->targetcmid)) {
             return self::STANDIN_CHANGED;
         }
         $DB->update_record('url', (object) ['id' => $url->id, 'externalurl' => (string) $standin['externalurl'],
@@ -367,6 +434,21 @@ class rollback {
             'visibleoncoursepage' => (int) $standin['visibleoncoursepage']]);
 
         return self::STANDIN_RESTORED;
+    }
+
+    /**
+     * Whether a URL is the learner page of one activity: its path ends in /mod/presenterai/view.php and its id is
+     * the cmid. The host and scheme aren't compared, so a stand-in written before a host or https change still counts.
+     *
+     * @param string $url The URL.
+     * @param int $cmid The activity's cmid.
+     * @return bool
+     */
+    private static function points_at(string $url, int $cmid): bool {
+        $path = (string) parse_url($url, PHP_URL_PATH);
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+
+        return str_ends_with($path, '/mod/presenterai/view.php') && (string) ($query['id'] ?? '') === (string) $cmid;
     }
 
     /**
