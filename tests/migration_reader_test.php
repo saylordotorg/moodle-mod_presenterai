@@ -95,14 +95,14 @@ final class migration_reader_test extends \advanced_testcase {
     }
 
     /**
-     * Test the tables count as present only when all four are listed, extra tables and list shape notwithstanding.
+     * Test the tables count as present only when all five are listed, extra tables and list shape notwithstanding.
      */
-    public function test_tables_are_present_when_all_four_are_listed(): void {
-        $four = [sola_rows::ASSIGN, sola_rows::TOPIC, sola_rows::REC, sola_rows::SCORES];
+    public function test_tables_are_present_when_all_five_are_listed(): void {
+        $five = [sola_rows::ASSIGN, sola_rows::TOPIC, sola_rows::REC, sola_rows::SCORES, sola_rows::RUBRICS];
 
-        $this->assertTrue($this->reader_with_tables($four)->tables_present());
-        $this->assertTrue($this->reader_with_tables(array_merge(['course', 'user', sola_rows::RUBRICS], $four))->tables_present());
-        $this->assertTrue($this->reader_with_tables(array_combine($four, $four))->tables_present(), 'a name => name map');
+        $this->assertTrue($this->reader_with_tables($five)->tables_present());
+        $this->assertTrue($this->reader_with_tables(array_merge(['course', 'user', 'url'], $five))->tables_present());
+        $this->assertTrue($this->reader_with_tables(array_combine($five, $five))->tables_present(), 'a name => name map');
     }
 
     /**
@@ -124,15 +124,17 @@ final class migration_reader_test extends \advanced_testcase {
         $topic = 'local_ai_course_assistant_sbx_topic';
         $rec = 'local_ai_course_assistant_sbx_rec';
         $scores = 'local_ai_course_assistant_practice_scores';
+        $rubrics = 'local_ai_course_assistant_rubrics';
 
         return [
             'no tables' => [[]],
             'only core tables' => [['course', 'user', 'url']],
-            'no assignment table' => [[$topic, $rec, $scores]],
-            'no topic table' => [[$assign, $rec, $scores]],
-            'no recording table' => [[$assign, $topic, $scores]],
-            'no score table' => [[$assign, $topic, $rec]],
-            'a similar name is not the table' => [[$assign . '_old', $topic, $rec, $scores]],
+            'no assignment table' => [[$topic, $rec, $scores, $rubrics]],
+            'no topic table' => [[$assign, $rec, $scores, $rubrics]],
+            'no recording table' => [[$assign, $topic, $scores, $rubrics]],
+            'no score table' => [[$assign, $topic, $rec, $rubrics]],
+            'no rubric table' => [[$assign, $topic, $rec, $scores]],
+            'a similar name is not the table' => [[$assign . '_old', $topic, $rec, $scores, $rubrics]],
         ];
     }
 
@@ -152,7 +154,7 @@ final class migration_reader_test extends \advanced_testcase {
     public function test_tables_present_agrees_with_the_database(): void {
         global $DB;
         $expected = true;
-        foreach ([sola_rows::ASSIGN, sola_rows::TOPIC, sola_rows::REC, sola_rows::SCORES] as $table) {
+        foreach ([sola_rows::ASSIGN, sola_rows::TOPIC, sola_rows::REC, sola_rows::SCORES, sola_rows::RUBRICS] as $table) {
             $expected = $expected && $DB->get_manager()->table_exists($table);
         }
 

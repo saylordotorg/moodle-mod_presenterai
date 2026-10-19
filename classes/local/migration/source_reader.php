@@ -48,7 +48,7 @@ interface source_reader {
      * Check this first. A site without SOLA's Soapbox has none of the tables the other methods read, and they
      * fail with a database error there.
      *
-     * @return bool True only when SOLA's three sbx_* tables and practice_scores all exist.
+     * @return bool True only when SOLA's three sbx_* tables, practice_scores and rubrics all exist.
      */
     public function tables_present(): bool;
 

@@ -26,6 +26,10 @@ use mod_presenterai\tests\fixtures\sola_rows;
  * table, so everything else reaches SOLA through the reader. And a behavioral guard: a full pass of the reader over
  * fixture rows leaves every SOLA row it reads, and SOLA's settings, exactly as they were.
  *
+ * Every migration file is also scanned for a call that reaches a write without naming it: call_user_func(), a method
+ * named by a variable or an expression, and a write method or function named as a string (a callable). The reader
+ * is held to that too.
+ *
  * The scan reads code, not comments, so a docblock may say what the code must never do. It can't see a table
  * name built at run time, which is why the behavioral guard exists, and why the later tasks' tests should compare
  * the same fingerprint around an apply and a rollback.

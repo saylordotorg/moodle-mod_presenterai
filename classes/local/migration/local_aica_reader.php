@@ -77,6 +77,9 @@ final class local_aica_reader implements source_reader {
     /** @var string SOLA's practice score table, which holds Soapbox scores among others. */
     private const SCORES_TABLE = 'local_ai_course_assistant_practice_scores';
 
+    /** @var string SOLA's rubric table, which the criteria of an old score are looked up in. */
+    private const RUBRICS_TABLE = 'local_ai_course_assistant_rubrics';
+
     /** @var string The score type SOLA's speech scoring writes. */
     private const SPEECH = 'speech';
 
@@ -151,7 +154,7 @@ final class local_aica_reader implements source_reader {
     }
 
     /**
-     * Whether SOLA's three sbx tables and its practice score table are all on this site.
+     * Whether SOLA's three sbx tables, its practice score table and its rubric table are all on this site.
      *
      * Reads the list of table names, which isn't a schema call, so the reader stays free of the database
      * manager. The tables are listed without the site's prefix.
@@ -163,7 +166,7 @@ final class local_aica_reader implements source_reader {
 
         $names = $this->tables !== null ? ($this->tables)() : $DB->get_tables(false);
         $existing = array_map('strval', array_values($names));
-        $required = [ids::SOURCE_REC, ids::SOURCE_ASSIGN, ids::SOURCE_TOPIC, self::SCORES_TABLE];
+        $required = [ids::SOURCE_REC, ids::SOURCE_ASSIGN, ids::SOURCE_TOPIC, self::SCORES_TABLE, self::RUBRICS_TABLE];
 
         return array_diff($required, $existing) === [];
     }
@@ -328,7 +331,7 @@ final class local_aica_reader implements source_reader {
     public function rubric_criteria(int $rubricid): ?array {
         global $DB;
 
-        $record = $DB->get_record('local_ai_course_assistant_rubrics', ['id' => $rubricid], 'id, criteria');
+        $record = $DB->get_record(self::RUBRICS_TABLE, ['id' => $rubricid], 'id, criteria');
         if (!$record) {
             return null;
         }
