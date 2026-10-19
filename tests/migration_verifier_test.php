@@ -515,6 +515,58 @@ final class migration_verifier_test extends \advanced_testcase {
     }
 
     /**
+     * A recording whose score judged no criterion at all, added to the seeded assignment.
+     *
+     * @param array $ids The seeded ids.
+     * @return int The source recording.
+     */
+    private function add_unassessed(array $ids): int {
+        $score = $this->source->add_score($this->course->id, $this->bob->id, ['overall_score' => 0, 'scores' => json_encode([
+            ['name' => 'Delivery & Fluency', 'score' => 0, 'feedback' => 'Not judged.', 'max_score' => 5, 'assessed' => false],
+            ['name' => 'Organization', 'score' => 0, 'feedback' => 'Not judged.', 'max_score' => 5, 'assessed' => false],
+        ])]);
+
+        return $this->source->add_rec($ids['assign'], $this->bob->id, ['status' => 'scored', 'scoreid' => $score,
+            'storage_key' => null, 'timecreated' => 1700]);
+    }
+
+    /**
+     * Test a score that judged no criterion is exact with no maximum and no percentage, keeps SOLA's mean, and passes.
+     */
+    public function test_an_all_unassessed_exact_row_passes(): void {
+        $ids = $this->seed();
+        $recid = $this->add_unassessed($ids);
+        $this->apply();
+        $score = $this->score_row($recid);
+        $this->assertSame('exact', $score->scoreprovenance);
+        $this->assertSame(0, (int) $score->rawmax);
+        $this->assertNull($score->overallpct);
+        $this->assertSame(0, (int) $score->legacymeanscore);
+
+        $result = $this->verify();
+
+        $this->assertSame([], $result['mismatches']);
+        $this->assertTrue($result['passed']);
+    }
+
+    /**
+     * Test a row with an assessed criterion, doctored to rawmax 0 while still exact, fails.
+     */
+    public function test_an_assessed_exact_row_without_a_maximum_fails(): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->apply();
+        $score = $this->score_row($ids['scored']);
+        $this->assertSame('exact', $score->scoreprovenance);
+        $DB->update_record('presenterai_score', (object) ['id' => $score->id, 'rawmax' => 0, 'overallpct' => null]);
+
+        $result = $this->verify();
+
+        $this->assertFalse($result['passed']);
+        $this->assertSame(['rawmax_zero_not_unreconstructed'], self::codes($result));
+    }
+
+    /**
      * Test a recording SOLA gained after the assignment was verified is a mismatch, named by ids only.
      */
     public function test_a_recording_added_after_the_import_is_reported(): void {

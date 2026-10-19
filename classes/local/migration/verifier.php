@@ -41,7 +41,8 @@ namespace mod_presenterai\local\migration;
  * legacymeanscore equal to SOLA's overall_score. Where rawmax is above 0, the mean of the assessed criteria's raw
  * scores must be within one of SOLA's overall_score (a 0 to 5 mean, rounded), else mean_drift: the maxima were
  * rebuilt from the wrong place. An unreconstructed row must have rawmax 0 and no percentage
- * (unreconstructed_inconsistent), and a row with rawmax 0 must be unreconstructed (rawmax_zero_not_unreconstructed).
+ * (unreconstructed_inconsistent), and a row with rawmax 0 and at least one assessed criterion must be unreconstructed
+ * (rawmax_zero_not_unreconstructed); with no assessed criterion, exact with rawmax 0 is correct.
  * legacymeta must equal
  * SOLA's session_meta minus visual_observation, never the raw meta: SOLA's cleanup now strips the observation from
  * held rows, so the source may or may not still carry it, and the destination must never (D11).
@@ -350,8 +351,10 @@ class verifier {
         if ($dest->scoreprovenance === mapper::PROVENANCE_NONE && ((int) $dest->rawmax !== 0 || $dest->overallpct !== null)) {
             $this->mismatch('unreconstructed_inconsistent', $ids);
         }
-        // The other half: a row with no maximum can't claim its maximum was rebuilt.
-        if ((int) $dest->rawmax === 0 && $dest->scoreprovenance !== mapper::PROVENANCE_NONE) {
+        // The other half: a row with no maximum can't claim its maximum was rebuilt, unless nothing was assessed (SOLA
+        // judged no criterion, so exact with rawmax 0 and no percentage is the honest answer).
+        $anyassessed = array_filter(self::criteria($dest->scores, true), static fn(array $c): bool => $c['assessed']) !== [];
+        if ((int) $dest->rawmax === 0 && $anyassessed && $dest->scoreprovenance !== mapper::PROVENANCE_NONE) {
             $this->mismatch('rawmax_zero_not_unreconstructed', $ids);
         }
         if (self::meta_without_observation($source['session_meta'] ?? null) !== self::decoded_meta($dest->legacymeta)) {
