@@ -55,6 +55,9 @@ use mod_presenterai\local\rubric_manager;
  *   beside any "standin" key already there.
  * Never learner text.
  *
+ * sourcesiteid comes from the site identifier, which a database clone shares, so a clone sees the same map rows
+ * (it only ever holds more than the site it was copied from).
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -542,9 +545,13 @@ class runner {
                     $entry['standin'] === plan::STANDIN_REWRITE);
             }
 
+            // In a hidden section a module is visible = 0 with its own state kept in visibleold, as core's
+            // set_section_visible() leaves it; visible = 1 there would make it a stealth module.
             $visible = empty($work['assign']['visible']) ? 0 : 1;
-            $DB->update_record('course_modules', (object) ['id' => $map->targetcmid, 'visible' => $visible,
-                'visibleold' => $visible]);
+            $section = $DB->get_field_sql('SELECT s.visible FROM {course_sections} s JOIN {course_modules} cm
+                ON cm.section = s.id WHERE cm.id = :cmid', ['cmid' => $map->targetcmid], MUST_EXIST);
+            $DB->update_record('course_modules', (object) ['id' => $map->targetcmid,
+                'visible' => $visible && (int) $section === 1 ? 1 : 0, 'visibleold' => $visible]);
             foreach (array_keys($topics) as $topicid) {
                 $DB->set_field(self::MAP, 'state', self::STATE_VERIFIED,
                     ['sourcetable' => ids::SOURCE_TOPIC, 'sourceid' => $topicid, 'sourcesiteid' => ids::site_id()]);

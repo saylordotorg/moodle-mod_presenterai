@@ -1187,9 +1187,10 @@ final class migration_runner_test extends \advanced_testcase {
             $this->assertSame(plan::SKIP_VERIFIED, $entry['decision']);
             $this->assertSame(1, $entry['new_source_rows']);
             $this->assertSame(1, $entry['newly_scored_rows']);
-            $this->assertStringContainsString('1 Soapbox recordings were added after this assignment was imported',
+            $this->assertStringContainsString('Soapbox recordings added after this assignment was imported (not imported): 1.',
                 $entry['message']);
-            $this->assertStringContainsString('1 were scored after', $entry['message']);
+            $this->assertStringContainsString('Soapbox recordings scored after the import (scores not imported): 1.',
+                $entry['message']);
             $this->assertSame(1, $result->counts()['new_source_rows']);
         }
         $this->assertSame($before, $this->table_counts());
@@ -1383,6 +1384,75 @@ final class migration_runner_test extends \advanced_testcase {
         $error = $this->entry($plan, $ids['assign'])['error'];
         $this->assertStringContainsString('moodle_exception (error)', $error);
         $this->assertStringNotContainsString('forced after topics', $error);
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * A source visibility and a section visibility, and what the activity ends with.
+     *
+     * @return array
+     */
+    public static function section_visibility_provider(): array {
+        return [
+            'visible source, hidden section' => [1, 0, [0, 1]],
+            'hidden source, visible section' => [0, 1, [0, 0]],
+            'visible source, visible section' => [1, 1, [1, 1]],
+        ];
+    }
+
+    /**
+     * Test an activity in a hidden section is hidden with its own state kept in visibleold, as core does it.
+     *
+     * @dataProvider section_visibility_provider
+     * @param int $source The source assignment's visible.
+     * @param int $section The last section's visible.
+     * @param array $expected [visible, visibleold].
+     */
+    public function test_a_hidden_section_keeps_the_activity_hidden(int $source, int $section, array $expected): void {
+        $ids = $this->seed();
+        $this->source->set_assign($ids['assign'], ['visible' => $source]);
+        if (!$section) {
+            global $CFG;
+            require_once($CFG->dirroot . '/course/lib.php');
+            set_section_visible($this->course->id, 3, 0);
+        }
+        $sola = $this->sola_print();
+
+        $plan = $this->runner()->apply_course($this->course->id);
+
+        $this->assertSame(plan::OUTCOME_DONE, $this->entry($plan, $ids['assign'])['outcome']);
+        $this->assertSame($expected, $this->target_visibility($ids['assign']));
+        $this->assertSame($sola, $this->sola_print());
+    }
+
+    /**
+     * Test an unfinished activity a person made visible isn't resumed (the import only ever creates it hidden).
+     */
+    public function test_an_unfinished_activity_someone_unhid_is_not_resumed(): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->failing_runner('topics')->apply_course($this->course->id);
+        $DB->set_field('course_modules', 'visible', 1, ['id' => $this->map(ids::SOURCE_ASSIGN, $ids['assign'])->targetcmid]);
+
+        $this->assert_assignment_refused_without_writes($ids['assign'], 'targetused');
+    }
+
+    /**
+     * Test a recording whose destination row was deleted after the import isn't counted as newly scored.
+     */
+    public function test_a_deleted_destination_row_is_not_newly_scored(): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->runner()->apply_course($this->course->id);
+        $DB->delete_records('presenterai_recording', ['legacyrecid' => $ids['uploaded']]);
+        $score = $this->source->add_score($this->course->id, $this->bob->id);
+        $this->source->set_rec($ids['uploaded'], ['scoreid' => $score, 'status' => 'scored']);
+        $sola = $this->sola_print();
+
+        $entry = $this->entry($this->runner()->plan_course($this->course->id), $ids['assign']);
+
+        $this->assertSame(plan::SKIP_VERIFIED, $entry['decision']);
+        $this->assertSame([0, 0, ''], [$entry['new_source_rows'], $entry['newly_scored_rows'], $entry['message']]);
         $this->assertSame($sola, $this->sola_print());
     }
 }

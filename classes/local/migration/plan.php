@@ -33,6 +33,9 @@ namespace mod_presenterai\local\migration;
  * - outcome ('' when nothing was attempted, OUTCOME_DONE or OUTCOME_FAILED), error (the failure, as its class and
  *   a Moodle error code, never the exception's message), targetid and targetcmid (the activity, 0 when none),
  *   state (the map state after the run, '' when none);
+ * Consumers (the command) must decide from decision and code, never from whether message is empty: message also
+ * carries the drift note of a SKIP_VERIFIED assignment, which is information, not a refusal.
+ *
  * - new_source_rows and newly_scored_rows: for a SKIP_VERIFIED assignment, the SOLA recordings added since it was
  *   imported and the imported ones SOLA scored since (neither is imported); message then says so. 0 otherwise.
  *

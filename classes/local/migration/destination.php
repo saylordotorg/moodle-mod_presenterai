@@ -104,7 +104,9 @@ final class destination {
     }
 
     /**
-     * Whether an earlier run's activity has been used since: an attempt the import didn't make, or grading on.
+     * Whether an earlier run's activity has been touched since: an attempt the import didn't make, grading on, or
+     * shown. The import creates it hidden and only finish() shows it, so a visible unfinished activity means a
+     * person unhid it, and finishing would silently hide it again or override their choice.
      *
      * @param \stdClass $map The assignment's map row.
      * @return bool
@@ -113,12 +115,13 @@ final class destination {
         global $DB;
 
         return $DB->record_exists('presenterai_recording', ['presenteraiid' => $map->targetid, 'legacyrecid' => 0])
-            || (int) $DB->get_field('presenterai', 'grade', ['id' => $map->targetid]) !== 0;
+            || (int) $DB->get_field('presenterai', 'grade', ['id' => $map->targetid]) !== 0
+            || (int) $DB->get_field('course_modules', 'visible', ['id' => $map->targetcmid]) !== 0;
     }
 
     /**
      * What SOLA gained since a verified assignment was imported: recordings with no map row, and imported
-     * recordings that have a score in SOLA but none here.
+     * recordings that have a score in SOLA but none here (only while the destination row still exists).
      *
      * @param \stdClass $map The assignment's map row.
      * @param array[] $recs The source recordings now.
@@ -136,7 +139,7 @@ final class destination {
             $id = (int) $rec['id'];
             if (!isset($mapped[$id])) {
                 $new++;
-            } else if (!empty($rec['scoreid']) && empty($scored[$id])) {
+            } else if (!empty($rec['scoreid']) && array_key_exists($id, $scored) && (int) $scored[$id] === 0) {
                 $newlyscored++;
             }
         }
