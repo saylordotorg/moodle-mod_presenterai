@@ -219,18 +219,28 @@ class rollback {
             $own = array_flip(array_map('intval', array_column($this->reader->assignments($courseid), 'id')));
         }
         [$insql, $params] = $DB->get_in_or_equal(self::STATES, SQL_PARAMS_NAMED, 'st');
-        $rows = $DB->get_records_select(self::MAP, "sourcetable = :t AND sourcesiteid = :s AND state {$insql}",
-            ['t' => ids::SOURCE_ASSIGN, 's' => ids::site_id()] + $params, 'sourceid');
+        $rows = $DB->get_records_select(
+            self::MAP,
+            "sourcetable = :t AND sourcesiteid = :s AND state {$insql}",
+            ['t' => ids::SOURCE_ASSIGN, 's' => ids::site_id()] + $params,
+            'sourceid'
+        );
         $instances = $DB->get_records_menu('presenterai', ['course' => $courseid], '', 'id, legacyassignid');
-        $cms = array_flip(array_map('intval', $DB->get_fieldset_select('course_modules', 'id', 'course = :c',
-            ['c' => $courseid])));
+        $cms = array_flip(array_map('intval', $DB->get_fieldset_select(
+            'course_modules',
+            'id',
+            'course = :c',
+            ['c' => $courseid]
+        )));
 
         $maps = [];
         foreach ($rows as $row) {
             $standin = self::standin_record($row);
-            if (isset($own[(int) $row->sourceid]) || isset($cms[(int) $row->targetcmid])
+            if (
+                isset($own[(int) $row->sourceid]) || isset($cms[(int) $row->targetcmid])
                     || (int) ($instances[(int) $row->targetid] ?? 0) === (int) $row->sourceid
-                    || ($standin !== null && isset($cms[(int) $standin['cmid']]))) {
+                    || ($standin !== null && isset($cms[(int) $standin['cmid']]))
+            ) {
                 $maps[] = $row;
             }
         }
@@ -345,8 +355,13 @@ class rollback {
         global $DB;
 
         foreach (array_merge(recording_manager::MEDIA_COLUMNS, ['uploadid']) as $column) {
-            $DB->set_field_select('presenterai_recording', $column, null, 'presenteraiid = :p AND legacyrecid > 0',
-                ['p' => $instanceid]);
+            $DB->set_field_select(
+                'presenterai_recording',
+                $column,
+                null,
+                'presenteraiid = :p AND legacyrecid > 0',
+                ['p' => $instanceid]
+            );
         }
     }
 

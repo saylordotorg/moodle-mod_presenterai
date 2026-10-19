@@ -54,8 +54,12 @@ final class destination {
     public static function mapped_ids(string $table, int $cmid): array {
         global $DB;
 
-        return array_map('intval', $DB->get_fieldset_select(self::MAP, 'sourceid',
-            'sourcetable = :t AND sourcesiteid = :s AND targetcmid = :c', ['t' => $table, 's' => ids::site_id(), 'c' => $cmid]));
+        return array_map('intval', $DB->get_fieldset_select(
+            self::MAP,
+            'sourceid',
+            'sourcetable = :t AND sourcesiteid = :s AND targetcmid = :c',
+            ['t' => $table, 's' => ids::site_id(), 'c' => $cmid]
+        ));
     }
 
     /**
@@ -95,8 +99,10 @@ final class destination {
 
         $cm = $DB->get_record('course_modules', ['id' => $map->targetcmid]);
         $module = $DB->get_field('modules', 'id', ['name' => 'presenterai']);
-        if (!$cm || (int) $cm->module !== (int) $module || (int) $cm->instance !== (int) $map->targetid
-                || !empty($cm->deletioninprogress)) {
+        if (
+            !$cm || (int) $cm->module !== (int) $module || (int) $cm->instance !== (int) $map->targetid
+                || !empty($cm->deletioninprogress)
+        ) {
             return false;
         }
 
@@ -131,8 +137,13 @@ final class destination {
         global $DB;
 
         $mapped = array_flip(self::mapped_ids(ids::SOURCE_REC, (int) $map->targetcmid));
-        $scored = $DB->get_records_select_menu('presenterai_recording', 'presenteraiid = :p AND legacyrecid > 0',
-            ['p' => $map->targetid], '', 'legacyrecid, legacyscoreid');
+        $scored = $DB->get_records_select_menu(
+            'presenterai_recording',
+            'presenteraiid = :p AND legacyrecid > 0',
+            ['p' => $map->targetid],
+            '',
+            'legacyrecid, legacyscoreid'
+        );
         $new = 0;
         $newlyscored = 0;
         foreach ($recs as $rec) {

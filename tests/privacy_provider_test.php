@@ -581,8 +581,11 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
         set_config('s3region', 'us-east-1', 'mod_presenterai');
         set_config('s3prefix', 'soapbox', 'mod_presenterai');
         $CFG->allowstealth = 1;
-        $learner = $this->getDataGenerator()->create_and_enrol($this->course, 'student',
-            ['firstname' => 'Wilhelmina', 'lastname' => 'Quarternight']);
+        $learner = $this->getDataGenerator()->create_and_enrol(
+            $this->course,
+            'student',
+            ['firstname' => 'Wilhelmina', 'lastname' => 'Quarternight']
+        );
         $secrets = ['ZEBRA-TRANSCRIPT-7731', 'OKAPI-FEEDBACK-5512', 'NARWHAL-TIP-3301', 'IBEX-OBSERVATION-8820',
             'Wilhelmina', 'Quarternight', 'Persuasive talk'];
 
@@ -617,13 +620,19 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
 
         $plan = (new \mod_presenterai\local\migration\runner($source))->apply_course((int) $this->course->id);
         $this->assertSame(\mod_presenterai\local\migration\plan::OUTCOME_DONE, $plan->assignments[$assign]['outcome']);
-        $this->assertSame('ZEBRA-TRANSCRIPT-7731',
-            $DB->get_field('presenterai_recording', 'transcript', ['legacyrecid' => $recid]));
-        (new \mod_presenterai\local\migration\verifier($source, $checker))->verify_course((int) $this->course->id,
-            (int) get_admin()->id);
+        $this->assertSame(
+            'ZEBRA-TRANSCRIPT-7731',
+            $DB->get_field('presenterai_recording', 'transcript', ['legacyrecid' => $recid])
+        );
+        (new \mod_presenterai\local\migration\verifier($source, $checker))->verify_course(
+            (int) $this->course->id,
+            (int) get_admin()->id
+        );
         $DB->set_field('presenterai_recording', 'transcript', 'ZEBRA-TRANSCRIPT-7731 doctored', ['legacyrecid' => $recid]);
-        (new \mod_presenterai\local\migration\verifier($source, $checker))->verify_course((int) $this->course->id,
-            (int) get_admin()->id);
+        (new \mod_presenterai\local\migration\verifier($source, $checker))->verify_course(
+            (int) $this->course->id,
+            (int) get_admin()->id
+        );
 
         $this->assertGreaterThan(0, $DB->count_records('presenterai_migration_map'));
         $this->assertSame(2, $DB->count_records('presenterai_migreport'));
@@ -671,8 +680,10 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
         $system = \context_system::instance();
 
         $this->assertEquals([$system->id], array_values(provider::get_contexts_for_userid((int) $operator->id)->get_contextids()));
-        $this->assertEquals([$this->context->id],
-            array_values(provider::get_contexts_for_userid((int) $this->teacher->id)->get_contextids()));
+        $this->assertEquals(
+            [$this->context->id],
+            array_values(provider::get_contexts_for_userid((int) $this->teacher->id)->get_contextids())
+        );
         $userlist = new userlist($system, 'mod_presenterai');
         provider::get_users_in_context($userlist);
         $this->assertEqualsCanonicalizing([(int) $operator->id, (int) $other->id], array_map('intval', $userlist->get_userids()));

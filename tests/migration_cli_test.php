@@ -282,15 +282,21 @@ final class migration_cli_test extends \advanced_testcase {
         global $DB;
 
         $counts = [];
-        foreach ([
+        foreach (
+            [
             'presenterai', 'presenterai_topic', 'presenterai_recording', 'presenterai_score', 'presenterai_migration_map',
             'presenterai_migreport', 'course_modules', 'course_sections', 'logstore_standard_log', 'url', 'grade_items',
             'context', 'files', 'event', 'task_adhoc', 'lock_db',
-        ] as $table) {
+            ] as $table
+        ) {
             $counts[$table] = $DB->get_manager()->table_exists($table) ? $DB->count_records($table) : -1;
         }
-        $counts['cm_fields'] = $DB->get_records_menu('course_modules', ['course' => $this->course->id], 'id',
-            'id, ' . $DB->sql_concat('visible', "'/'", 'visibleoncoursepage', "'/'", 'section'));
+        $counts['cm_fields'] = $DB->get_records_menu(
+            'course_modules',
+            ['course' => $this->course->id],
+            'id',
+            'id, ' . $DB->sql_concat('visible', "'/'", 'visibleoncoursepage', "'/'", 'section')
+        );
         $counts['urls'] = $DB->get_records_menu('url', ['course' => $this->course->id], 'id', 'id, externalurl');
 
         return $counts;
@@ -306,8 +312,10 @@ final class migration_cli_test extends \advanced_testcase {
         global $CFG;
 
         $url = $CFG->wwwroot . self::PRESENT . '?id=' . $assignid;
-        $mod = $this->getDataGenerator()->create_module('url',
-            ['course' => $this->course->id, 'externalurl' => $url, 'section' => $section]);
+        $mod = $this->getDataGenerator()->create_module(
+            'url',
+            ['course' => $this->course->id, 'externalurl' => $url, 'section' => $section]
+        );
         $this->source->standins[$this->course->id][] = ['cmid' => (int) $mod->cmid, 'assignid' => $assignid,
             'externalurl' => $url, 'visible' => 1, 'visibleoncoursepage' => 1];
     }
@@ -348,8 +356,10 @@ final class migration_cli_test extends \advanced_testcase {
      * @param string $output The output.
      */
     private function assert_no_learner_text(string $output): void {
-        foreach ([self::SECRET_TRANSCRIPT, 'ZEBRA', self::SECRET_FEEDBACK, 'OKAPI', 'Wilhelmina', 'Quarternight',
-                'Bartholomew', 'Zephyrfield', 'soapbox/', '.webm', 'Persuasive talk', 'Rhetorical'] as $secret) {
+        foreach (
+            [self::SECRET_TRANSCRIPT, 'ZEBRA', self::SECRET_FEEDBACK, 'OKAPI', 'Wilhelmina', 'Quarternight',
+                'Bartholomew', 'Zephyrfield', 'soapbox/', '.webm', 'Persuasive talk', 'Rhetorical'] as $secret
+        ) {
             $this->assertStringNotContainsString($secret, $output);
         }
     }
@@ -374,15 +384,20 @@ final class migration_cli_test extends \advanced_testcase {
      * Test the output goes through cli_writeln and nothing else: no echo, print, var_dump, print_r or the like.
      */
     public function test_output_goes_through_cli_writeln_only(): void {
-        foreach (['cli/migrate_from_local.php', 'classes/local/migration/command.php',
-                'classes/local/migration/factory.php'] as $relative) {
+        foreach (
+            ['cli/migrate_from_local.php', 'classes/local/migration/command.php',
+                'classes/local/migration/factory.php'] as $relative
+        ) {
             $code = '';
             foreach (token_get_all((string) file_get_contents(dirname(__DIR__) . '/' . $relative)) as $token) {
                 $code .= is_array($token) ? (in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true) ? ' ' : $token[1]) : $token;
             }
             $this->assertDoesNotMatchRegularExpression(
                 '/\b(echo|print|var_dump|print_r|var_export|printf|vprintf|mtrace|debug_zval_dump|fwrite|fputs|' .
-                'file_put_contents|cli_write|readfile|passthru)\b\s*[\(\'"$]/i', $code, $relative);
+                'file_put_contents|cli_write|readfile|passthru)\b\s*[\(\'"$]/i',
+                $code,
+                $relative
+            );
             $this->assertDoesNotMatchRegularExpression('/\?>|<\?=/', preg_replace('/^<\?php/', '', $code), $relative);
         }
     }
@@ -475,8 +490,11 @@ final class migration_cli_test extends \advanced_testcase {
         $this->assertTrue($DB->record_exists('presenterai', ['legacyassignid' => $ids['linked']]));
         $this->assertTrue($DB->record_exists('presenterai', ['legacyassignid' => $ids['fallback']]));
         $this->assertStringContainsString(get_string('migration:cli_applied', 'mod_presenterai', (object) [
-            'course' => $this->course->id, 'runid' => $DB->get_field('presenterai_migration_map', 'runid',
-                ['sourceid' => $ids['linked'], 'sourcetable' => 'local_ai_course_assistant_sbx_assign']),
+            'course' => $this->course->id, 'runid' => $DB->get_field(
+                'presenterai_migration_map',
+                'runid',
+                ['sourceid' => $ids['linked'], 'sourcetable' => 'local_ai_course_assistant_sbx_assign']
+            ),
         ]), $out);
         $this->assert_no_learner_text($out);
     }
@@ -655,8 +673,10 @@ final class migration_cli_test extends \advanced_testcase {
         }
         $before = $this->table_counts();
 
-        foreach ([['--course=' . $this->course->id], ['--course=' . $this->course->id, '--apply'], ['--course=all'],
-                ['--course=all', '--apply']] as $argv) {
+        foreach (
+            [['--course=' . $this->course->id], ['--course=' . $this->course->id, '--apply'], ['--course=all'],
+                ['--course=all', '--apply']] as $argv
+        ) {
             [$code, $out] = $this->run_command($argv);
             $this->assertSame(2, $code, implode(' ', $argv) . "\n" . $out);
             $this->assertStringContainsString('(' . $precondition . ')', $out);
@@ -687,8 +707,10 @@ final class migration_cli_test extends \advanced_testcase {
         [$code, $out] = $this->run_command(['--course=' . $this->course->id]);
 
         $this->assertSame(1, $code);
-        $this->assertStringContainsString(get_string('migration:refuse_duplicatestandins', 'mod_presenterai', $ids['linked']),
-            $out);
+        $this->assertStringContainsString(
+            get_string('migration:refuse_duplicatestandins', 'mod_presenterai', $ids['linked']),
+            $out
+        );
     }
 
     /**
@@ -703,11 +725,17 @@ final class migration_cli_test extends \advanced_testcase {
         foreach ([[], ['--apply']] as $extra) {
             [$code, $out] = $this->run_command(array_merge(['--course=' . $this->course->id], $extra));
             $this->assertSame(0, $code, $out);
-            $this->assertStringContainsString(get_string('migration:cli_drift', 'mod_presenterai',
-                (object) ['added' => 1, 'scored' => 0]), $out);
+            $this->assertStringContainsString(get_string(
+                'migration:cli_drift',
+                'mod_presenterai',
+                (object) ['added' => 1, 'scored' => 0]
+            ), $out);
             // Printed once, as numbers: the drift message isn't repeated in the text output.
-            $this->assertStringNotContainsString(get_string('migration:verified_drift', 'mod_presenterai',
-                (object) ['added' => 1, 'scored' => 0]), $out);
+            $this->assertStringNotContainsString(get_string(
+                'migration:verified_drift',
+                'mod_presenterai',
+                (object) ['added' => 1, 'scored' => 0]
+            ), $out);
         }
         $this->assertSame($before, $this->table_counts());
     }
@@ -814,8 +842,10 @@ final class migration_cli_test extends \advanced_testcase {
         [$code, $out] = $this->run_command(['--course=' . $this->course->id, '--rollback']);
 
         $this->assertSame(1, $code, $out);
-        $this->assertStringContainsString(get_string('migration:rollback_refuse_graded', 'mod_presenterai', $ids['linked']),
-            $out);
+        $this->assertStringContainsString(
+            get_string('migration:rollback_refuse_graded', 'mod_presenterai', $ids['linked']),
+            $out
+        );
         $this->assertTrue($DB->record_exists('presenterai', ['legacyassignid' => $ids['linked']]));
     }
 
@@ -951,12 +981,18 @@ final class migration_cli_test extends \advanced_testcase {
         $this->assertStringStartsWith($first, $out);
         // Course 1's lines were on the stream before course 2 was even planned.
         $this->assertGreaterThanOrEqual(strlen($first), $this->factory->seen);
-        $failed = get_string('migration:cli_coursefailed', 'mod_presenterai',
-            (object) ['course' => $courses[2], 'error' => 'RuntimeException']);
+        $failed = get_string(
+            'migration:cli_coursefailed',
+            'mod_presenterai',
+            (object) ['course' => $courses[2], 'error' => 'RuntimeException']
+        );
         $this->assertStringContainsString($failed, $out);
         $this->assertStringContainsString(get_string('migration:cli_dryrun', 'mod_presenterai', $courses[3]), $out);
-        $this->assertGreaterThan(strpos($out, $failed), strpos($out, get_string('migration:cli_dryrun', 'mod_presenterai',
-            $courses[3])));
+        $this->assertGreaterThan(strpos($out, $failed), strpos($out, get_string(
+            'migration:cli_dryrun',
+            'mod_presenterai',
+            $courses[3]
+        )));
         $this->assertStringNotContainsString('SECRET-EXCEPTION-TEXT', $out . $err);
 
         [$code, $out, $err] = $this->run_command(['--course=all', '--json']);

@@ -315,8 +315,11 @@ final class migration_verifier_test extends \advanced_testcase {
      * @param string|null $reason The mediagonereason.
      * @param bool $passes Whether verification passes.
      */
-    public function test_media_deleted_by_presenterai_after_the_import_still_counts(?int $offset, ?string $reason,
-            bool $passes): void {
+    public function test_media_deleted_by_presenterai_after_the_import_still_counts(
+        ?int $offset,
+        ?string $reason,
+        bool $passes
+    ): void {
         global $DB;
         $ids = $this->seed();
         $this->apply();
@@ -700,8 +703,10 @@ final class migration_verifier_test extends \advanced_testcase {
 
         $this->assertFalse($result['passed']);
         $this->assertSame(['count_mismatch', 'source_recording_not_imported'], self::codes($result));
-        $missing = array_values(array_filter($result['mismatches'],
-            static fn($m) => $m['code'] === 'source_recording_not_imported'))[0];
+        $missing = array_values(array_filter(
+            $result['mismatches'],
+            static fn($m) => $m['code'] === 'source_recording_not_imported'
+        ))[0];
         $this->assertSame(['code' => 'source_recording_not_imported', 'assignid' => $ids['assign'], 'recid' => $late], $missing);
         $this->assertSame(['source' => 7, 'destination' => 6], $result['counts']['recordings']);
         $this->assert_no_text($result);
@@ -730,8 +735,10 @@ final class migration_verifier_test extends \advanced_testcase {
         global $DB;
         $ids = $this->seed();
         $this->apply();
-        $map = $DB->get_record('presenterai_migration_map',
-            ['sourcetable' => ids::SOURCE_ASSIGN, 'sourceid' => $ids['assign'], 'sourcesiteid' => ids::site_id()]);
+        $map = $DB->get_record(
+            'presenterai_migration_map',
+            ['sourcetable' => ids::SOURCE_ASSIGN, 'sourceid' => $ids['assign'], 'sourcesiteid' => ids::site_id()]
+        );
         $DB->delete_records('course_modules', ['id' => $map->targetcmid]);
 
         $result = $this->verify();
@@ -909,8 +916,10 @@ final class migration_verifier_test extends \advanced_testcase {
      */
     private function assert_no_text(array $value): void {
         $json = json_encode($value);
-        foreach ([self::SECRET_TRANSCRIPT, self::SECRET_FEEDBACK, self::OBSERVATION, 'Slow down', 'A good talk',
-                'Alicetta', 'Zwolinski', 'Steady', 'Delivery'] as $text) {
+        foreach (
+            [self::SECRET_TRANSCRIPT, self::SECRET_FEEDBACK, self::OBSERVATION, 'Slow down', 'A good talk',
+                'Alicetta', 'Zwolinski', 'Steady', 'Delivery'] as $text
+        ) {
             $this->assertStringNotContainsString($text, $json);
         }
     }

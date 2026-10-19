@@ -264,8 +264,12 @@ final class command {
         $courses = array_merge($courses, $DB->get_fieldset_sql('SELECT DISTINCT p.course FROM {' . destination::MAP . '} m
             JOIN {presenterai} p ON p.id = m.targetid AND p.legacyassignid = m.sourceid
             WHERE m.sourcetable = :t AND m.sourcesiteid = :s', $params));
-        $mapped = array_flip(array_map('intval', $DB->get_fieldset_select(destination::MAP, 'sourceid',
-            'sourcetable = :t AND sourcesiteid = :s', $params)));
+        $mapped = array_flip(array_map('intval', $DB->get_fieldset_select(
+            destination::MAP,
+            'sourceid',
+            'sourcetable = :t AND sourcesiteid = :s',
+            $params
+        )));
         if ($mapped && $reader->tables_present()) {
             foreach ($reader->course_ids_with_data() as $courseid) {
                 foreach ($reader->assignments((int) $courseid) as $assign) {
@@ -319,8 +323,10 @@ final class command {
         $counts = $plan->counts();
         $fallback = [];
         foreach ($plan->assignments as $entry) {
-            if (in_array($entry['standin'], [plan::STANDIN_NONE, plan::STANDIN_UNAVAILABLE], true)
-                    && in_array($entry['decision'], [plan::CREATE, plan::RESUME], true)) {
+            if (
+                in_array($entry['standin'], [plan::STANDIN_NONE, plan::STANDIN_UNAVAILABLE], true)
+                    && in_array($entry['decision'], [plan::CREATE, plan::RESUME], true)
+            ) {
                 $fallback[] = (int) $entry['sourceid'];
             }
         }
@@ -487,8 +493,10 @@ final class command {
             }
             ksort($codes);
             $this->lines[] = self::str('cli_report', (object) ['course' => (int) $row->courseid, 'id' => (int) $row->id,
-                'runid' => $row->runid, 'time' => userdate((int) $row->timecreated, get_string('strftimedatetimeshort',
-                    'langconfig')), 'result' => self::str(!empty($row->passed) ? 'cli_report_passed' : 'cli_report_failed'),
+                'runid' => $row->runid, 'time' => userdate((int) $row->timecreated, get_string(
+                    'strftimedatetimeshort',
+                    'langconfig'
+                )), 'result' => self::str(!empty($row->passed) ? 'cli_report_passed' : 'cli_report_failed'),
                 'mismatchcount' => (int) $row->mismatchcount, 'sampled' => (int) $row->storagesampled,
                 'failures' => (int) $row->storagefailures]);
             if ($codes) {

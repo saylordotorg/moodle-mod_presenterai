@@ -119,15 +119,21 @@ final class migration_runner_test extends \advanced_testcase {
         global $DB;
 
         $counts = [];
-        foreach ([
+        foreach (
+            [
             'presenterai', 'presenterai_topic', 'presenterai_recording', 'presenterai_score', 'presenterai_migration_map',
             'presenterai_migreport', 'course_modules', 'course_sections', 'logstore_standard_log', 'url', 'grade_items',
             'context', 'files', 'event',
-        ] as $table) {
+            ] as $table
+        ) {
             $counts[$table] = $DB->count_records($table);
         }
-        $counts['cm_fields'] = $DB->get_records_menu('course_modules', ['course' => $this->course->id], 'id',
-            'id, ' . $DB->sql_concat('visible', "'/'", 'visibleoncoursepage', "'/'", 'section'));
+        $counts['cm_fields'] = $DB->get_records_menu(
+            'course_modules',
+            ['course' => $this->course->id],
+            'id',
+            'id, ' . $DB->sql_concat('visible', "'/'", 'visibleoncoursepage', "'/'", 'section')
+        );
         $counts['urls'] = $DB->get_records_menu('url', ['course' => $this->course->id], 'id', 'id, externalurl');
 
         return $counts;
@@ -146,8 +152,10 @@ final class migration_runner_test extends \advanced_testcase {
 
         $courseid = $courseid ?? $this->course->id;
         $url = $CFG->wwwroot . self::PRESENT . '?id=' . $assignid;
-        $mod = $this->getDataGenerator()->create_module('url',
-            ['course' => $courseid, 'externalurl' => $url, 'section' => $section]);
+        $mod = $this->getDataGenerator()->create_module(
+            'url',
+            ['course' => $courseid, 'externalurl' => $url, 'section' => $section]
+        );
         $row = ['cmid' => (int) $mod->cmid, 'assignid' => $assignid, 'externalurl' => $url, 'visible' => 1,
             'visibleoncoursepage' => 1];
         $this->source->standins[$courseid][] = $row;
@@ -288,8 +296,10 @@ final class migration_runner_test extends \advanced_testcase {
     private function map(string $table, int $sourceid) {
         global $DB;
 
-        return $DB->get_record('presenterai_migration_map',
-            ['sourcetable' => $table, 'sourceid' => $sourceid, 'sourcesiteid' => ids::site_id()]);
+        return $DB->get_record(
+            'presenterai_migration_map',
+            ['sourcetable' => $table, 'sourceid' => $sourceid, 'sourcesiteid' => ids::site_id()]
+        );
     }
 
     /**
@@ -412,8 +422,11 @@ final class migration_runner_test extends \advanced_testcase {
             $pointer = $DB->get_field('presenterai_recording', 'scoreid', ['id' => $score->recordingid]);
             $this->assertSame((int) $score->id, (int) $pointer);
         }
-        $this->assertStringNotContainsString('visual_observation', (string) $DB->get_field('presenterai_score', 'legacymeta',
-            ['recordingid' => $recs[$ids['scored']]->id]));
+        $this->assertStringNotContainsString('visual_observation', (string) $DB->get_field(
+            'presenterai_score',
+            'legacymeta',
+            ['recordingid' => $recs[$ids['scored']]->id]
+        ));
 
         $maps = $DB->get_records('presenterai_migration_map');
         $this->assertCount(1 + 2 + 5, $maps);
@@ -426,8 +439,10 @@ final class migration_runner_test extends \advanced_testcase {
         $this->assertSame((int) $instance->id, (int) $assignmap->targetid);
         $cm = get_coursemodule_from_instance('presenterai', $instance->id);
         $this->assertSame((int) $cm->id, (int) $assignmap->targetcmid);
-        $this->assertSame((int) $this->map(ids::SOURCE_TOPIC, $ids['topic2'])->targetid,
-            (int) $DB->get_field('presenterai_topic', 'id', ['legacytopicid' => $ids['topic2']]));
+        $this->assertSame(
+            (int) $this->map(ids::SOURCE_TOPIC, $ids['topic2'])->targetid,
+            (int) $DB->get_field('presenterai_topic', 'id', ['legacytopicid' => $ids['topic2']])
+        );
         $this->assertSame((int) $recs[$ids['failed']]->id, (int) $this->map(ids::SOURCE_REC, $ids['failed'])->targetid);
     }
 
@@ -1074,8 +1089,10 @@ final class migration_runner_test extends \advanced_testcase {
         $this->assertSame($sola, $this->sola_print());
         $all = implode('|', array_map(fn($m) => (string) $m->payload, $DB->get_records('presenterai_migration_map')));
         $this->assertStringContainsString(runner::PAYLOAD_STANDIN, $all);
-        foreach ([self::SECRET_TRANSCRIPT, 'ZEBRA', $this->alice->firstname, $this->alice->lastname, 'Slow down',
-                'A good talk', 'Leans on the desk'] as $text) {
+        foreach (
+            [self::SECRET_TRANSCRIPT, 'ZEBRA', $this->alice->firstname, $this->alice->lastname, 'Slow down',
+                'A good talk', 'Leans on the desk'] as $text
+        ) {
             $this->assertStringNotContainsString($text, $all);
         }
     }
@@ -1190,10 +1207,14 @@ final class migration_runner_test extends \advanced_testcase {
             $this->assertSame(plan::SKIP_VERIFIED, $entry['decision']);
             $this->assertSame(1, $entry['new_source_rows']);
             $this->assertSame(1, $entry['newly_scored_rows']);
-            $this->assertStringContainsString('Soapbox recordings added after this assignment was imported (not imported): 1.',
-                $entry['message']);
-            $this->assertStringContainsString('Soapbox recordings scored after the import (scores not imported): 1.',
-                $entry['message']);
+            $this->assertStringContainsString(
+                'Soapbox recordings added after this assignment was imported (not imported): 1.',
+                $entry['message']
+            );
+            $this->assertStringContainsString(
+                'Soapbox recordings scored after the import (scores not imported): 1.',
+                $entry['message']
+            );
             $this->assertSame(1, $result->counts()['new_source_rows']);
         }
         $this->assertSame($before, $this->table_counts());

@@ -257,13 +257,15 @@ class verifier {
         $count = $DB->count_records_sql("SELECT COUNT(r.id) {$from} AND r.storagekey IS NOT NULL", ['c' => $courseid]);
 
         [$insql, $params] = $DB->get_in_or_equal(self::OWN_DELETIONS, SQL_PARAMS_NAMED, 'gone');
-        $deleted = $DB->get_records_sql("SELECT r.id, r.legacyrecid
+        $deleted = $DB->get_records_sql(
+            "SELECT r.id, r.legacyrecid
               FROM {presenterai_recording} r
               JOIN {presenterai} p ON p.id = r.presenteraiid
               JOIN {" . destination::MAP . "} m ON m.sourcetable = :t AND m.sourceid = r.legacyrecid AND m.sourcesiteid = :s
              WHERE p.course = :c AND p.legacyassignid > 0 AND r.legacyrecid > 0 AND r.storagekey IS NULL
                AND r.mediadeletedat >= m.timecreated AND r.mediagonereason {$insql}",
-            ['c' => $courseid, 't' => ids::SOURCE_REC, 's' => ids::site_id()] + $params);
+            ['c' => $courseid, 't' => ids::SOURCE_REC, 's' => ids::site_id()] + $params
+        );
         foreach ($deleted as $row) {
             if (isset($keyed[(int) $row->legacyrecid])) {
                 $count++;
@@ -314,8 +316,14 @@ class verifier {
         }
 
         $dest = [];
-        foreach ($DB->get_records_select('presenterai_recording', 'presenteraiid = :p AND legacyrecid > 0',
-                ['p' => $map->targetid], 'id') as $row) {
+        foreach (
+            $DB->get_records_select(
+                'presenterai_recording',
+                'presenteraiid = :p AND legacyrecid > 0',
+                ['p' => $map->targetid],
+                'id'
+            ) as $row
+        ) {
             $dest[(int) $row->legacyrecid] = $row;
         }
         foreach ($source['recs'][$id] as $rec) {
@@ -456,8 +464,10 @@ class verifier {
                 $result['sampled']++;
                 $ids = ['recid' => (int) $row->legacyrecid, 'recordingid' => (int) $row->id, 'column' => $column];
                 try {
-                    $found = $this->checker->exists_with_size((string) $row->$column,
-                        $column === 'storagekey' ? (int) $row->sizebytes : 0);
+                    $found = $this->checker->exists_with_size(
+                        (string) $row->$column,
+                        $column === 'storagekey' ? (int) $row->sizebytes : 0
+                    );
                 } catch (\Throwable $e) {
                     $result['failures']++;
                     $status = $e instanceof \RuntimeException ? (int) $e->getCode() : 0;

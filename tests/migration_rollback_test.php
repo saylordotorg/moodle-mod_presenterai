@@ -150,8 +150,10 @@ final class migration_rollback_test extends \advanced_testcase {
         global $DB;
 
         $counts = [];
-        foreach (['presenterai', 'presenterai_topic', 'presenterai_recording', 'presenterai_score', 'presenterai_migration_map',
-                'course_modules', 'url', 'context'] as $table) {
+        foreach (
+            ['presenterai', 'presenterai_topic', 'presenterai_recording', 'presenterai_score', 'presenterai_migration_map',
+                'course_modules', 'url', 'context'] as $table
+        ) {
             $counts[$table] = $DB->count_records($table);
         }
 
@@ -229,8 +231,10 @@ final class migration_rollback_test extends \advanced_testcase {
     private function assign_map(int $assignid) {
         global $DB;
 
-        return $DB->get_record('presenterai_migration_map',
-            ['sourcetable' => ids::SOURCE_ASSIGN, 'sourceid' => $assignid, 'sourcesiteid' => ids::site_id()]);
+        return $DB->get_record(
+            'presenterai_migration_map',
+            ['sourcetable' => ids::SOURCE_ASSIGN, 'sourceid' => $assignid, 'sourcesiteid' => ids::site_id()]
+        );
     }
 
     /**
@@ -338,8 +342,16 @@ final class migration_rollback_test extends \advanced_testcase {
         $ids = $this->seed();
         $this->apply();
         $map = $this->assign_map($ids['assign']);
-        grade_update('mod/presenterai', $this->course->id, 'mod', 'presenterai', (int) $map->targetid, 0, null,
-            ['itemname' => 'Migrated', 'gradetype' => GRADE_TYPE_VALUE, 'grademax' => 100, 'grademin' => 0]);
+        grade_update(
+            'mod/presenterai',
+            $this->course->id,
+            'mod',
+            'presenterai',
+            (int) $map->targetid,
+            0,
+            null,
+            ['itemname' => 'Migrated', 'gradetype' => GRADE_TYPE_VALUE, 'grademax' => 100, 'grademin' => 0]
+        );
         $this->assertTrue($DB->record_exists('grade_items', ['itemmodule' => 'presenterai', 'iteminstance' => $map->targetid]));
 
         $result = $this->rollback()->rollback_course($this->course->id);
@@ -723,9 +735,15 @@ final class migration_rollback_test extends \advanced_testcase {
     private function keys_of(int $instanceid): array {
         global $DB;
 
-        return $DB->get_records_menu('presenterai_recording', ['presenteraiid' => $instanceid], 'id',
+        return $DB->get_records_menu(
+            'presenterai_recording',
+            ['presenteraiid' => $instanceid],
+            'id',
             'id, ' . $DB->sql_concat_join("'|'", ['COALESCE(storagekey, \'\')', 'COALESCE(deckkey, \'\')',
-                'COALESCE(frameskey, \'\')', 'COALESCE(audiokey, \'\')', 'COALESCE(uploadid, \'\')']));
+            'COALESCE(frameskey, \'\')',
+            'COALESCE(audiokey, \'\')',
+            'COALESCE(uploadid, \'\')'])
+        );
     }
 
     /**

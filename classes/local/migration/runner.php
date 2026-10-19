@@ -510,14 +510,28 @@ class runner {
                 $moduleinfo->speakinglevel = $plan->speakinglevel;
                 $moduleinfo->introeditor['itemid'] = file_get_unused_draft_itemid();
                 $cm = create_module($moduleinfo);
-                $map = $this->new_map(ids::SOURCE_ASSIGN, $id, (int) $cm->instance, (int) $cm->coursemodule,
-                    self::STATE_CREATED, $plan->runid, $now);
+                $map = $this->new_map(
+                    ids::SOURCE_ASSIGN,
+                    $id,
+                    (int) $cm->instance,
+                    (int) $cm->coursemodule,
+                    self::STATE_CREATED,
+                    $plan->runid,
+                    $now
+                );
             }
             foreach ($work['topics'] as $topic) {
                 if (!destination::map_row(ids::SOURCE_TOPIC, (int) $topic['id'])) {
                     $topicid = $DB->insert_record('presenterai_topic', (object) mapper::topic_to_row($topic, (int) $map->targetid));
-                    $this->new_map(ids::SOURCE_TOPIC, (int) $topic['id'], (int) $topicid, (int) $map->targetcmid,
-                        self::STATE_ATTACHED, $plan->runid, $now);
+                    $this->new_map(
+                        ids::SOURCE_TOPIC,
+                        (int) $topic['id'],
+                        (int) $topicid,
+                        (int) $map->targetcmid,
+                        self::STATE_ATTACHED,
+                        $plan->runid,
+                        $now
+                    );
                 }
             }
             $map->state = self::STATE_ATTACHED;
@@ -556,16 +570,27 @@ class runner {
             foreach ($work['recs'] as $rec) {
                 if (!destination::map_row(ids::SOURCE_REC, (int) $rec['id'])) {
                     $recid = $this->import_recording($rec, $map, $topics, $numbers, $preset, $plan->speakinglevel, $now);
-                    $this->new_map(ids::SOURCE_REC, (int) $rec['id'], $recid, (int) $map->targetcmid,
-                        self::STATE_VERIFIED, $plan->runid, $now);
+                    $this->new_map(
+                        ids::SOURCE_REC,
+                        (int) $rec['id'],
+                        $recid,
+                        (int) $map->targetcmid,
+                        self::STATE_VERIFIED,
+                        $plan->runid,
+                        $now
+                    );
                 }
             }
             $this->after_recordings($id);
 
             if ($work['standin'] !== null) {
                 $this->record_standin((int) $map->id, (int) $work['standin']['cmid']);
-                $this->rewrite_standin((int) $map->id, (int) $work['standin']['cmid'], (int) $map->targetcmid,
-                    $entry['standin'] === plan::STANDIN_REWRITE);
+                $this->rewrite_standin(
+                    (int) $map->id,
+                    (int) $work['standin']['cmid'],
+                    (int) $map->targetcmid,
+                    $entry['standin'] === plan::STANDIN_REWRITE
+                );
             }
 
             // In a hidden section a module is visible = 0 with its own state kept in visibleold, as core's
@@ -576,8 +601,12 @@ class runner {
             $DB->update_record('course_modules', (object) ['id' => $map->targetcmid,
                 'visible' => $visible && (int) $section === 1 ? 1 : 0, 'visibleold' => $visible]);
             foreach (array_keys($topics) as $topicid) {
-                $DB->set_field(self::MAP, 'state', self::STATE_VERIFIED,
-                    ['sourcetable' => ids::SOURCE_TOPIC, 'sourceid' => $topicid, 'sourcesiteid' => ids::site_id()]);
+                $DB->set_field(
+                    self::MAP,
+                    'state',
+                    self::STATE_VERIFIED,
+                    ['sourcetable' => ids::SOURCE_TOPIC, 'sourceid' => $topicid, 'sourcesiteid' => ids::site_id()]
+                );
             }
             $DB->update_record(self::MAP, (object) ['id' => $map->id, 'state' => self::STATE_VERIFIED, 'runid' => $plan->runid,
                 'timemodified' => $now]);
@@ -599,8 +628,15 @@ class runner {
      * @param int $now The migration time.
      * @return int The new recording id.
      */
-    private function import_recording(array $rec, \stdClass $map, array $topics, array $numbers, array $preset,
-            string $level, int $now): int {
+    private function import_recording(
+        array $rec,
+        \stdClass $map,
+        array $topics,
+        array $numbers,
+        array $preset,
+        string $level,
+        int $now
+    ): int {
         global $DB;
 
         $scoreid = (int) ($rec['scoreid'] ?? 0);
@@ -685,8 +721,15 @@ class runner {
      * @param int $now The time.
      * @return \stdClass The row, with its id.
      */
-    private function new_map(string $table, int $sourceid, int $targetid, int $cmid, string $state, string $runid,
-            int $now): \stdClass {
+    private function new_map(
+        string $table,
+        int $sourceid,
+        int $targetid,
+        int $cmid,
+        string $state,
+        string $runid,
+        int $now
+    ): \stdClass {
         global $DB;
 
         $row = (object) ['runid' => $runid, 'sourcetable' => $table, 'sourceid' => $sourceid,
