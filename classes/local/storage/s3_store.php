@@ -765,7 +765,18 @@ class s3_store implements store_interface {
      * @return string
      */
     private function prefix(): string {
-        $value = $this->config('prefix');
+        return self::normalise_prefix($this->config('prefix'));
+    }
+
+    /**
+     * A prefix setting as the store uses it: the default when empty, never a leading slash, one trailing slash.
+     *
+     * Public so the Soapbox importer compares a prefix exactly as this store would read it.
+     *
+     * @param string $value The prefix setting, already trimmed.
+     * @return string
+     */
+    public static function normalise_prefix(string $value): string {
         if ($value === '') {
             $value = self::DEFAULT_PREFIX;
         }
