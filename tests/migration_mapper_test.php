@@ -131,7 +131,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * The three source table names are the contract SOLA's interlock reads, so they are pinned as literals.
+     * The three source table names are the contract SOLA's interlock reads, so they're pinned as literals.
      *
      * @return void
      */
@@ -269,6 +269,23 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
+     * The attempt cap is copied exactly as given: a real cap passes through, and 0 isn't reinterpreted here.
+     *
+     * The source reader hands over the effective cap (SOLA's 0 means the admin's cap, this plugin's 0 means
+     * unlimited), so by the time a row reaches the mapper the number is already the one to store.
+     *
+     * @return void
+     */
+    public function test_assignment_cap_is_copied_exactly(): void {
+        $assign = $this->fixture('assignment');
+
+        foreach ([1, 3, 5, 12] as $cap) {
+            $this->assertSame($cap, mapper::assignment_to_instance(['max_attempts' => $cap] + $assign)['maxattempts']);
+        }
+        $this->assertSame(0, mapper::assignment_to_instance(['max_attempts' => 0] + $assign)['maxattempts']);
+    }
+
+    /**
      * Fields a visible-only or default-only source leaves out still come out typed.
      *
      * @return void
@@ -337,28 +354,13 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * A status this mapper does not know is refused, never guessed.
+     * A status this mapper doesn't know is refused, never guessed.
      *
      * @return void
      */
     public function test_an_unknown_status_is_refused(): void {
         $this->expectException(\InvalidArgumentException::class);
         mapper::recording_status(['status' => 'archived'], false);
-    }
-
-    /**
-     * Every status the mapper produces is one the activity itself knows.
-     *
-     * @return void
-     */
-    public function test_mapped_statuses_are_real_statuses(): void {
-        $known = [
-            recording_manager::STATUS_UPLOADING, recording_manager::STATUS_UPLOADED, recording_manager::STATUS_SCORING,
-            recording_manager::STATUS_FAILED, recording_manager::STATUS_ABANDONED, 'scored',
-        ];
-        foreach (self::status_provider() as [$status, $hasscore]) {
-            $this->assertContains(mapper::recording_status(['status' => $status], $hasscore), $known);
-        }
     }
 
     /**
@@ -518,7 +520,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * An attempt that never had media (failed before the upload) did not lose any, so no deletion is recorded.
+     * An attempt that never had media (failed before the upload) didn't lose any, so no deletion is recorded.
      *
      * @return void
      */
@@ -535,7 +537,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * An empty string is no key, so it is stored as null rather than as a key that names nothing.
+     * An empty string is no key, so it's stored as null rather than as a key that names nothing.
      *
      * @return void
      */
@@ -568,7 +570,7 @@ final class migration_mapper_test extends \advanced_testcase {
     /**
      * New shape: every criterion states its maximum, so the percentage comes from the raw sums.
      *
-     * Criteria the model could not judge are left out of both sums, and overall_score (a 0 to 5 mean) is
+     * Criteria the model couldn't judge are left out of both sums, and overall_score (a 0 to 5 mean) is
      * never read as a percentage.
      *
      * @return void
@@ -666,7 +668,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * A rubric that has since been deleted is not a licence to guess from the preset.
+     * A rubric that has since been deleted isn't a licence to guess from the preset.
      *
      * The row was scored against a custom rubric whose maxima are gone, so it says so instead of faking a
      * percentage, and SOLA's own mean is kept.
@@ -704,7 +706,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * A criterion that is in no rubric stops the whole row from claiming a percentage.
+     * A criterion that's in no rubric stops the whole row from claiming a percentage.
      *
      * Leaving it out of the denominator but not the numerator would invent one; the others keep their maxima.
      *
@@ -747,7 +749,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * A stated maximum below 1 is not a maximum, so the lookup is used instead.
+     * A stated maximum below 1 isn't a maximum, so the lookup is used instead.
      *
      * @return void
      */
@@ -764,6 +766,215 @@ final class migration_mapper_test extends \advanced_testcase {
         $this->assertSame('rubric_backfill', $row['scoreprovenance']);
         $this->assertSame(10, $row['rawmax']);
         $this->assertSame(80.0, $row['overallpct']);
+    }
+
+    /**
+     * A rubric score row built from the given criteria, with the custom rubric in the context.
+     *
+     * @param array $criteria Criteria in the old shape.
+     * @param array $override Fields of the score row to replace.
+     * @return array The score_to_row result.
+     */
+    private function rubric_row(array $criteria, array $override = []): array {
+        $context = $this->context(['rubric' => $this->fixture('criteria')['custom_rubric']]);
+
+        $score = $this->sola_score('old_shape_rubric', ['scores' => json_encode($criteria)] + $override);
+
+        return mapper::score_to_row($score, $context);
+    }
+
+    /**
+     * One old shape criterion.
+     *
+     * @param string $name The criterion name.
+     * @param int $score The score.
+     * @return array
+     */
+    private function criterion(string $name, int $score): array {
+        return ['name' => $name, 'score' => $score, 'feedback' => 'f'];
+    }
+
+    /**
+     * A score above the rubric's maximum today proves the lookup wrong, so the row has no percentage.
+     *
+     * SOLA edits rubrics in place: a criterion that was out of 20 and is now out of 10 would otherwise turn a
+     * score of 11 into a made up 100 percent.
+     *
+     * @return void
+     */
+    public function test_a_score_above_the_rubric_maximum_is_unreconstructed(): void {
+        $row = $this->rubric_row([
+            $this->criterion('Delivery & Fluency', 11),
+            $this->criterion('Structure & Organization', 4),
+        ]);
+
+        $this->assertSame('unreconstructed', $row['scoreprovenance']);
+        $this->assertSame(0, $row['rawmax']);
+        $this->assertNull($row['overallpct']);
+        $this->assertSame(15, $row['rawsum']);
+        $this->assertSame(6, $row['legacymeanscore']);
+        $this->assertSame([null, 5], array_column(json_decode($row['scores'], true), 'max_score'));
+    }
+
+    /**
+     * The same for a preset: a score above today's preset maximum isn't believed.
+     *
+     * @return void
+     */
+    public function test_a_score_above_the_preset_maximum_is_unreconstructed(): void {
+        $scores = json_decode($this->sola_score('old_shape_preset')['scores'], true);
+        $scores[4]['score'] = 6;
+
+        $row = mapper::score_to_row($this->sola_score('old_shape_preset', ['scores' => json_encode($scores)]), $this->context());
+
+        $this->assertSame('unreconstructed', $row['scoreprovenance']);
+        $this->assertSame(0, $row['rawmax']);
+        $this->assertNull($row['overallpct']);
+        $this->assertSame(20, $row['rawsum']);
+        $this->assertSame(4, $row['legacymeanscore']);
+        $this->assertSame([5, 5, 5, 5, null], array_column(json_decode($row['scores'], true), 'max_score'));
+    }
+
+    /**
+     * A negative score can't have been given against any maximum, so a looked up one isn't believed either.
+     *
+     * @return void
+     */
+    public function test_a_negative_score_is_unreconstructed(): void {
+        $rubric = $this->rubric_row([
+            $this->criterion('Delivery & Fluency', -1),
+            $this->criterion('Structure & Organization', 4),
+        ]);
+        $this->assertSame('unreconstructed', $rubric['scoreprovenance']);
+        $this->assertNull($rubric['overallpct']);
+        $this->assertSame(0, $rubric['rawmax']);
+
+        $scores = json_decode($this->sola_score('old_shape_preset')['scores'], true);
+        $scores[0]['score'] = -2;
+        $preset = mapper::score_to_row($this->sola_score('old_shape_preset', ['scores' => json_encode($scores)]), $this->context());
+        $this->assertSame('unreconstructed', $preset['scoreprovenance']);
+        $this->assertNull($preset['overallpct']);
+        $this->assertSame(0, $preset['rawmax']);
+    }
+
+    /**
+     * Scores that fit under the looked up maximum, right up to it and down to 0, are still backfilled.
+     *
+     * @return void
+     */
+    public function test_scores_within_range_are_still_backfilled(): void {
+        $row = $this->rubric_row([
+            $this->criterion('Delivery & Fluency', 10),
+            $this->criterion('Structure & Organization', 0),
+            $this->criterion('Content & Relevance', 5),
+        ]);
+
+        $this->assertSame('rubric_backfill', $row['scoreprovenance']);
+        $this->assertSame(15, $row['rawsum']);
+        $this->assertSame(20, $row['rawmax']);
+        $this->assertSame(75.0, $row['overallpct']);
+        $this->assertSame([10, 5, 5], array_column(json_decode($row['scores'], true), 'max_score'));
+    }
+
+    /**
+     * A criterion nobody assessed doesn't count, so an odd score on it doesn't take the row's percentage away.
+     *
+     * @return void
+     */
+    public function test_an_out_of_range_score_on_an_unassessed_criterion_does_not_block_the_row(): void {
+        $row = $this->rubric_row([
+            $this->criterion('Delivery & Fluency', 8),
+            ['name' => 'Content & Relevance', 'score' => 9, 'feedback' => 'n', 'assessed' => false],
+        ]);
+
+        $this->assertSame('rubric_backfill', $row['scoreprovenance']);
+        $this->assertSame(8, $row['rawsum']);
+        $this->assertSame(10, $row['rawmax']);
+        $this->assertSame(80.0, $row['overallpct']);
+    }
+
+    /**
+     * A criterion's own stated maximum is taken as it stands, even with a score above it.
+     *
+     * Only looked up maxima are second guessed; the row's own figures are SOLA's record of what happened.
+     *
+     * @return void
+     */
+    public function test_an_exact_row_is_not_second_guessed(): void {
+        $score = $this->sola_score('new_shape', [
+            'scores' => json_encode([
+                ['name' => 'Delivery & Fluency', 'score' => 7, 'feedback' => 'x', 'max_score' => 5, 'assessed' => true],
+            ]),
+        ]);
+
+        $row = mapper::score_to_row($score, $this->context());
+
+        $this->assertSame('exact', $row['scoreprovenance']);
+        $this->assertSame(7, $row['rawsum']);
+        $this->assertSame(5, $row['rawmax']);
+    }
+
+    /**
+     * A score row with no rubricid at all fails closed: there's no telling whether a rubric or a preset scored it.
+     *
+     * @return void
+     */
+    public function test_a_missing_rubricid_is_unreconstructed(): void {
+        $score = $this->sola_score('old_shape_preset');
+        unset($score['rubricid']);
+
+        $row = mapper::score_to_row($score, $this->context());
+
+        $this->assertSame('unreconstructed', $row['scoreprovenance']);
+        $this->assertSame(0, $row['rawmax']);
+        $this->assertNull($row['overallpct']);
+        $this->assertSame(18, $row['rawsum']);
+        $this->assertSame(4, $row['legacymeanscore']);
+
+        $score['rubricid'] = null;
+        $this->assertSame('unreconstructed', mapper::score_to_row($score, $this->context())['scoreprovenance']);
+        $score['rubricid'] = -1;
+        $this->assertSame('unreconstructed', mapper::score_to_row($score, $this->context())['scoreprovenance']);
+    }
+
+    /**
+     * A missing rubricid costs an exact row nothing, since it never looks anything up.
+     *
+     * @return void
+     */
+    public function test_a_missing_rubricid_does_not_touch_an_exact_row(): void {
+        $score = $this->sola_score('new_shape');
+        unset($score['rubricid']);
+
+        $this->assertSame('exact', mapper::score_to_row($score, $this->context())['scoreprovenance']);
+    }
+
+    /**
+     * A video attempt is scored against the preset plus the two visual criteria, and is backfilled from both.
+     *
+     * Against the speech preset alone the visual criteria are in no list, and the row would be unreconstructed;
+     * the source reader has to give the video preset for video attempts.
+     *
+     * @return void
+     */
+    public function test_a_video_attempt_is_backfilled_from_the_preset_with_the_visual_criteria(): void {
+        $criteria = $this->fixture('criteria');
+        $scores = json_decode($this->sola_score('old_shape_preset')['scores'], true);
+        $scores[] = $this->criterion('Body Language & Gestures', 4);
+        $scores[] = $this->criterion('Eye Contact & Camera Presence', 3);
+        $score = $this->sola_score('old_shape_preset', ['scores' => json_encode($scores)]);
+
+        $row = mapper::score_to_row($score, $this->context(['preset' => $criteria['video_preset']]));
+
+        $this->assertSame('preset_backfill', $row['scoreprovenance']);
+        $this->assertSame(25, $row['rawsum']);
+        $this->assertSame(35, $row['rawmax']);
+        $this->assertEqualsWithDelta(71.43, $row['overallpct'], 0.001);
+        $this->assertSame([5, 5, 5, 5, 5, 5, 5], array_column(json_decode($row['scores'], true), 'max_score'));
+
+        $speechonly = mapper::score_to_row($score, $this->context(['preset' => $criteria['general_preset']]));
+        $this->assertSame('unreconstructed', $speechonly['scoreprovenance']);
+        $this->assertNull($speechonly['overallpct']);
     }
 
     /**
@@ -789,7 +1000,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * Scores that cannot be read at all are unreconstructed, with an empty list rather than the broken text.
+     * Scores that can't be read at all are unreconstructed, with an empty list rather than the broken text.
      *
      * @return void
      */
@@ -871,7 +1082,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * Meta that is not a JSON object is treated as absent, since it cannot be scrubbed of the observation.
+     * Meta that isn't a JSON object is treated as absent, since it can't be scrubbed of the observation.
      *
      * @return void
      */

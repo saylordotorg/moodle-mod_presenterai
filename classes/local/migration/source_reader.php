@@ -52,10 +52,16 @@ interface source_reader {
     /**
      * The Soapbox assignments of one course.
      *
+     * max_attempts must be the EFFECTIVE cap, not the stored column. In SOLA a stored 0 means "as many as the
+     * admin maximum allows" (soapbox_config::effective_recording_cap(): 0 gives the admin cap, otherwise the
+     * smaller of the value and the admin cap), while in this plugin 0 means unlimited. mapper::assignment_to_instance() copies the
+     * number as given and never reinterprets 0, so a reader that passed the raw column would turn a capped
+     * assignment into an unlimited one.
+     *
      * @param int $courseid The course.
      * @return array[] Rows with id, courseid, name, intro, introformat, ptype, mode, min_seconds, max_seconds,
-     *                 max_attempts, stored_attempts, rubricid, speaking_level, slides_enabled, slide_vision,
-     *                 visible, timecreated and timemodified, in id order.
+     *                 max_attempts (the effective cap), stored_attempts, rubricid, speaking_level, slides_enabled,
+     *                 slide_vision, visible, timecreated and timemodified, in id order.
      */
     public function assignments(int $courseid): array;
 
@@ -85,7 +91,7 @@ interface source_reader {
      * @param int $scoreid The practice_scores id.
      * @return array|null The row with id, rubricid, userid, courseid, scores (the JSON text as stored),
      *                    overall_score, ai_feedback, session_meta (the JSON text as stored, or null) and
-     *                    timecreated; null when there is no such row.
+     *                    timecreated; null when there's no such row.
      */
     public function score(int $scoreid): ?array;
 

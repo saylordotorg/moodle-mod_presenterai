@@ -35,11 +35,15 @@ use mod_presenterai\local\vision\visual_pipeline;
  *
  * - A percentage is computed from raw sums, never copied. SOLA's overall_score is
  *   a 0 to 5 mean, so reading it as a percentage turns 4 out of 5 into 4 percent.
- * - A score row whose maximum cannot be rebuilt says so ('unreconstructed', no
+ * - A score row whose maximum can't be rebuilt says so ('unreconstructed', no
  *   percentage, SOLA's own mean kept in legacymeanscore) instead of assuming a
  *   maximum of 5. A row that mixes sources is as weak as its weakest source, and
  *   one unresolvable criterion makes the whole row unreconstructed, because a
  *   percentage over some of the criteria would be a number nobody can defend.
+ *   SOLA edits a rubric in place, so a maximum looked up today may not be the one
+ *   the score was given against. A looked up maximum is trusted only while the
+ *   score fits under it (0 up to the maximum); a score above it, or below 0,
+ *   proves the lookup wrong, and that criterion is unresolvable too.
  * - Nothing is recomputed that the source already decided: the expiry date is
  *   copied, so no learner's deletion date moves.
  *
@@ -60,7 +64,7 @@ final class mapper {
     /** @var string No usable maximum: the row has no percentage. */
     public const PROVENANCE_NONE = 'unreconstructed';
 
-    /** @var string The reason written for media SOLA deleted. SOLA does not record which of its two paths did it. */
+    /** @var string The reason written for media SOLA deleted. SOLA doesn't record which of its two paths did it. */
     private const GONE_REASON = 'retention';
 
     /** @var string[] Soapbox statuses and the statuses they become when the attempt has no score. */
@@ -90,9 +94,13 @@ final class mapper {
      * The moduleinfo for create_module() that stands in for one Soapbox assignment.
      *
      * Carries no section (the runner finds it) and a placeholder draft item for the intro (the runner swaps in a
-     * real draft id if create_module needs one). SOLA's rubricid and speaking_level columns are not carried: no
-     * form ever wrote them, and a SOLA rubric id names a row in a table this plugin does not have. The grade is 0
+     * real draft id if create_module needs one). SOLA's rubricid and speaking_level columns aren't carried: no
+     * form ever wrote them, and a SOLA rubric id names a row in a table this plugin doesn't have. The grade is 0
      * so no grade item and no course total moves (D12), and retention follows the site setting (ruling 4).
+     *
+     * The attempt cap is copied exactly as given and never reinterpreted. In SOLA, max_attempts 0 means "use the
+     * admin's cap", while here 0 means unlimited, so the source reader hands over the EFFECTIVE cap (see
+     * source_reader::assignments()) and this method only passes the number through.
      *
      * @param array $assign A sbx_assign row.
      * @return array
@@ -147,15 +155,15 @@ final class mapper {
      * The status a migrated attempt gets.
      *
      * A score row makes it scored, whatever SOLA called it. Without one the status says what really happened:
-     * a deleted row never carried a score, so it is abandoned; one that was still uploading never finished, so
-     * it is abandoned too (left as uploading it would be handed to this plugin's own sweep, which deletes the
-     * keys of an upload a day old); one SOLA calls scored with no score row lost its score and is uploaded, so
-     * it still counts; a failed one stays failed.
+     * a deleted row never carried a score, so it's abandoned; one that was still uploading never finished, so
+     * it's abandoned too (left as uploading it would be handed to this plugin's own sweep, which deletes the
+     * keys of an upload a day old); one SOLA calls scored with no score row lost its score and becomes uploaded,
+     * so it still counts; a failed one stays failed.
      *
      * @param array $rec A sbx_rec row.
      * @param bool $hasscore Whether a score row exists for it.
      * @return string One of recording_manager's statuses, or 'scored'.
-     * @throws \InvalidArgumentException For a status SOLA does not have, which is refused rather than guessed.
+     * @throws \InvalidArgumentException For a status SOLA doesn't have, which is refused rather than guessed.
      */
     public static function recording_status(array $rec, bool $hasscore): string {
         $status = (string) ($rec['status'] ?? '');
@@ -218,10 +226,10 @@ final class mapper {
     /**
      * The presenterai_recording row for one Soapbox recording.
      *
-     * The three keys are carried as they are, so the object in the bucket is found where SOLA put it; nothing is
-     * moved (D10). Where SOLA deleted the media (status deleted, no key) the keys stay null and the deletion is
-     * recorded with the date SOLA was going to delete it, which is the only date there is. The expiry itself is
-     * copied untouched. scoreid is left null for the runner to set once the score row exists.
+     * The three keys are carried over unchanged, so the object in the bucket is found where SOLA put it, and no
+     * byte moves (D10). Where SOLA deleted the media (status deleted, no key) the keys stay null and the deletion
+     * is recorded with the date SOLA was going to delete it, and that's the only date available. The expiry itself
+     * is copied untouched. scoreid is left null for the runner to set once the score row exists.
      *
      * @param array $rec A sbx_rec row.
      * @param int $instanceid The new activity.
@@ -287,13 +295,16 @@ final class mapper {
      *
      * $context carries what the source reader looked up: 'rubric' (criterion name to maximum, normalised, or null
      * when the rubric the score points at is gone), 'preset' (the same for the course's speaking level),
-     * 'speaking_level' (which level that preset is, for the caller's report; the arithmetic does not need it) and
+     * 'speaking_level' (which level that preset is, for the caller's report; the arithmetic doesn't need it) and
      * 'recordingid' and 'userid' (the new recording and its learner).
      *
      * Each criterion keeps SOLA's name, score and feedback and gains its maximum: its own max_score when it has
-     * one, else the rubric's (when the score names a rubric), else the preset's (when it names none). A criterion
-     * whose maximum cannot be found keeps max_score null, and makes the whole row unreconstructed. An absent
-     * assessed flag counts as assessed. Every criterion counts toward the total (counts is true).
+     * one, else the rubric's (when the score names a rubric), else the preset's (when it names none). A looked up
+     * maximum is only believed while the score fits under it. A criterion whose maximum can't be found, or whose
+     * score is above the looked up maximum or below 0, keeps max_score null and makes the whole row
+     * unreconstructed. A score row with no rubricid at all fails closed the same way, since there's no telling
+     * which rubric or preset scored it. An absent assessed flag counts as assessed. Every criterion counts toward
+     * the total (counts is true).
      *
      * The row carries no visual summary and no visual status, because the body language observation is never
      * imported (D11); the rest of session_meta is kept in legacymeta, which is where visual_assessed travels.
@@ -306,7 +317,8 @@ final class mapper {
     public static function score_to_row(array $score, array $context): array {
         $meta = self::read_meta($score['session_meta'] ?? null);
         $listed = self::read_criteria((string) ($score['scores'] ?? ''));
-        $criteria = self::reconstruct($listed, (int) ($score['rubricid'] ?? 0), $context);
+        $rubricid = isset($score['rubricid']) && is_numeric($score['rubricid']) ? (int) $score['rubricid'] : null;
+        $criteria = self::reconstruct($listed, $rubricid, $context);
         $reconstructed = $criteria['provenance'] !== self::PROVENANCE_NONE;
         $rawmax = $reconstructed ? $criteria['rawmax'] : 0;
 
@@ -337,7 +349,7 @@ final class mapper {
      * The criteria a score row stores, as a list of arrays.
      *
      * @param string $json The scores column.
-     * @return array[] Empty when the text is not a JSON list of objects.
+     * @return array[] Empty when the text isn't a JSON list of objects.
      */
     private static function read_criteria(string $json): array {
         $decoded = json_decode($json, true);
@@ -349,7 +361,7 @@ final class mapper {
     }
 
     /**
-     * The session meta as an array, or null when there is none or it is not a JSON object.
+     * The session meta as an array, or null when there's none or it isn't a JSON object.
      *
      * @param string|null $json The session_meta column.
      * @return array|null
@@ -379,7 +391,7 @@ final class mapper {
     }
 
     /**
-     * The session meta without the body language observation, as JSON, or null when there is none.
+     * The session meta without the body language observation, as JSON, or null when there's none.
      *
      * @param array|null $meta The session meta.
      * @return string|null
@@ -397,12 +409,12 @@ final class mapper {
      * Give every criterion its maximum and total the assessed ones.
      *
      * @param array[] $criteria The decoded criteria.
-     * @param int $rubricid The rubric the score row points at, 0 for a preset.
+     * @param int|null $rubricid The rubric the score row points at, 0 for a preset, null when the row names neither.
      * @param array $context See score_to_row().
      * @return array With entries (the stored list), rawsum, rawmax and provenance. rawmax is only meaningful
-     *               when provenance is not unreconstructed.
+     *               when provenance isn't unreconstructed.
      */
-    private static function reconstruct(array $criteria, int $rubricid, array $context): array {
+    private static function reconstruct(array $criteria, ?int $rubricid, array $context): array {
         $entries = [];
         $sources = [];
         $rawsum = 0;
@@ -433,16 +445,16 @@ final class mapper {
     }
 
     /**
-     * One criterion as it is stored.
+     * One criterion as it's stored.
      *
      * @param array $criterion The criterion as SOLA stored it.
-     * @param int|null $max Its maximum, or null when it could not be found.
+     * @param int|null $max Its maximum, or null when it couldn't be found.
      * @return array
      */
     private static function entry(array $criterion, ?int $max): array {
         return [
             'name' => isset($criterion['name']) && is_scalar($criterion['name']) ? (string) $criterion['name'] : '',
-            'score' => isset($criterion['score']) && is_numeric($criterion['score']) ? (int) $criterion['score'] : 0,
+            'score' => self::score_of($criterion),
             'max_score' => $max,
             'feedback' => isset($criterion['feedback']) && is_scalar($criterion['feedback']) ? (string) $criterion['feedback'] : '',
             'assessed' => rubric_manager::is_assessed($criterion),
@@ -454,27 +466,58 @@ final class mapper {
     /**
      * The maximum of one criterion and where it came from.
      *
-     * Its own max_score when that is at least 1. Otherwise the rubric when the score row names one, or the preset
-     * when it names none: a row scored against a custom rubric is never read against the preset, because the
-     * custom rubric's maxima need not be the preset's.
+     * Its own max_score when it's at least 1, and that one is taken as it stands. Otherwise the rubric when
+     * the score row names one, or the preset when it names rubric 0: a row scored against a custom rubric is
+     * never read against the preset, because the custom rubric's maxima needn't be the preset's. A row that
+     * names no rubric id (or a negative one) has no lookup at all.
+     *
+     * A looked up maximum is only used while the score fits under it. SOLA edits rubrics in place, so today's
+     * maximum can be lower than the one the score was given against, and a score above it would turn into a
+     * made up 100 percent. Such a criterion gets no maximum.
      *
      * @param array $criterion The criterion as SOLA stored it.
-     * @param int $rubricid The rubric the score row points at, 0 for a preset.
+     * @param int|null $rubricid The rubric the score row points at, 0 for a preset, null when it names none.
      * @param array $context See score_to_row().
      * @return array [int|null maximum, string|null source], the source being a PROVENANCE_* value.
      */
-    private static function maximum(array $criterion, int $rubricid, array $context): array {
+    private static function maximum(array $criterion, ?int $rubricid, array $context): array {
         $stated = isset($criterion['max_score']) && is_numeric($criterion['max_score']) ? (int) $criterion['max_score'] : 0;
         if ($stated >= 1) {
             return [$stated, self::PROVENANCE_EXACT];
         }
+        if ($rubricid === null || $rubricid < 0) {
+            return [null, null];
+        }
 
         $key = self::normalise_name((string) ($criterion['name'] ?? ''));
         if ($rubricid > 0) {
-            return [self::lookup($context['rubric'] ?? null, $key), self::PROVENANCE_RUBRIC];
+            return [self::fitting($criterion, self::lookup($context['rubric'] ?? null, $key)), self::PROVENANCE_RUBRIC];
         }
 
-        return [self::lookup($context['preset'] ?? null, $key), self::PROVENANCE_PRESET];
+        return [self::fitting($criterion, self::lookup($context['preset'] ?? null, $key)), self::PROVENANCE_PRESET];
+    }
+
+    /**
+     * A criterion's score as an integer, 0 when it has none.
+     *
+     * @param array $criterion The criterion as SOLA stored it.
+     * @return int
+     */
+    private static function score_of(array $criterion): int {
+        return isset($criterion['score']) && is_numeric($criterion['score']) ? (int) $criterion['score'] : 0;
+    }
+
+    /**
+     * A looked up maximum, kept only when the criterion's score is between 0 and it.
+     *
+     * @param array $criterion The criterion as SOLA stored it.
+     * @param int|null $max The maximum found, or null.
+     * @return int|null The maximum, or null when there's none or the score doesn't fit under it.
+     */
+    private static function fitting(array $criterion, ?int $max): ?int {
+        $score = self::score_of($criterion);
+
+        return ($max !== null && $score >= 0 && $score <= $max) ? $max : null;
     }
 
     /**
