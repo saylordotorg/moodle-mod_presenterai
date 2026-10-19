@@ -50,8 +50,11 @@ final class local_aica_reader implements source_reader {
     /** @var string The root-relative path of the learner page a course page stand-in points at. */
     public const STANDIN_PATH = '/local/ai_course_assistant/soapbox_present.php';
 
-    /** @var string The class constant SOLA 7.13.0 adds when its cleanup can skip media this plugin owns. */
+    /** @var string The class constant SOLA 7.12.1 adds when its cleanup can skip media this plugin owns. */
     public const INTERLOCK_CONSTANT = '\local_ai_course_assistant\task\soapbox_cleanup::PRESENTERAI_INTERLOCK';
+
+    /** @var string SOLA's helper that decides which recordings the migration map holds, and by which site id. */
+    public const INTERLOCK_HELPER = '\local_ai_course_assistant\presenterai_interlock';
 
     /** @var string The adhoc task SOLA queues to score one recording, as core stores a class name. */
     public const SCORE_TASK = '\local_ai_course_assistant\task\score_recording';
@@ -118,6 +121,9 @@ final class local_aica_reader implements source_reader {
     /** @var string The class constant whose existence says SOLA carries the interlock. */
     private $interlock;
 
+    /** @var string The class whose static site_id() is SOLA's side of the site id contract. */
+    private $helper;
+
     /** @var \Closure|null Replaces the list of the site's table names, for tests. */
     private $tables;
 
@@ -133,15 +139,18 @@ final class local_aica_reader implements source_reader {
      * @param string $interlock The class constant, as a string, whose existence means the interlock is present.
      * @param \Closure|null $tables A function returning the names of the tables on the site, without the prefix,
      *        used instead of asking the database.
+     * @param string $helper The class, as a string, whose static site_id() is compared with ids::site_id().
      */
     public function __construct(
         ?\Closure $presets = null,
         string $interlock = self::INTERLOCK_CONSTANT,
-        ?\Closure $tables = null
+        ?\Closure $tables = null,
+        string $helper = self::INTERLOCK_HELPER
     ) {
         $this->presets = $presets;
         $this->interlock = $interlock;
         $this->tables = $tables;
+        $this->helper = $helper;
     }
 
     /**
@@ -384,15 +393,39 @@ final class local_aica_reader implements source_reader {
     }
 
     /**
-     * Whether SOLA carries the interlock constant.
+     * Whether SOLA carries the interlock, and holds recordings under the same site id this plugin writes.
      *
-     * defined() on a class constant triggers the autoloader for SOLA's class, so SOLA's class file is loaded when
-     * SOLA is installed. None of its methods run, and a class that doesn't exist is a silent false.
+     * First the constant: defined() on a class constant triggers the autoloader for SOLA's class, so SOLA's class
+     * file is loaded when SOLA is installed. None of its methods run, and a class that doesn't exist is a silent
+     * false. Then the formula: SOLA's helper presenterai_interlock::site_id() must return exactly ids::site_id(),
+     * because a map row is held only under the id it was written with, and an interlock that looks for another id
+     * never holds anything.
+     *
+     * False therefore also covers a formula mismatch, a helper that is missing (it ships in the same release as
+     * the constant, so a constant without it is not a release this importer trusts) and a helper that throws or
+     * has no site_id(). The check fails closed.
      *
      * @return bool
      */
     public function interlock_present(): bool {
-        return defined($this->interlock);
+        return defined($this->interlock) && $this->helper_agrees();
+    }
+
+    /**
+     * Whether SOLA's own site id is the one this plugin writes to the map.
+     *
+     * @return bool False when the helper is missing, has no public static site_id(), throws or disagrees.
+     */
+    private function helper_agrees(): bool {
+        $class = $this->helper;
+        if (!class_exists($class) || !is_callable([$class, 'site_id'])) {
+            return false;
+        }
+        try {
+            return $class::site_id() === ids::site_id();
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     /**

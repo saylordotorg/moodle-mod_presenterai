@@ -20,6 +20,7 @@ use mod_presenterai\local\migration\ids;
 use mod_presenterai\local\migration\local_aica_reader;
 use mod_presenterai\local\migration\mapper;
 use mod_presenterai\local\migration\source_reader;
+use mod_presenterai\tests\fixtures\interlock_stub;
 use mod_presenterai\tests\fixtures\sola_rows;
 
 /**
@@ -42,11 +43,15 @@ final class migration_reader_test extends \advanced_testcase {
     /** @var string The stand-in URL path. */
     private const PRESENT = '/local/ai_course_assistant/soapbox_present.php';
 
+    /** @var string A class constant that exists, standing in for SOLA's interlock constant. */
+    private const EXISTING_CONSTANT = '\mod_presenterai\local\migration\ids::SOURCE_REC';
+
     /**
      * Load the row helpers.
      */
     public static function setUpBeforeClass(): void {
         require_once(__DIR__ . '/fixtures/migration/sola_rows.php');
+        require_once(__DIR__ . '/fixtures/migration/interlock_stub.php');
         parent::setUpBeforeClass();
     }
 
@@ -664,26 +669,63 @@ final class migration_reader_test extends \advanced_testcase {
     }
 
     /**
-     * Test the interlock is read by defined() on the class-constant string SOLA 7.13.0 adds, and nothing else.
+     * A reader whose interlock checks name a constant and a helper class of the test's choosing.
+     *
+     * @param string $constant The class constant, as a string, whose existence means the interlock is present.
+     * @param string $helper The class whose site_id() is compared with the importer's.
+     * @return local_aica_reader
      */
-    public function test_the_default_interlock_is_solas_constant(): void {
-        $name = '\local_ai_course_assistant\task\soapbox_cleanup::PRESENTERAI_INTERLOCK';
-
-        $this->assertSame($name, local_aica_reader::INTERLOCK_CONSTANT);
-        $this->assertSame(defined($name), (new local_aica_reader())->interlock_present());
+    private function reader_with_interlock(string $constant, string $helper): local_aica_reader {
+        return new local_aica_reader(null, $constant, null, $helper);
     }
 
     /**
-     * Test a constant that doesn't exist is no interlock, whatever class it names.
+     * Test the interlock is read from the class-constant string and the helper SOLA 7.12.1 adds, and nothing else.
+     */
+    public function test_the_default_interlock_names_solas_constant_and_helper(): void {
+        $this->assertSame(
+            '\local_ai_course_assistant\task\soapbox_cleanup::PRESENTERAI_INTERLOCK',
+            local_aica_reader::INTERLOCK_CONSTANT
+        );
+        $this->assertSame('\local_ai_course_assistant\presenterai_interlock', local_aica_reader::INTERLOCK_HELPER);
+    }
+
+    /**
+     * Test a SOLA that carries both halves is seen as having the interlock, when this site's SOLA does.
+     */
+    public function test_a_sola_that_carries_the_interlock_is_seen(): void {
+        if (!defined(local_aica_reader::INTERLOCK_CONSTANT) || !class_exists(local_aica_reader::INTERLOCK_HELPER)) {
+            $this->markTestSkipped('This site\'s SOLA doesn\'t carry the interlock yet.');
+        }
+
+        $this->assertTrue((new local_aica_reader())->interlock_present());
+    }
+
+    /**
+     * Test SOLA's own site id is exactly the importer's, when SOLA has the helper (the two halves of the contract).
+     */
+    public function test_solas_site_id_equals_the_importers(): void {
+        $helper = local_aica_reader::INTERLOCK_HELPER;
+        if (!class_exists($helper) || !is_callable([$helper, 'site_id'])) {
+            $this->markTestSkipped('This site\'s SOLA has no presenterai_interlock helper.');
+        }
+
+        $this->assertSame(ids::site_id(), $helper::site_id());
+    }
+
+    /**
+     * Test a constant that doesn't exist is no interlock, whatever class it names, even with a helper that agrees.
      */
     public function test_a_missing_constant_means_no_interlock(): void {
+        interlock_stub::answer(ids::site_id());
+
         foreach (['\no_such\class::PRESENTERAI_INTERLOCK', '\mod_presenterai\local\migration\ids::NO_SUCH_CONSTANT'] as $name) {
-            $this->assertFalse((new local_aica_reader(null, $name))->interlock_present(), $name);
+            $this->assertFalse($this->reader_with_interlock($name, interlock_stub::class)->interlock_present(), $name);
         }
     }
 
     /**
-     * Test a SOLA without the constant has no interlock (the case before SOLA 7.13.0), when this site has one.
+     * Test a SOLA without the constant has no interlock (the case before SOLA 7.12.1), when this site has one.
      */
     public function test_a_sola_without_the_constant_has_no_interlock(): void {
         if (defined(local_aica_reader::INTERLOCK_CONSTANT)) {
@@ -694,12 +736,59 @@ final class migration_reader_test extends \advanced_testcase {
     }
 
     /**
-     * Test the true branch, through the seam that names the constant: a class constant that does exist.
+     * Test the true branch: the constant is defined and SOLA's site id is exactly the importer's.
      */
-    public function test_an_existing_constant_counts_as_the_interlock(): void {
-        $reader = new local_aica_reader(null, '\mod_presenterai\local\migration\ids::SOURCE_REC');
+    public function test_a_defined_constant_and_an_agreeing_site_id_is_the_interlock(): void {
+        interlock_stub::answer(ids::site_id());
 
-        $this->assertTrue($reader->interlock_present());
+        $this->assertTrue($this->reader_with_interlock(self::EXISTING_CONSTANT, interlock_stub::class)->interlock_present());
+    }
+
+    /**
+     * Test a helper that holds recordings under another site id is no interlock: it would never hold a migrated one.
+     */
+    public function test_a_different_site_id_is_no_interlock(): void {
+        global $CFG;
+        $reader = $this->reader_with_interlock(self::EXISTING_CONSTANT, interlock_stub::class);
+
+        $others = [
+            'another install' => sha1('another-install'),
+            'the old formula with the address' => sha1($CFG->wwwroot . '|' . get_site_identifier()),
+            'the same digits in capitals' => strtoupper(ids::site_id()),
+            'the id with a space' => ids::site_id() . ' ',
+            'nothing' => '',
+        ];
+        foreach ($others as $label => $siteid) {
+            interlock_stub::answer($siteid);
+            $this->assertFalse($reader->interlock_present(), $label);
+        }
+    }
+
+    /**
+     * Test a constant with no helper class at all is no interlock: the helper ships in the same release.
+     */
+    public function test_a_missing_helper_is_no_interlock(): void {
+        $reader = $this->reader_with_interlock(self::EXISTING_CONSTANT, '\no_such\helper');
+
+        $this->assertFalse($reader->interlock_present());
+    }
+
+    /**
+     * Test a class that has no site_id() is no interlock.
+     */
+    public function test_a_class_without_site_id_is_no_interlock(): void {
+        $reader = $this->reader_with_interlock(self::EXISTING_CONSTANT, mapper::class);
+
+        $this->assertFalse($reader->interlock_present());
+    }
+
+    /**
+     * Test a helper that throws is no interlock, and the exception doesn't escape.
+     */
+    public function test_a_helper_that_throws_is_no_interlock(): void {
+        interlock_stub::answer(ids::site_id(), true);
+
+        $this->assertFalse($this->reader_with_interlock(self::EXISTING_CONSTANT, interlock_stub::class)->interlock_present());
     }
 
     /**

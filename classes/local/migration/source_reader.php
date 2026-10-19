@@ -165,7 +165,11 @@ interface source_reader {
     /**
      * Whether SOLA carries the interlock that stops its cleanup from deleting media this plugin owns.
      *
-     * @return bool
+     * The interlock only works if SOLA looks for the same site id this plugin writes to the map, so an
+     * implementation also cross-checks SOLA's own site id against ids::site_id().
+     *
+     * @return bool False when SOLA lacks the interlock, and also when its site id formula differs from
+     *              ids::site_id() or can't be read: it would never hold a migrated recording.
      */
     public function interlock_present(): bool;
 

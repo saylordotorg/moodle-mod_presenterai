@@ -142,7 +142,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * The site id is sha1 of the wwwroot, a bar and the site identifier, and it moves with either.
+     * The site id is sha1 of the site identifier alone: it moves with the install, never with the address.
      *
      * @return void
      */
@@ -150,13 +150,23 @@ final class migration_mapper_test extends \advanced_testcase {
         global $CFG;
         $this->resetAfterTest();
 
-        $expected = sha1($CFG->wwwroot . '|' . get_site_identifier());
+        $expected = sha1(get_site_identifier());
         $this->assertSame($expected, ids::site_id());
         $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', ids::site_id());
         $this->assertSame(ids::site_id(), ids::site_id());
 
-        $CFG->wwwroot = 'https://elsewhere.example.org';
-        $this->assertSame(sha1('https://elsewhere.example.org|' . get_site_identifier()), ids::site_id());
+        // A host rename or an http to https change must not move it, or SOLA's interlock would let go of every
+        // migrated recording.
+        $oldaddress = $CFG->wwwroot;
+        foreach (['https://elsewhere.example.org', preg_replace('~^http:~', 'https:', $oldaddress)] as $address) {
+            $CFG->wwwroot = $address;
+            $this->assertSame($expected, ids::site_id(), $address);
+        }
+        $this->assertNotSame(sha1($oldaddress . '|' . get_site_identifier()), ids::site_id(), 'the old formula');
+
+        // Another install has another identifier, and so another id.
+        $CFG->siteidentifier = 'another-install-0123456789abcdef';
+        $this->assertSame(sha1('another-install-0123456789abcdef'), ids::site_id());
         $this->assertNotSame($expected, ids::site_id());
     }
 

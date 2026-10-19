@@ -43,16 +43,16 @@ final class ids {
     /**
      * The id of this site as the map records it in sourcesiteid.
      *
-     * Source ids are only unique within a site, so a course restored from another
-     * site brings source rows whose ids collide with this site's. Hashing the
-     * address together with Moodle's site identifier tells the two apart, and a
-     * hash keeps neither value on a page or in a log.
+     * Source ids are only unique within a site, so a course restored from another site brings source rows whose
+     * ids collide with this site's, and this id is what tells the two apart. It is the sha1 of Moodle's site
+     * identifier, which is created at install, survives a host rename and differs per install. The address is
+     * deliberately not part of it: a rename or an http to https change would otherwise change the id, and SOLA's
+     * interlock would stop holding every migrated recording. A hash keeps the identifier off a page and out of a
+     * log. SOLA's presenterai_interlock::site_id() computes the same value, and the reader checks that it does.
      *
      * @return string Forty hexadecimal characters.
      */
     public static function site_id(): string {
-        global $CFG;
-
-        return sha1($CFG->wwwroot . '|' . get_site_identifier());
+        return sha1(get_site_identifier());
     }
 }
