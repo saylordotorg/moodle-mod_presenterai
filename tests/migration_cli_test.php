@@ -131,6 +131,14 @@ final class migration_cli_test extends \advanced_testcase {
         return new class ($source, $checker) extends factory {
             /** @var string[] What was made, in order. */
             public array $made = [];
+            /** @var \core\lock\lock_factory|null A lock factory for the runner, the site's when null. */
+            public ?\core\lock\lock_factory $locks = null;
+            /** @var int A course whose plan throws, 0 for none. */
+            public int $explode = 0;
+            /** @var resource|null The output stream, so the throwing runner can see what was written before it. */
+            public $stream = null;
+            /** @var int Bytes already written to the stream when the course threw, -1 before. */
+            public int $seen = -1;
             /** @var source_reader The source. */
             private source_reader $source;
             /** @var object_checker The storage double. */
@@ -165,7 +173,38 @@ final class migration_cli_test extends \advanced_testcase {
              */
             public function runner(source_reader $reader): runner {
                 $this->made[] = 'runner';
-                return parent::runner($reader);
+                if ($this->explode === 0) {
+                    return new runner($reader, $this->locks);
+                }
+                return new class ($reader, $this) extends runner {
+                    /** @var object The factory, told what had been written when the course threw. */
+                    private object $factory;
+
+                    /**
+                     * Construct.
+                     *
+                     * @param source_reader $reader The source.
+                     * @param object $factory The factory.
+                     */
+                    public function __construct(source_reader $reader, object $factory) {
+                        parent::__construct($reader);
+                        $this->factory = $factory;
+                    }
+
+                    /**
+                     * Throw for one course.
+                     *
+                     * @param int $courseid The course.
+                     * @return \mod_presenterai\local\migration\plan
+                     */
+                    public function plan_course(int $courseid): \mod_presenterai\local\migration\plan {
+                        if ($courseid === $this->factory->explode) {
+                            $this->factory->seen = (int) ftell($this->factory->stream);
+                            throw new \RuntimeException('SECRET-EXCEPTION-TEXT ' . self::class);
+                        }
+                        return parent::plan_course($courseid);
+                    }
+                };
             }
 
             /**
@@ -211,6 +250,7 @@ final class migration_cli_test extends \advanced_testcase {
     private function run_command(array $argv): array {
         $out = fopen('php://memory', 'w+');
         $err = fopen('php://memory', 'w+');
+        $this->factory->stream = $out;
         $code = (new command($this->factory, $out, $err))->execute($argv);
         rewind($out);
         rewind($err);
@@ -662,7 +702,8 @@ final class migration_cli_test extends \advanced_testcase {
             $this->assertSame(0, $code, $out);
             $this->assertStringContainsString(get_string('migration:cli_drift', 'mod_presenterai',
                 (object) ['added' => 1, 'scored' => 0]), $out);
-            $this->assertStringContainsString(get_string('migration:verified_drift', 'mod_presenterai',
+            // Printed once, as numbers: the drift message isn't repeated in the text output.
+            $this->assertStringNotContainsString(get_string('migration:verified_drift', 'mod_presenterai',
                 (object) ['added' => 1, 'scored' => 0]), $out);
         }
         $this->assertSame($before, $this->table_counts());
@@ -773,5 +814,200 @@ final class migration_cli_test extends \advanced_testcase {
         $this->assertStringContainsString(get_string('migration:rollback_refuse_graded', 'mod_presenterai', $ids['linked']),
             $out);
         $this->assertTrue($DB->record_exists('presenterai', ['legacyassignid' => $ids['linked']]));
+    }
+
+    /**
+     * A lock factory whose lock is always held by someone else.
+     *
+     * @return \core\lock\lock_factory
+     */
+    private function held_lock(): \core\lock\lock_factory {
+        return new class implements \core\lock\lock_factory {
+            /**
+             * Construct.
+             *
+             * @param string $type The lock type.
+             */
+            public function __construct($type = '') {
+            }
+
+            /**
+             * Timeout support.
+             *
+             * @return bool
+             */
+            public function supports_timeout() {
+                return true;
+            }
+
+            /**
+             * Auto release.
+             *
+             * @return bool
+             */
+            public function supports_auto_release() {
+                return true;
+            }
+
+            /**
+             * Availability.
+             *
+             * @return bool
+             */
+            public function is_available() {
+                return true;
+            }
+
+            /**
+             * The lock is held elsewhere.
+             *
+             * @param string $resource The key.
+             * @param int $timeout Seconds.
+             * @param int $maxlifetime Seconds.
+             * @return bool
+             */
+            public function get_lock($resource, $timeout, $maxlifetime = 86400) {
+                return false;
+            }
+
+            /**
+             * Release.
+             *
+             * @param \core\lock\lock $lock The lock.
+             * @return bool
+             */
+            public function release_lock(\core\lock\lock $lock) {
+                return true;
+            }
+        };
+    }
+
+    /**
+     * Ways an apply is refused before it changes anything.
+     *
+     * @return array Name to [what to break, exit code expected].
+     */
+    public static function refused_apply_provider(): array {
+        return [
+            'a precondition' => ['precondition', 2],
+            'a course refusal' => ['course', 1],
+            'the course lock is held' => ['lock', 1],
+        ];
+    }
+
+    /**
+     * Test a refused apply says so, never "applied", in text and JSON, and writes nothing.
+     *
+     * @dataProvider refused_apply_provider
+     * @param string $break What to break.
+     * @param int $exit The exit code expected.
+     */
+    public function test_a_refused_apply_says_nothing_was_changed(string $break, int $exit): void {
+        $this->seed();
+        if ($break === 'precondition') {
+            $this->source->interlock = false;
+        } else if ($break === 'course') {
+            $this->source->shared[$this->course->id] = [123];
+        } else {
+            $this->factory->locks = $this->held_lock();
+        }
+        $before = $this->table_counts();
+
+        [$code, $out] = $this->run_command(['--course=' . $this->course->id, '--apply']);
+
+        $this->assertSame($exit, $code, $out);
+        $this->assertStringContainsString(get_string('migration:cli_applyrefused', 'mod_presenterai', $this->course->id), $out);
+        $this->assertStringNotContainsString('import applied', $out);
+        $this->assertStringNotContainsString(get_string('migration:cli_dryrun', 'mod_presenterai', $this->course->id), $out);
+
+        [$code, $out] = $this->run_command(['--course=' . $this->course->id, '--apply', '--json']);
+
+        $this->assertSame($exit, $code);
+        $doc = json_decode($out, true, 512, JSON_THROW_ON_ERROR);
+        $this->assertFalse($doc['courses'][0]['applied']);
+        $this->assertSame('', $doc['courses'][0]['runid']);
+        $this->assertSame($before, $this->table_counts());
+    }
+
+    /**
+     * Test a course that throws is reported by class only, after the earlier course was already written, and the
+     * later course still runs; in JSON the error is an entry of the one document.
+     */
+    public function test_a_failing_course_doesnt_stop_the_others(): void {
+        $courses = [];
+        foreach ([1, 2, 3] as $n) {
+            $courses[$n] = (int) $this->getDataGenerator()->create_course()->id;
+            $this->source->add_assign($courses[$n]);
+        }
+        $this->factory->explode = $courses[2];
+
+        [$code, $out, $err] = $this->run_command(['--course=all']);
+
+        $this->assertSame(1, $code, $out);
+        $first = get_string('migration:cli_dryrun', 'mod_presenterai', $courses[1]);
+        $this->assertStringStartsWith($first, $out);
+        // Course 1's lines were on the stream before course 2 was even planned.
+        $this->assertGreaterThanOrEqual(strlen($first), $this->factory->seen);
+        $failed = get_string('migration:cli_coursefailed', 'mod_presenterai',
+            (object) ['course' => $courses[2], 'error' => 'RuntimeException']);
+        $this->assertStringContainsString($failed, $out);
+        $this->assertStringContainsString(get_string('migration:cli_dryrun', 'mod_presenterai', $courses[3]), $out);
+        $this->assertGreaterThan(strpos($out, $failed), strpos($out, get_string('migration:cli_dryrun', 'mod_presenterai',
+            $courses[3])));
+        $this->assertStringNotContainsString('SECRET-EXCEPTION-TEXT', $out . $err);
+
+        [$code, $out, $err] = $this->run_command(['--course=all', '--json']);
+
+        $this->assertSame(1, $code);
+        $this->assertSame('', $err);
+        $doc = json_decode($out, true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame(1, $doc['exitcode']);
+        $this->assertSame([$courses[1], $courses[3]], array_column($doc['courses'], 'courseid'));
+        $this->assertSame([['courseid' => $courses[2], 'error' => 'RuntimeException']], $doc['errors']);
+        $this->assertStringNotContainsString('SECRET-EXCEPTION-TEXT', $out);
+    }
+
+    /**
+     * Test --rollback and --verify with --course=all take the courses the import records point at, not SOLA's list.
+     */
+    public function test_rollback_and_verify_of_all_follow_the_import_records(): void {
+        global $DB;
+        $ids = $this->seed();
+        $other = (int) $this->getDataGenerator()->create_course()->id;
+        $this->source->add_assign($other);
+        $this->run_command(['--course=' . $this->course->id, '--apply']);
+
+        [$code, $out] = $this->run_command(['--course=all', '--verify']);
+
+        $this->assertSame(0, $code, $out);
+        // The course SOLA lists but nobody imported gets no failing report.
+        $this->assertSame(0, $DB->count_records('presenterai_migreport', ['courseid' => $other]));
+        $this->assertSame(1, $DB->count_records('presenterai_migreport', ['courseid' => $this->course->id]));
+
+        // With SOLA's tables gone, a rollback of every course still finds the import.
+        $this->source->tables = false;
+        [$code, $out] = $this->run_command(['--course=all', '--rollback']);
+
+        $this->assertSame(0, $code, $out);
+        $this->assertFalse($DB->record_exists('presenterai', ['legacyassignid' => $ids['linked']]));
+        $this->assertSame(0, $DB->count_records('presenterai_migration_map'));
+        $this->assertStringContainsString(get_string('migration:cli_rollback', 'mod_presenterai', (object) [
+            'course' => $this->course->id, 'removed' => 2, 'cleared' => 0, 'refused' => 0, 'failed' => 0,
+            'standinsrestored' => 1, 'maprowsdeleted' => 7]), $out);
+    }
+
+    /**
+     * Test --rollback and --verify with --course=all say so and exit 0 when nothing was imported.
+     */
+    public function test_all_with_no_import_records_says_so(): void {
+        global $DB;
+        $this->seed();
+
+        foreach (['--rollback', '--verify'] as $mode) {
+            [$code, $out] = $this->run_command(['--course=all', $mode]);
+            $this->assertSame(0, $code, $out);
+            $this->assertSame(get_string('migration:cli_nomaprows', 'mod_presenterai') . PHP_EOL, $out);
+        }
+        $this->assertSame(0, $DB->count_records('presenterai_migreport'));
     }
 }

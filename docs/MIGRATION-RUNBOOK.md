@@ -3,6 +3,10 @@
 This is how to move a course's SOLA Soapbox work into PresenterAI with
 `mod/presenterai/cli/migrate_from_local.php`. Read it all once before the first run.
 
+The path depends on the Moodle version. On Moodle 5.1 and later (alpha runs 5.3) the code lives under
+`public/`, so the command is `php public/mod/presenterai/cli/migrate_from_local.php`. Before 5.1 it's
+`php mod/presenterai/cli/migrate_from_local.php`. The examples below use the older path.
+
 The command copies Soapbox assignments, topics, every attempt (expired ones too) and every score with its
 per-criterion marks, feedback and tips into new PresenterAI activities in the same course. It moves no media:
 the new attempts point at the objects Soapbox already stored in S3. It never writes to a SOLA table, including
@@ -26,7 +30,7 @@ sudo -u www-data php mod/presenterai/cli/migrate_from_local.php --course=42
 
 | Option | What it does |
 |---|---|
-| `--course=<id>` or `--course=all` | Required. `all` means every course the Soapbox tables list. For `--report`, `all` means every course with a report. |
+| `--course=<id>` or `--course=all` | Required. For a dry run and `--apply`, `all` means every course the Soapbox tables list. For `--rollback` and `--verify`, it means every course this site's import records point at, so both work after Soapbox's tables are gone and never verify a course that was never imported. For `--report`, it means every course with a report. |
 | (no mode) | A dry run. It prints what an import would do and changes nothing. |
 | `--apply` | Imports. |
 | `--verify` | Compares the import with Soapbox and stores a report row. |
@@ -51,6 +55,12 @@ A verified assignment that SOLA has gained recordings since still exits `0`. Its
 
 With `--course=all`, a course that no longer exists is reported and doesn't change the exit code. Named on its
 own with `--course=<id>`, it's a refusal and exits `1`.
+
+With `--course=all`, each course's output is printed as soon as that course is done. If one course fails
+unexpectedly, the command prints the error's class (never its message), exits `1` at the end, and goes on with
+the other courses. A refused `--apply` says "apply refused. Nothing was changed."
+
+When `--rollback` or `--verify` with `--course=all` finds no import records, it says so and exits `0`.
 
 The output holds ids, counts, codes and messages only. It never prints a transcript, feedback, a learner's
 name, a storage key or a secret, so you can paste it into a ticket.
@@ -83,7 +93,7 @@ See [The bucket lifecycle warning](#the-bucket-lifecycle-warning). Do this befor
 
 ## Preconditions and how to fix each one
 
-The command checks these first. Any unmet one exits `2` and prints its code in brackets.
+The command checks these first. Any unmet one exits `2` and prints its code in parentheses.
 
 | Code | What it means | Fix |
 |---|---|---|
@@ -109,7 +119,7 @@ Assignment refusals (exit `1`, other assignments carry on):
 |---|---|
 | `duplicatestandins` | More than one course page link points at the assignment. Remove all but one, then run again. |
 | `stale` | The Soapbox assignment or a topic changed after an interrupted import started. It isn't resumed. Roll the course back, then import again. |
-| `targetused` | An interrupted import's hidden activity was used or changed since: a learner has an attempt in it, grading was turned on, or someone made it visible. It isn't resumed. Undo that change, or roll back and import again. |
+| `targetused` | An interrupted import's hidden activity was used or changed since: a learner has an attempt in it, grading was turned on, or someone made it visible. It can't be resumed, and a rollback may refuse it too. It holds no imported recordings yet (they're added in the last step), so deleting it by hand touches no Soapbox media. Delete it, run `--rollback` for the course to clear its import records, then apply again. |
 | `targetgone` | The activity an earlier run made was deleted. It's marked failed and never made again. |
 | `failed` | An earlier run marked it failed. Roll back the course to clear it. |
 | `badstatus` | A recording has a status the import doesn't know. Ask a developer. |
@@ -185,10 +195,15 @@ evidence SOLA 8.x reads before it may drop a course's Soapbox tables. `--report`
 
 On a site without Soapbox's tables it stops with `sourcetables` (exit `2`) and stores nothing.
 
+Verify right after each apply. After that, PresenterAI's own deletions are expected: retention, pruning, and a
+learner or teacher deleting an attempt's media. They don't fail verification, even though Soapbox's row still
+names the object (SOLA's cleanup leaves held recordings alone).
+
 ### Tier 1: counts
 
 Assignments, topics, recordings of every status (deleted ones too), recordings with surviving media, scores and
-distinct learners. Each must be exact.
+distinct learners. Each must be exact. An imported attempt whose media PresenterAI deleted after the import
+still counts as having media. Media that was gone before the import, or that PresenterAI found missing, doesn't.
 
 Tier 1 counts every activity in the course that carries a Soapbox assignment id. That includes one restored
 from another site's backup. Such a course fails verification until that activity is removed.
@@ -202,8 +217,9 @@ observation.
 ### Tier 3: storage
 
 A HEAD request for every media object an imported attempt still holds, the video checked against its size. Up
-to 2000 attempts with media, every one is checked. Above that, a fixed sample: the newest tenth, every attempt
-Soapbox marked failed, and 2000 more.
+to 2000 attempts with media, every one is checked. Above that, a sample: the newest tenth, every attempt
+Soapbox marked failed, and 2000 more picked from the run id. Each verify gets a new run id, so the sample differs
+from run to run. An attempt with no key left isn't checked and isn't a failure.
 
 ### Mismatch codes
 
@@ -290,21 +306,28 @@ What it does and doesn't do:
 - An activity that's already gone is cleared: its link is restored and its records removed (`targetgone`).
 - A course page link someone pointed elsewhere since is left as they set it (`changed`). One that's gone is
   reported (`missing`).
+- A restored link gets the visibility it had before the import. Any change a teacher made to it since is
+  overwritten.
 - It bypasses the recycle bin on purpose. A recycle bin copy would keep learners' transcripts and feedback
   after the rollback.
 - Afterwards SOLA owns the media again, and its cleanup resumes for those recordings on its own schedule.
 
-With `--course=all` it covers the courses the Soapbox tables list. If those tables are gone, roll back each
-course by its id.
+With `--course=all` it covers every course this site's import records point at. That works after Soapbox's
+tables are gone too.
 
 ## The S3 settings rule
 
 PresenterAI's bucket, region and prefix must equal Soapbox's exactly. The prefix is compared the way
 PresenterAI reads it (no leading slash, one trailing slash).
 
-It can't be relaxed. The import copies nothing: each attempt keeps the exact key Soapbox stored. PresenterAI
-only reads and deletes objects under its own prefix in its own bucket. With any difference, every imported video
-would be unreachable, and PresenterAI couldn't delete it later either.
+It can't be relaxed (decision D10). The import copies nothing: each attempt keeps the exact key Soapbox stored,
+and those keys point into Soapbox's bucket and prefix. PresenterAI signs, checks and deletes a stored key
+exactly as written, in its own configured bucket and region. So it has to be configured for Soapbox's bucket,
+region and prefix to find the imported objects at all.
+
+- PresenterAI's S3 credentials must allow GET, HEAD, PUT and DELETE on Soapbox's prefix. Without that, playback
+  fails and tier 3 reports `storage_error` with status 403.
+- Every new PresenterAI upload after the switch lands under Soapbox's prefix too.
 
 The S3 endpoint and path-style setting aren't compared. Check them yourself: they must reach the same bucket
 Soapbox uses.
@@ -347,6 +370,14 @@ That's why you verify after every apply.
 - **Attempts deleted before scoring** show "Deleted on <date>" with the status "Not submitted".
 - **A database clone** (a staging copy) shares the site identifier, so it sees the same import records as the
   site it came from.
+- **A teacher deletes a verified activity.** `--apply` keeps exiting `0` with `skip_verified` for it. Only
+  `--verify` catches it (`target_missing`).
+- **A course reset** of an imported course deletes the imported attempts and their objects in Soapbox's bucket.
+  Verification then fails for good.
+- **A duplicated imported activity** shares the same keys. After a rollback, SOLA's cleanup may delete objects
+  the duplicate still points at.
+- **A Soapbox assignment with no recordings, deleted in SOLA after the import,** makes the tier 1 assignments
+  count fail for good.
 
 ## What isn't imported
 

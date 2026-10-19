@@ -66,8 +66,11 @@ final class command {
     /** @var resource Standard error. */
     private $stderr;
 
-    /** @var string[] Lines for standard output, written at the end unless the output is JSON. */
+    /** @var string[] Lines for standard output not yet written. Written after each course, never in JSON mode. */
     private array $lines = [];
+
+    /** @var bool Whether the output is one JSON document, written at the end. */
+    private bool $json = false;
 
     /**
      * A command.
@@ -113,6 +116,7 @@ final class command {
             return $this->usage('cli_modes');
         }
         $mode = $modes[0] ?? 'dryrun';
+        $this->json = !empty($options['json']);
 
         if ($mode === 'report') {
             [$code, $data] = $this->report($course);
@@ -120,16 +124,26 @@ final class command {
             [$code, $data] = $this->work($mode, $course);
         }
 
-        if (!empty($options['json'])) {
+        if ($this->json) {
             $doc = ['mode' => $mode, 'exitcode' => $code] + $data;
             cli_writeln(json_encode($doc, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), $this->stdout);
         } else {
+            $this->flush();
+        }
+
+        return $code;
+    }
+
+    /**
+     * Write the lines gathered so far, unless the output is JSON (then they're never written).
+     */
+    private function flush(): void {
+        if (!$this->json) {
             foreach ($this->lines as $line) {
                 cli_writeln($line, $this->stdout);
             }
         }
-
-        return $code;
+        $this->lines = [];
     }
 
     /**
@@ -161,7 +175,12 @@ final class command {
     }
 
     /**
-     * A dry run, an apply, a rollback or a verification of one course or of every course the reader lists.
+     * A dry run, an apply, a rollback or a verification of one course or of every course.
+     *
+     * With "all", a dry run and an apply take the courses the reader lists; a rollback and a verification take the
+     * courses this site's import records point at, so they work once SOLA's tables are gone and never verify a
+     * course that was never imported. Each course's lines are written as soon as it's done. A course whose work
+     * throws is reported by the exception's class (and Moodle error code), never its message, and the rest go on.
      *
      * @param string $mode dryrun, apply, rollback or verify.
      * @param string $course A course id or "all".
@@ -178,10 +197,17 @@ final class command {
             preconditions::check($reader, $plan);
             return $this->site_preconditions($plan->unmet());
         }
-        $courses = $all ? ($reader->tables_present() ? $reader->course_ids_with_data() : []) : [(int) $course];
+        $frommap = in_array($mode, ['rollback', 'verify'], true);
+        if (!$all) {
+            $courses = [(int) $course];
+        } else if ($frommap) {
+            $courses = self::imported_courses($reader);
+        } else {
+            $courses = $reader->tables_present() ? $reader->course_ids_with_data() : [];
+        }
         if ($courses === []) {
-            $this->lines[] = self::str('cli_nocourses');
-            return [self::EXIT_OK, ['courses' => []]];
+            $this->lines[] = self::str($frommap ? 'cli_nomaprows' : 'cli_nocourses');
+            return [self::EXIT_OK, ['courses' => [], 'errors' => []]];
         }
 
         $worker = null;
@@ -195,19 +221,76 @@ final class command {
 
         $code = self::EXIT_OK;
         $data = [];
+        $errors = [];
         foreach ($courses as $courseid) {
-            if ($worker instanceof runner) {
-                $plan = $mode === 'apply' ? $worker->apply_course((int) $courseid) : $worker->plan_course((int) $courseid);
-                [$one, $data[]] = $this->print_plan($plan, $all);
-            } else if ($worker instanceof rollback) {
-                [$one, $data[]] = $this->print_rollback($worker->rollback_course((int) $courseid));
-            } else {
-                [$one, $data[]] = $this->print_verify($worker->verify_course((int) $courseid, (int) $USER->id));
+            $courseid = (int) $courseid;
+            try {
+                if ($worker instanceof runner) {
+                    $apply = $mode === 'apply';
+                    $plan = $apply ? $worker->apply_course($courseid) : $worker->plan_course($courseid);
+                    [$one, $data[]] = $this->print_plan($plan, $all, $apply);
+                } else if ($worker instanceof rollback) {
+                    [$one, $data[]] = $this->print_rollback($worker->rollback_course($courseid));
+                } else {
+                    [$one, $data[]] = $this->print_verify($worker->verify_course($courseid, (int) $USER->id));
+                }
+            } catch (\Throwable $e) {
+                $one = self::EXIT_ERROR;
+                $error = self::describe($e);
+                $errors[] = ['courseid' => $courseid, 'error' => $error];
+                $this->lines[] = self::str('cli_coursefailed', (object) ['course' => $courseid, 'error' => $error]);
             }
             $code = max($code, $one);
+            $this->flush();
         }
 
-        return [$code, ['courses' => $data]];
+        return [$code, ['courses' => $data, 'errors' => $errors]];
+    }
+
+    /**
+     * The courses this site's import records point at: the course of each assignment row's activity or instance,
+     * and, while SOLA's tables are there, the course SOLA lists for an assignment that has a row.
+     *
+     * @param source_reader $reader The source.
+     * @return int[] Course ids, ascending.
+     */
+    private static function imported_courses(source_reader $reader): array {
+        global $DB;
+
+        $params = ['t' => ids::SOURCE_ASSIGN, 's' => ids::site_id()];
+        $courses = $DB->get_fieldset_sql('SELECT DISTINCT cm.course FROM {' . destination::MAP . '} m
+            JOIN {course_modules} cm ON cm.id = m.targetcmid
+            WHERE m.sourcetable = :t AND m.sourcesiteid = :s', $params);
+        $courses = array_merge($courses, $DB->get_fieldset_sql('SELECT DISTINCT p.course FROM {' . destination::MAP . '} m
+            JOIN {presenterai} p ON p.id = m.targetid AND p.legacyassignid = m.sourceid
+            WHERE m.sourcetable = :t AND m.sourcesiteid = :s', $params));
+        $mapped = array_flip(array_map('intval', $DB->get_fieldset_select(destination::MAP, 'sourceid',
+            'sourcetable = :t AND sourcesiteid = :s', $params)));
+        if ($mapped && $reader->tables_present()) {
+            foreach ($reader->course_ids_with_data() as $courseid) {
+                foreach ($reader->assignments((int) $courseid) as $assign) {
+                    if (isset($mapped[(int) $assign['id']])) {
+                        $courses[] = (int) $courseid;
+                        break;
+                    }
+                }
+            }
+        }
+        $courses = array_values(array_unique(array_map('intval', $courses)));
+        sort($courses);
+
+        return $courses;
+    }
+
+    /**
+     * A failure as its class, and a Moodle exception's error code. Never the message, which can carry SQL, values
+     * or other text that has no place in output an operator pastes into a ticket.
+     *
+     * @param \Throwable $e The failure.
+     * @return string
+     */
+    private static function describe(\Throwable $e): string {
+        return $e instanceof \moodle_exception ? get_class($e) . ' (' . $e->errorcode . ')' : get_class($e);
     }
 
     /**
@@ -229,9 +312,10 @@ final class command {
      *
      * @param plan $plan The plan.
      * @param bool $all Whether every course is being run, so a vanished course is only reported.
+     * @param bool $apply Whether an apply was asked for (a refused one comes back with applied false).
      * @return array [int exit code, array data].
      */
-    private function print_plan(plan $plan, bool $all): array {
+    private function print_plan(plan $plan, bool $all, bool $apply): array {
         $counts = $plan->counts();
         $fallback = [];
         foreach ($plan->assignments as $entry) {
@@ -241,9 +325,13 @@ final class command {
             }
         }
 
-        $this->lines[] = $plan->applied
-            ? self::str('cli_applied', (object) ['course' => $plan->courseid, 'runid' => $plan->runid])
-            : self::str('cli_dryrun', $plan->courseid);
+        if ($plan->applied) {
+            $this->lines[] = self::str('cli_applied', (object) ['course' => $plan->courseid, 'runid' => $plan->runid]);
+        } else if ($apply) {
+            $this->lines[] = self::str('cli_applyrefused', $plan->courseid);
+        } else {
+            $this->lines[] = self::str('cli_dryrun', $plan->courseid);
+        }
         $unmet = $plan->unmet();
         foreach ($unmet as $check) {
             $this->lines[] = self::str('cli_precondition', (object) $check);
@@ -305,7 +393,8 @@ final class command {
             $this->lines[] = self::str('cli_drift', (object) ['added' => $entry['new_source_rows'],
                 'scored' => $entry['newly_scored_rows']]);
         }
-        if ($entry['message'] !== '') {
+        // A verified assignment's message is its drift, printed as numbers just above.
+        if ($entry['message'] !== '' && $entry['decision'] !== plan::SKIP_VERIFIED) {
             $this->lines[] = self::str('cli_message', $entry['message']);
         }
         if ($entry['outcome'] !== '') {

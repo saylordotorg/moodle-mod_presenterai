@@ -138,7 +138,7 @@ PresenterAI replaces "Soapbox", a feature inside `local_ai_course_assistant` (th
 
 Since 0.5.0 the importer is built: `php mod/presenterai/cli/migrate_from_local.php`. It imports existing Soapbox assignments, topics, recordings, transcripts, scores and feedback into PresenterAI activities in the same courses, including attempts whose video has already been deleted. It's a dry run unless you pass `--apply`, it's safe to run again and resumes after an interruption, it can be rolled back, and it verifies its own work (`--verify`). It writes nothing to SOLA's tables, and it moves no recording: a site that keeps its recordings in S3 points the new activities at the same objects, so it needs PresenterAI's S3 bucket, region and prefix to match SOLA's. It needs SOLA 7.12.1 or later, whose nightly cleanup then leaves the recordings PresenterAI holds alone. Read [the runbook](docs/MIGRATION-RUNBOOK.md) before you run it on a real site.
 
-PresenterAI works without SOLA installed. Only the importer looks at SOLA: it checks for SOLA's cleanup interlock and asks it for the shared site id, and it reads SOLA's Soapbox tables through one reader class. Nothing else in the plugin calls SOLA's code.
+PresenterAI works without SOLA installed. Only the importer looks at SOLA, and only through one reader class. It reads SOLA's Soapbox tables and settings. It checks for SOLA's cleanup interlock and asks SOLA's interlock helper for the shared site id. And it asks SOLA's rubric manager (`rubric_manager::speech_preset()` and its visual criteria) for the speaking-level presets it uses to rebuild old scores. Each SOLA class is called only when `class_exists()` or `defined()` says it's there. Nothing else in the plugin calls SOLA's code.
 
 ## Installation
 

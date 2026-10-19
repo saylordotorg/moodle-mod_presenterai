@@ -51,7 +51,7 @@ final class plan {
     /** @var string An activity created by an interrupted run is completed. */
     public const RESUME = 'resume';
 
-    /** @var string Already imported; nothing is read or written. */
+    /** @var string Already imported; nothing is written, and only its recordings are read, for the drift counts. */
     public const SKIP_VERIFIED = 'skip_verified';
 
     /** @var string Not imported, for the reason in code and message. */
@@ -81,10 +81,10 @@ final class plan {
     /** @var int The course. */
     public int $courseid;
 
-    /** @var bool True when apply_course() built this plan, false for a dry run. */
+    /** @var bool True when apply_course() went ahead (lock held, nothing refused); false for a dry run or a refused apply. */
     public bool $applied = false;
 
-    /** @var string The run id written on every map row this apply wrote, '' for a dry run. */
+    /** @var string The run id written on every map row this apply wrote, '' for a dry run or a refused apply. */
     public string $runid = '';
 
     /** @var array[] Every precondition checked: ['code' => string, 'met' => bool, 'message' => string]. */
@@ -174,7 +174,8 @@ final class plan {
     }
 
     /**
-     * The course's totals over the assignments read (a skipped one isn't read, so counts nothing).
+     * The course's totals over the assignments planned. A skipped (verified) one adds nothing to topics,
+     * recordings or scores: only its recordings are read, and only for its drift counts.
      *
      * @return array With assignments (every source assignment), topics, recordings, bystatus, scores, unreconstructed,
      *               learners, orphans, decisions (decision to how many), new_source_rows and newly_scored_rows.

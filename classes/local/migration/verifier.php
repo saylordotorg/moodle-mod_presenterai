@@ -25,9 +25,10 @@ namespace mod_presenterai\local\migration;
  * learners' views) is a runbook step.
  *
  * Tier 1, counts, each exact, source against destination: assignments; topics; recordings of every status, deleted
- * ones included; recordings with surviving media (a storage key); scores (recordings with a score); distinct
- * learners. The destination side counts this course's activities that carry a legacy assignment id, their topics
- * and attempts that carry a legacy id, and the scores those attempts point at.
+ * ones included; recordings with surviving media (a storage key; on the destination side an attempt whose media
+ * PresenterAI's own cleanup or a person deleted after the import counts too, see destination_withmedia()); scores
+ * (recordings with a score); distinct learners. The destination side counts this course's activities that carry a
+ * legacy assignment id, their topics and attempts that carry a legacy id, and the scores those attempts point at.
  *
  * Per assignment: its map row of this site must exist (else assignment_not_imported), be verified (else
  * assignment_not_verified) and its activity must still resolve (else target_missing: a verified activity a teacher
@@ -73,6 +74,12 @@ class verifier {
 
     /** @var string[] The key columns tier 3 checks, in order. The video's size is known; the others' isn't. */
     public const KEY_COLUMNS = ['storagekey', 'deckkey', 'frameskey'];
+
+    /**
+     * @var string[] The mediagonereason values of PresenterAI's own deletions (recording_manager::GONE_REASONS minus
+     *      missing and notbackedup). Media deleted this way after the import still counts for tier 1.
+     */
+    public const OWN_DELETIONS = ['retention', 'pruned', 'manual', 'learner'];
 
     /** @var string The report table. */
     private const REPORT = 'presenterai_migreport';
@@ -205,7 +212,7 @@ class verifier {
                 WHERE p.course = :c AND p.legacyassignid > 0 AND t.legacytopicid > 0', $params)],
             'recordings' => [count($recs), $DB->count_records_sql("SELECT COUNT(r.id) {$from}", $params)],
             'withmedia' => [count(array_filter($recs, static fn(array $r): bool => (string) ($r['storage_key'] ?? '') !== '')),
-                $DB->count_records_sql("SELECT COUNT(r.id) {$from} AND r.storagekey IS NOT NULL", $params)],
+                $this->destination_withmedia($courseid, $recs)],
             'scores' => [count(array_filter($recs, static fn(array $r): bool => !empty($r['scoreid']))),
                 $this->destination_scores($courseid)],
             'learners' => [count(array_unique(array_map(static fn(array $r): int => (int) $r['userid'], $recs))),
@@ -221,6 +228,49 @@ class verifier {
         }
 
         return $named;
+    }
+
+    /**
+     * How many of the course's imported attempts count as having media, for tier 1.
+     *
+     * An attempt with a storage key counts. So does one whose media PresenterAI itself deleted after the import
+     * (retention, pruning, a learner's or a teacher's own delete), as long as SOLA's row still has a key: SOLA's
+     * cleanup skips a recording PresenterAI holds, so SOLA keeps the key for good while PresenterAI's own cleanup
+     * goes on. Media gone before the import (deleted before the recording's map row was written), or gone because it
+     * was missing or never backed up, doesn't count, so a source key with no media behind it is still a mismatch.
+     *
+     * @param int $courseid The course.
+     * @param array $recs Every source recording of the course.
+     * @return int
+     */
+    private function destination_withmedia(int $courseid, array $recs): int {
+        global $DB;
+
+        $keyed = [];
+        foreach ($recs as $rec) {
+            if ((string) ($rec['storage_key'] ?? '') !== '') {
+                $keyed[(int) $rec['id']] = true;
+            }
+        }
+        $from = 'FROM {presenterai_recording} r JOIN {presenterai} p ON p.id = r.presenteraiid
+            WHERE p.course = :c AND p.legacyassignid > 0 AND r.legacyrecid > 0';
+        $count = $DB->count_records_sql("SELECT COUNT(r.id) {$from} AND r.storagekey IS NOT NULL", ['c' => $courseid]);
+
+        [$insql, $params] = $DB->get_in_or_equal(self::OWN_DELETIONS, SQL_PARAMS_NAMED, 'gone');
+        $deleted = $DB->get_records_sql("SELECT r.id, r.legacyrecid
+              FROM {presenterai_recording} r
+              JOIN {presenterai} p ON p.id = r.presenteraiid
+              JOIN {" . destination::MAP . "} m ON m.sourcetable = :t AND m.sourceid = r.legacyrecid AND m.sourcesiteid = :s
+             WHERE p.course = :c AND p.legacyassignid > 0 AND r.legacyrecid > 0 AND r.storagekey IS NULL
+               AND r.mediadeletedat >= m.timecreated AND r.mediagonereason {$insql}",
+            ['c' => $courseid, 't' => ids::SOURCE_REC, 's' => ids::site_id()] + $params);
+        foreach ($deleted as $row) {
+            if (isset($keyed[(int) $row->legacyrecid])) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     /**

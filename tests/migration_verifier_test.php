@@ -284,6 +284,79 @@ final class migration_verifier_test extends \advanced_testcase {
     }
 
     /**
+     * Ways an imported video's media can be gone on the PresenterAI side while SOLA's row keeps its key.
+     *
+     * @return array Name to [seconds from the recording's map row time, mediagonereason, whether verification passes].
+     */
+    public static function media_gone_provider(): array {
+        return [
+            'retention after the import' => [60, 'retention', true],
+            'pruned after the import' => [60, 'pruned', true],
+            'a learner deleted it after the import' => [0, 'learner', true],
+            'a teacher deleted it after the import' => [60, 'manual', true],
+            'gone before the import' => [-60, 'retention', false],
+            'missing after the import' => [60, 'missing', false],
+            'never backed up' => [60, 'notbackedup', false],
+            'no deletion record' => [null, null, false],
+        ];
+    }
+
+    /**
+     * Test media PresenterAI deleted after the import still counts as media for tier 1, and nothing else does.
+     *
+     * SOLA's cleanup skips a recording PresenterAI holds, so SOLA's row keeps its key for good while PresenterAI's
+     * own cleanup, a learner or a teacher deletes the media.
+     *
+     * @dataProvider media_gone_provider
+     * @param int|null $offset Seconds after the map row's time the media was deleted, null for no deletion date.
+     * @param string|null $reason The mediagonereason.
+     * @param bool $passes Whether verification passes.
+     */
+    public function test_media_deleted_by_presenterai_after_the_import_still_counts(?int $offset, ?string $reason,
+            bool $passes): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->apply();
+        $dest = $this->dest($ids['scored']);
+        $mapped = (int) $DB->get_field('presenterai_migration_map', 'timecreated', ['sourcetable' => ids::SOURCE_REC,
+            'sourceid' => $ids['scored'], 'sourcesiteid' => ids::site_id()], MUST_EXIST);
+        $DB->update_record('presenterai_recording', (object) ['id' => $dest->id, 'storagekey' => null,
+            'mediadeletedat' => $offset === null ? 0 : $mapped + $offset, 'mediagonereason' => $reason]);
+
+        $result = $this->verify();
+
+        $this->assertSame(4, $result['counts']['withmedia']['source']);
+        if ($passes) {
+            $this->assertSame([], $result['mismatches']);
+            $this->assertTrue($result['passed']);
+            $this->assertSame(4, $result['counts']['withmedia']['destination']);
+        } else {
+            $this->assertFalse($result['passed']);
+            $this->assertContains(['code' => 'count_mismatch', 'check' => 'withmedia'], $result['mismatches']);
+            $this->assertSame(3, $result['counts']['withmedia']['destination']);
+        }
+        // The video has no key to check any more; only the deck is asked about, and nothing fails for it.
+        $this->assertSame(0, $result['storagefailures']);
+    }
+
+    /**
+     * Test media PresenterAI deleted doesn't count when SOLA's row has no key either (it isn't counted twice).
+     */
+    public function test_deleted_media_counts_only_where_sola_has_a_key(): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->apply();
+        $dest = $this->dest($ids['expired']);
+        $DB->update_record('presenterai_recording', (object) ['id' => $dest->id, 'mediadeletedat' => time() + 60,
+            'mediagonereason' => 'retention']);
+
+        $result = $this->verify();
+
+        $this->assertSame(['source' => 4, 'destination' => 4], $result['counts']['withmedia']);
+        $this->assertTrue($result['passed']);
+    }
+
+    /**
      * Test each call writes its own report row.
      */
     public function test_each_call_writes_a_report_row(): void {

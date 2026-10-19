@@ -158,6 +158,8 @@ class runner {
             if (!$plan->can_proceed()) {
                 return $plan;
             }
+            // Only now does the apply go ahead: a refused apply comes back with applied false and no run id.
+            $plan->applied = true;
             $plan->runid = random_string(32);
             $course = get_course($courseid);
             foreach ($plan->assignments as $sourceid => $entry) {
@@ -235,7 +237,6 @@ class runner {
         global $DB;
 
         $plan = $this->build($courseid);
-        $plan->applied = true;
         $outside = !$DB->is_transaction_started();
         $plan->precondition('transaction', $outside, $outside ? '' : self::str('precondition_transaction'));
 
