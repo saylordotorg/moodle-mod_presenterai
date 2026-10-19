@@ -567,6 +567,51 @@ final class migration_verifier_test extends \advanced_testcase {
     }
 
     /**
+     * Test stored criteria all turned to not assessed (with rawmax 0) on a score SOLA judged can't pass as the
+     * all-unassessed case: the exemption is decided from SOLA's criteria.
+     */
+    public function test_flags_turned_off_by_the_import_fail(): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->apply();
+        $score = $this->score_row($ids['scored']);
+        $criteria = json_decode($score->scores, true);
+        foreach ($criteria as $i => $criterion) {
+            $criteria[$i]['assessed'] = false;
+        }
+        $DB->update_record('presenterai_score', (object) ['id' => $score->id, 'scores' => json_encode($criteria),
+            'rawsum' => 0, 'rawmax' => 0, 'overallpct' => null]);
+        $this->assertSame('exact', $score->scoreprovenance);
+
+        $result = $this->verify();
+
+        $this->assertFalse($result['passed']);
+        $codes = self::codes($result);
+        $this->assertContains('rawmax_zero_not_unreconstructed', $codes);
+        $this->assertSame(['criteria_assessed', 'criteria_assessed', 'rawmax_zero_not_unreconstructed'], $codes);
+        $this->assert_no_text($result);
+    }
+
+    /**
+     * Test one stored assessed flag that differs from SOLA's fails, naming the criterion by position only.
+     */
+    public function test_a_stored_assessed_flag_must_match_the_source(): void {
+        global $DB;
+        $ids = $this->seed();
+        $this->apply();
+        $score = $this->score_row($ids['scored']);
+        $criteria = json_decode($score->scores, true);
+        $criteria[1]['assessed'] = false;
+        $DB->set_field('presenterai_score', 'scores', json_encode($criteria), ['id' => $score->id]);
+
+        $result = $this->verify();
+
+        $this->assertFalse($result['passed']);
+        $this->assertSame([['code' => 'criteria_assessed', 'assignid' => $ids['assign'], 'recid' => $ids['scored'],
+            'recordingid' => (int) $this->dest($ids['scored'])->id, 'criterion' => 1]], $result['mismatches']);
+    }
+
+    /**
      * Test a recording SOLA gained after the assignment was verified is a mismatch, named by ids only.
      */
     public function test_a_recording_added_after_the_import_is_reported(): void {

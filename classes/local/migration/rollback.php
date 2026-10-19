@@ -262,7 +262,9 @@ class rollback {
         try {
             $this->in_transaction($sourceid);
             if ($resolves) {
-                // Again, now that nothing else can slip in: an attempt started since the check above is a refusal.
+                // Again, just before anything changes, so an attempt started since the first check is a refusal. This
+                // narrows the window without closing it: a delegated transaction doesn't stop another connection
+                // inserting an attempt between this check and the delete.
                 $refusal = self::refusal($map);
                 if ($refusal !== '') {
                     // Nothing of the rollback's was written yet; committing keeps whatever the caller's seam did.

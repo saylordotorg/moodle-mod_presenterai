@@ -41,8 +41,9 @@ namespace mod_presenterai\local\migration;
  * legacymeanscore equal to SOLA's overall_score. Where rawmax is above 0, the mean of the assessed criteria's raw
  * scores must be within one of SOLA's overall_score (a 0 to 5 mean, rounded), else mean_drift: the maxima were
  * rebuilt from the wrong place. An unreconstructed row must have rawmax 0 and no percentage
- * (unreconstructed_inconsistent), and a row with rawmax 0 and at least one assessed criterion must be unreconstructed
- * (rawmax_zero_not_unreconstructed); with no assessed criterion, exact with rawmax 0 is correct.
+ * (unreconstructed_inconsistent), and a row with rawmax 0 where SOLA assessed at least one criterion must be
+ * unreconstructed (rawmax_zero_not_unreconstructed); with none assessed, exact with rawmax 0 is correct. Each stored
+ * assessed flag must equal SOLA's, absent meaning assessed (criteria_assessed, with the criterion's position).
  * legacymeta must equal
  * SOLA's session_meta minus visual_observation, never the raw meta: SOLA's cleanup now strips the observation from
  * held rows, so the source may or may not still carry it, and the destination must never (D11).
@@ -55,7 +56,8 @@ namespace mod_presenterai\local\migration;
  * each counts as a storage failure.
  *
  * Mismatches carry codes and ids only: assignid and recid are SOLA ids, recordingid a presenterai_recording id, plus
- * check (a tier 1 count), state, column (a key column's name) or status (an HTTP status) where they apply. Never a
+ * check (a tier 1 count), state, criterion (a position), column (a key column's name) or status (an HTTP status)
+ * where they apply. Never a
  * key, a name, a transcript or any other learner text.
  *
  * @package    mod_presenterai
@@ -321,8 +323,8 @@ class verifier {
      * @param array $ids The ids a mismatch carries.
      */
     private function check_score(array $source, \stdClass $dest, array $ids): void {
-        $want = self::criteria($source['scores'] ?? '');
-        $have = self::criteria($dest->scores);
+        $want = self::criteria($source['scores'] ?? '', true);
+        $have = self::criteria($dest->scores, true);
         $mean = (int) ($source['overall_score'] ?? 0);
         if (count($want) !== count($have)) {
             $this->mismatch('criteria_count', $ids);
@@ -333,6 +335,13 @@ class verifier {
                     $this->mismatch($code, $ids);
                 }
             }
+            // The stored flag must be SOLA's (absent there meaning assessed): a flag turned off would hide a criterion
+            // from the total and the mean.
+            foreach ($want as $position => $criterion) {
+                if ($criterion['assessed'] !== $have[$position]['assessed']) {
+                    $this->mismatch('criteria_assessed', $ids + ['criterion' => $position]);
+                }
+            }
         }
         if (self::hash($source['ai_feedback'] ?? null) !== self::hash($dest->feedback)) {
             $this->mismatch('feedback_mismatch', $ids);
@@ -341,8 +350,7 @@ class verifier {
             $this->mismatch('legacymeanscore', $ids);
         }
         if ((int) $dest->rawmax > 0) {
-            $assessed = array_values(array_filter(self::criteria($dest->scores, true),
-                static fn(array $c): bool => $c['assessed']));
+            $assessed = array_values(array_filter($have, static fn(array $c): bool => $c['assessed']));
             $sum = array_sum(array_column($assessed, 'score'));
             if ($assessed === [] || abs($sum / count($assessed) - $mean) > 1) {
                 $this->mismatch('mean_drift', $ids);
@@ -351,9 +359,10 @@ class verifier {
         if ($dest->scoreprovenance === mapper::PROVENANCE_NONE && ((int) $dest->rawmax !== 0 || $dest->overallpct !== null)) {
             $this->mismatch('unreconstructed_inconsistent', $ids);
         }
-        // The other half: a row with no maximum can't claim its maximum was rebuilt, unless nothing was assessed (SOLA
-        // judged no criterion, so exact with rawmax 0 and no percentage is the honest answer).
-        $anyassessed = array_filter(self::criteria($dest->scores, true), static fn(array $c): bool => $c['assessed']) !== [];
+        // The other half: a row with no maximum can't claim its maximum was rebuilt, unless SOLA judged no criterion
+        // (then exact with rawmax 0 and no percentage is the honest answer). Decided from SOLA's criteria, not the
+        // stored ones, so a flag the import got wrong can't earn the exemption.
+        $anyassessed = array_filter($want, static fn(array $c): bool => $c['assessed']) !== [];
         if ((int) $dest->rawmax === 0 && $anyassessed && $dest->scoreprovenance !== mapper::PROVENANCE_NONE) {
             $this->mismatch('rawmax_zero_not_unreconstructed', $ids);
         }
