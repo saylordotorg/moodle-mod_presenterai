@@ -78,8 +78,11 @@ final class ai_secrets_test extends \advanced_testcase {
      * @return void
      */
     public function test_names(): void {
-        $this->assertSame(['claudeapikey', 'openaiapikey', 'geminiapikey', 'compatibleapikey', 'sttapikey'], secrets::names());
+        $this->assertSame(
+            ['claudeapikey', 'openaiapikey', 'geminiapikey', 'compatibleapikey', 'sttapikey', 's3secret'],
+            secrets::names()
+        );
         $this->expectException(\coding_exception::class);
-        secrets::get('s3secret');
+        secrets::get('s3key');
     }
 }

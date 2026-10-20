@@ -17,7 +17,7 @@
 namespace mod_presenterai\local\ai;
 
 /**
- * Provider keys, encrypted at rest, read in plain text only here.
+ * Provider keys and the S3 secret, encrypted at rest, read in plain text only here.
  *
  * A port of SOLA's secrets class (v7.7.3). Every key setting is an
  * admin_setting_encryptedpassword, which stores \core\encryption output
@@ -45,7 +45,7 @@ class secrets {
      * @return string[]
      */
     public static function names(): array {
-        return ['claudeapikey', 'openaiapikey', 'geminiapikey', 'compatibleapikey', 'sttapikey'];
+        return ['claudeapikey', 'openaiapikey', 'geminiapikey', 'compatibleapikey', 'sttapikey', 's3secret'];
     }
 
     /**

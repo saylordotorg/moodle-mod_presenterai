@@ -94,14 +94,14 @@ if ($ADMIN->fulltree) {
         PARAM_RAW_TRIMMED
     ));
 
-    // Using configpasswordunmask rather than configtext: it masks the stored value in
-    // the form and writes '********' to the config change log
-    // (lib/adminlib.php:2757-2765) instead of the secret itself.
-    $settings->add(new admin_setting_configpasswordunmask(
+    // Encrypted at rest like every other key here (0.5.1). It was a
+    // configpasswordunmask until then, which masks the value in the form and
+    // the change log but stores it as plain text. Read it through
+    // \mod_presenterai\local\ai\secrets::get('s3secret'), never get_config().
+    $settings->add(new admin_setting_encryptedpassword(
         'mod_presenterai/s3secret',
         get_string('s3secret', 'mod_presenterai'),
-        get_string('s3secret_desc', 'mod_presenterai'),
-        ''
+        get_string('s3secret_desc', 'mod_presenterai')
     ));
 
     $settings->add(new admin_setting_configtext(

@@ -2,9 +2,14 @@
 
 An activity module in which a learner records a video or audio presentation in the browser, optionally presents a PDF slide deck while speaking, and receives a transcript, a rubric score and written per criterion feedback.
 
-> **Status: v0.5.0 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 adds the importer for SOLA's Soapbox feature (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
+> **Status: v0.5.1 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's Soapbox feature (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
 
-## What's new in 0.5.0
+## What's new in 0.5.1
+
+- **The S3 secret access key is stored encrypted.** Until now it was kept as plain text in the Moodle config table (the form and the change log masked it, the database didn't). It's encrypted like every AI key. Upgrading encrypts a value that's already stored, once, and leaves one forced in `config.php` alone.
+- **The runbook says what a 403 from the storage check can mean.** A missing object looks the same as a permissions problem when the access key can't list the bucket.
+
+## What was new in 0.5.0
 
 - **An importer for SOLA's Soapbox feature.** Dry run by default, resumable, reversible, verified, and it never writes to SOLA. See [the runbook](docs/MIGRATION-RUNBOOK.md).
 - **A migrated attempt that expired before it was scored reads "Deleted on <date>"** instead of "Not uploaded".
@@ -53,7 +58,7 @@ An activity module in which a learner records a video or audio presentation in t
 Choose per site:
 
 - **Moodle file storage (the default).** Works with no configuration. Files live in your moodledata, are carried by course backup, are removed when the course or the activity is deleted, and are exported and deleted by the standard privacy tooling. Recordings are uploaded in chunks, because a single POST of a seven minute video exceeds `post_max_size` and the default request body limit of most reverse proxies. The plugin measures the largest chunk your site actually accepts and uses that. If you want object storage economics without changing this setting, `tool_objectfs` works underneath the file API and the plugin neither knows nor cares.
-- **An S3 compatible bucket.** Uploads go from the browser straight to the bucket with a presigned URL, so the media never passes through your web servers. You provide bucket, region, key, secret and prefix, plus an endpoint and path style setting for non AWS targets. The bucket must block public access and needs a CORS rule allowing PUT from your Moodle origin. There is a built in self test that checks all of this and reports what it could not check.
+- **An S3 compatible bucket.** Uploads go from the browser straight to the bucket with a presigned URL, so the media never passes through your web servers. You provide bucket, region, key, secret (stored encrypted) and prefix, plus an endpoint and path style setting for non AWS targets. The bucket must block public access and needs a CORS rule allowing PUT from your Moodle origin. There is a built in self test that checks all of this and reports what it could not check.
 
 One honest difference between the two: a presigned URL is a bearer token, so for its lifetime it works for anyone holding it, whatever happens to the learner's enrolment in the meantime. The plugin keeps playback URLs short lived (300 seconds) to bound that. A Moodle file URL is checked on every request, so access ends immediately.
 
