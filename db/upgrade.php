@@ -32,7 +32,7 @@
  * @return bool Always true.
  */
 function xmldb_presenterai_upgrade($oldversion) {
-    global $DB;
+    global $DB, $CFG;
 
     $dbman = $DB->get_manager();
 
@@ -228,6 +228,20 @@ function xmldb_presenterai_upgrade($oldversion) {
         }
 
         upgrade_mod_savepoint(true, 2026100705, 'presenterai');
+    }
+
+    if ($oldversion < 2026102001) {
+        // 0.5.1: the S3 secret was a configpasswordunmask, stored as plain text. Every other key is encrypted at
+        // rest, so encrypt this one too. A value already carrying the encryption prefix is left alone, and so is one
+        // forced in config.php (writing it would copy a secret that was kept out of the database back into it).
+        $forced = isset($CFG->forced_plugin_settings['mod_presenterai'])
+            && array_key_exists('s3secret', $CFG->forced_plugin_settings['mod_presenterai']);
+        $stored = trim((string) get_config('mod_presenterai', 's3secret'));
+        if (!$forced && $stored !== '' && !\mod_presenterai\local\ai\secrets::is_encrypted($stored)) {
+            set_config('s3secret', \core\encryption::encrypt($stored), 'mod_presenterai');
+        }
+
+        upgrade_mod_savepoint(true, 2026102001, 'presenterai');
     }
 
     return true;

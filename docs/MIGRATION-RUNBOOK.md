@@ -245,7 +245,7 @@ Each mismatch is printed with its code and ids only.
 | `rawmax_zero_not_unreconstructed` | A score with assessed criteria and no maximum isn't marked unreconstructed. |
 | `legacymeta` | The session data differs (it must equal Soapbox's minus the visual observation). |
 | `storage_mismatch` | An object is missing or the wrong size (`column` names the key). |
-| `storage_error` | An object couldn't be checked (`status` is the HTTP status). |
+| `storage_error` | An object couldn't be checked (`status` is the HTTP status). A 403 usually means the S3 credentials can't read the prefix, but it also shows for an object that's gone when the access key can't list the bucket (S3 answers 403 for a missing key then). Look for the object in the bucket before you change permissions. |
 
 ### Tier 4: look at it yourself
 
@@ -326,7 +326,10 @@ exactly as written, in its own configured bucket and region. So it has to be con
 region and prefix to find the imported objects at all.
 
 - PresenterAI's S3 credentials must allow GET, HEAD, PUT and DELETE on Soapbox's prefix. Without that, playback
-  fails and tier 3 reports `storage_error` with status 403.
+  fails and tier 3 reports `storage_error` with status 403. The same 403 is what you'll see for an object that has
+  been deleted, if the access key has no `s3:ListBucket` on the bucket: S3 hides a missing key from a caller that
+  can't list. Run the storage self test on the PresenterAI storage check page (it writes, reads and deletes its own
+  test object) to tell the two apart. If it passes, the credentials are fine and the object is missing.
 - Every new PresenterAI upload after the switch lands under Soapbox's prefix too.
 
 The S3 endpoint and path-style setting aren't compared. Check them yourself: they must reach the same bucket

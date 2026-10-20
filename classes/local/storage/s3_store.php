@@ -831,6 +831,10 @@ class s3_store implements store_interface {
         if (array_key_exists($name, $this->overrides)) {
             return trim((string) $this->overrides[$name]);
         }
+        if ($name === 'secret') {
+            // Stored encrypted since 0.5.1: get_config() would return ciphertext.
+            return \mod_presenterai\local\ai\secrets::get('s3secret');
+        }
         return trim((string) get_config('mod_presenterai', 's3' . $name));
     }
 
