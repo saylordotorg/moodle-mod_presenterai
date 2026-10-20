@@ -841,8 +841,8 @@ class s3_store implements store_interface {
     /**
      * A curl client, with filelib loaded.
      *
-     * Moodle's \curl rather than curl_init(), which the plugin directory review
-     * rejects: \curl is what applies the site's SSRF blocklist and proxy. A
+     * Moodle's \curl class rather than PHP's own curl functions, which the plugin
+     * directory review rejects: \curl is what applies the site's SSRF blocklist and proxy. A
      * MinIO endpoint on a private address is blocked by that list until an
      * administrator allows it under Site administration, HTTP security, and
      * that refusal is correct rather than a bug to work around.

@@ -228,7 +228,7 @@ final class score_recording_task_test extends \advanced_testcase {
         require_once($CFG->libdir . '/gradelib.php');
 
         $scores = [];
-        foreach (rubric_manager::DEFAULT_CRITERIA as $criterion) {
+        foreach (rubric_manager::default_criteria() as $criterion) {
             $scores[$criterion['name']] = [3, true];
         }
         route_resolver::set_test_stt(scorer_test::fake_stt([self::TRANSCRIPT]));

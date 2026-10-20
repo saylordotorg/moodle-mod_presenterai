@@ -16,6 +16,8 @@
 
 namespace mod_presenterai\local\vision;
 
+use mod_presenterai\local\prompt_text;
+
 /**
  * The three prompts of the body language pipeline, verbatim from the design.
  *
@@ -43,43 +45,7 @@ final class visual_prompts {
      * @return string
      */
     public static function vision(): string {
-        return <<<'PROMPT'
-You are shown a single image containing still frames sampled at even intervals
-across one learner's recorded presentation, in order from the start of the talk
-to the end. There are six of them and they are six separate moments, not
-continuous video.
-
-Report ONLY what is visible. Do not score, rate or evaluate anything. Do not
-guess at what is not visible. Reporting that you cannot tell is more useful than
-a confident guess.
-
-In "note", write four to six sentences of plain prose covering:
-- what the hands and arms are doing, and whether that changes across the frames;
-- posture and stance, and any repeated movement such as rocking, pacing or
-  fidgeting;
-- where the eyes appear to be directed, for example toward the camera, downward
-  at notes, or off to one side;
-- how the speaker is framed: how much of them is in shot, whether the hands are
-  in view, and whether the face is lit well enough to read.
-
-Say how many of the six frames each observation is based on. Do not write
-"throughout", "for most of the talk" or "consistently": you have six moments and
-you cannot see what happened between them.
-
-Never write about the speaker's appearance, face or body except as it bears on
-the four points above. Never write about ethnicity, race, age, gender, build,
-health, disability, hair, clothing, jewellery or religious dress. Never write
-about the room, the background, or anything in it. Never read or transcribe text
-in the image. If another person is visible, ignore them completely and report
-only on the speaker.
-
-In "unusable_frames", give how many of the frames are too dark, too blurred, too
-distant, or cropped so that the hands or the face cannot be seen.
-
-In "confidence", answer "high" when at least four frames are readable and the
-hands and face are in shot, "medium" when the frames are readable but part of
-the speaker is out of shot, and "low" when three or more frames are unusable.
-PROMPT;
+        return prompt_text::get('prompt:vision');
     }
 
     /**
@@ -88,7 +54,7 @@ PROMPT;
      * @return string
      */
     public static function vision_user(): string {
-        return 'Report what is visible in these frames now.';
+        return prompt_text::get('prompt:vision_user');
     }
 
     /**
@@ -142,31 +108,22 @@ PROMPT;
      * @return string
      */
     public static function scoring_block(string $note, bool $visualscored, string $languagename, array $visualnames = []): string {
-        $evidence = "VISUAL EVIDENCE (a description of still frames sampled from the recording, not continuous video):\n"
+        $evidence = prompt_text::get('prompt:visualevidence') . "\n"
             . \core_text::substr(trim($note), 0, self::MAX_EVIDENCE_CHARS);
 
         $visualnames = array_values(array_filter(array_map('trim', array_map('strval', $visualnames)), 'strlen'));
         if (empty($visualnames)) {
-            $visualnames = visual_pipeline::VISUAL_CRITERION_NAMES;
+            $visualnames = visual_pipeline::visual_criterion_names();
         }
         $quoted = implode(', ', array_map(fn($name) => '"' . $name . '"', $visualnames));
-        $which = count($visualnames) === 1
-            ? 'The visual criterion is ' . $quoted . '.'
-            : 'The visual criteria are ' . $quoted . '.';
+        $which = prompt_text::get(count($visualnames) === 1 ? 'prompt:visualwhich_one' : 'prompt:visualwhich_many', $quoted);
 
         if ($visualscored) {
-            $rule = $which . ' Score the visual criteria from this evidence ONLY. If the evidence does not let you judge a '
-                . 'criterion, set its assessed field to false and its score to 0; never guess. If a behaviour could '
-                . 'not have been shown because of how the speaker is seated, positioned or framed, or because of '
-                . 'anything the speaker cannot change about themselves, set assessed to false. Score 0 with assessed '
-                . 'true only when the behaviour was clearly possible for this speaker in these frames and was absent.';
+            $rule = $which . ' ' . prompt_text::get('prompt:visualrule_scored');
         } else {
-            $rule = $which . ' They are feedback only for this activity and do not affect the learner\'s score. '
-                . 'Still give each a score and an assessed flag, and write feedback the learner can act on.';
+            $rule = $which . ' ' . prompt_text::get('prompt:visualrule_feedbackonly');
         }
-        $rule .= ' Write about body language (hands, arms, posture, stance, movement, gaze, framing and lighting) only '
-            . 'in the visual criteria\'s feedback and in visual_summary, never in the overall comment, the tips or any '
-            . 'other criterion\'s feedback.';
+        $rule .= ' ' . prompt_text::get('prompt:visualrule_bodylanguage');
 
         return $evidence . "\n\n" . $rule . "\n\n" . self::summary($languagename);
     }
@@ -178,37 +135,7 @@ PROMPT;
      * @return string
      */
     public static function summary(string $languagename): string {
-        $prompt = <<<'PROMPT'
-VISUAL SUMMARY. Also produce "visual_summary": two or three sentences, at most
-60 words, written to the learner in the second person, saying what the visual
-evidence above shows about their presentation. This is the only part of the
-visual evidence the learner will ever read, so write it as the plain-language
-version of that evidence, not as a repeat of your criterion comments.
-
-Write only about things the learner can do differently in their next recording:
-what their hands and arms did, their posture and stance, any repeated movement,
-where they were looking, how much of them was in shot, and whether the light let
-their face be read. Tie each observation to its effect on the presentation. For
-example: "your hands stayed below the desk in every frame, so your gestures were
-hard to see".
-
-The evidence comes from six still frames, not from continuous video, so do not
-write "throughout", "for most of the talk" or "consistently".
-
-Never write about the learner's appearance, face, body, build, hair, clothing,
-jewellery, religious dress, age, gender, ethnicity, race, accent, health or
-disability. Never write about the room, the background, or anything in it. Never
-describe anyone else who is visible. Never state or guess how the learner was
-feeling, or what kind of person they are. Never quote the visual evidence text
-directly. Never give a number or a score.
-
-Write it in {LANGUAGE}.
-
-If the visual evidence does not support two sentences of this kind, write one
-and stop. If it supports none, return an empty string.
-PROMPT;
-
-        return str_replace('{LANGUAGE}', $languagename, $prompt);
+        return prompt_text::get('prompt:visualsummary', $languagename);
     }
 
     /**
@@ -217,30 +144,7 @@ PROMPT;
      * @return string
      */
     public static function judge(): string {
-        return <<<'PROMPT'
-You are checking short pieces of feedback before they are shown to the learner
-they are about. Each one should say what a speaker did during a recorded
-presentation. None of them may describe the speaker.
-
-Reject an item if any part of it:
-- names or implies appearance, face, body, build, hair, clothing, jewellery,
-  religious dress, age, gender, ethnicity, race, accent, health or disability;
-- names or implies a mobility aid, assistive device or medical equipment;
-- describes the room, the background, or anything in it;
-- describes any person other than the learner;
-- states or guesses the learner's feelings, confidence, personality or
-  character;
-- says what kind of person the learner is, or compares them with other people;
-- gives advice the learner could not act on by changing what they do in their
-  next recording.
-
-Accept an item that says what the hands, arms, posture, stance, gaze, framing or
-lighting did during the recording and what effect that had, even where the
-effect is a negative one. Negative is not a reason to reject. Personal is.
-
-Answer with JSON only, one verdict per numbered item, in order:
-{"verdicts":[{"n":1,"pass":true,"rule":""},{"n":2,"pass":false,"rule":"<the one bullet it broke>"}]}
-PROMPT;
+        return prompt_text::get('prompt:judge');
     }
 
     /**

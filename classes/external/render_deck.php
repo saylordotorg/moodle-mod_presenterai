@@ -105,7 +105,7 @@ class render_deck extends external_api {
             'available' => new external_value(PARAM_BOOL, 'Whether this site can render slides at all'),
             'pagecount' => new external_value(PARAM_INT, 'Number of pages rendered'),
             'pages' => new external_multiple_structure(
-                new external_value(PARAM_RAW, 'Page image as a data URI'),
+                new external_value(PARAM_NOTAGS, 'Page image as a data URI'),
                 'Ordered page images'
             ),
         ]);

@@ -79,44 +79,21 @@ final class rubric_manager {
      * The rubric used when nothing is stored, ported from SOLA's
      * DEFAULT_SPEECH_CRITERIA (classes/rubric_manager.php:57-63).
      *
-     * The English names and descriptions are data, not lang strings: they're
-     * copied verbatim into score JSON, and a translated name there would make
-     * one score read differently depending on who looked at it.
+     * The names and descriptions are read in English whatever the site language
+     * (prompt_text): they're copied verbatim into score JSON, and a translated
+     * name there would make one score read differently depending on who looked.
      *
-     * @var array[]
+     * @return array[] A list of ['name', 'description', 'max_score', 'visual'].
      */
-    public const DEFAULT_CRITERIA = [
-        [
-            'name' => 'Delivery & Fluency',
-            'description' => 'Pace, clarity, confidence, and smoothness of speaking.',
-            'max_score' => 5,
-            'visual' => false,
-        ],
-        [
-            'name' => 'Structure & Organization',
-            'description' => 'Clear opening, logical flow of ideas, and a strong close.',
-            'max_score' => 5,
-            'visual' => false,
-        ],
-        [
-            'name' => 'Content & Relevance',
-            'description' => 'Ideas stay on topic and are well supported and developed.',
-            'max_score' => 5,
-            'visual' => false,
-        ],
-        [
-            'name' => 'Language & Vocabulary',
-            'description' => 'Word choice, grammar, and varied, precise language.',
-            'max_score' => 5,
-            'visual' => false,
-        ],
-        [
-            'name' => 'Time Management',
-            'description' => 'Fits the target length without rushing or running long.',
-            'max_score' => 5,
-            'visual' => false,
-        ],
-    ];
+    public static function default_criteria(): array {
+        return [
+            self::speech(prompt_text::get('rubric:default_delivery_name'), prompt_text::get('rubric:default_delivery_desc')),
+            self::speech(prompt_text::get('rubric:default_structure_name'), prompt_text::get('rubric:default_structure_desc')),
+            self::speech(prompt_text::get('rubric:default_content_name'), prompt_text::get('rubric:default_content_desc')),
+            self::speech(prompt_text::get('rubric:default_language_name'), prompt_text::get('rubric:default_language_desc')),
+            self::speech(prompt_text::get('rubric:default_time_name'), prompt_text::get('rubric:default_time_desc')),
+        ];
+    }
 
     /**
      * The two visual criteria, ported from SOLA's VISUAL_CRITERIA
@@ -128,122 +105,63 @@ final class rubric_manager {
      * textured hair, headwear and religious dress. "Playing with an object"
      * stays, because an object isn't a person.
      *
-     * @var array[]
+     * @return array[] A list of ['name', 'description', 'max_score', 'visual'].
      */
-    public const VISUAL_CRITERIA = [
-        [
-            'name' => 'Body Language & Gestures',
-            'description' => 'Gestures, posture and movement that SUPPORT what you are saying: '
-                . 'open hands that mark structure or add emphasis, a steady stance, and weight '
-                . 'that stays settled. No repeated habits that DISTRACT from the presentation '
-                . '(fidgeting, rocking or pacing, hands in pockets or folded, or playing with an object).',
-            'max_score' => 5,
-            'visual' => true,
-        ],
-        [
-            'name' => 'Eye Contact & Camera Presence',
-            'description' => 'Looking at the camera lens as if it were your audience, rather than '
-                . 'reading from notes or watching a second screen. Steady head-and-shoulders '
-                . 'framing that keeps your hands in view, a face lit well enough to read, and '
-                . 'facial expression that matches what you are saying.',
-            'max_score' => 5,
-            'visual' => true,
-        ],
-    ];
+    public static function visual_criteria(): array {
+        return [
+            [
+                'name' => prompt_text::get('rubric:visual_body_name'),
+                'description' => prompt_text::get('rubric:visual_body_desc'),
+                'max_score' => self::DEFAULT_MAX_SCORE,
+                'visual' => true,
+            ],
+            [
+                'name' => prompt_text::get('rubric:visual_eye_name'),
+                'description' => prompt_text::get('rubric:visual_eye_desc'),
+                'max_score' => self::DEFAULT_MAX_SCORE,
+                'visual' => true,
+            ],
+        ];
+    }
 
     /**
      * The speaking level presets, ported from SOLA's speech_presets()
      * (classes/rubric_manager.php:638-688).
      *
      * The hint is English prompt data that steers the scoring model's register,
-     * not something a person reads, so it isn't a lang string. The label is,
-     * and lives in lang/en as level_<key>.
+     * not something a person reads, so it's read in English (prompt_text). The
+     * label is read in the user's language and lives in lang/en as level_<key>.
      *
      * @return array level => ['hint' => string, 'criteria' => array[]]
      */
     public static function speech_presets(): array {
+        $criteria = static function (string $level, array $keys): array {
+            $list = [];
+            foreach ($keys as $key) {
+                $list[] = self::speech(
+                    prompt_text::get("rubric:{$level}_{$key}_name"),
+                    prompt_text::get("rubric:{$level}_{$key}_desc")
+                );
+            }
+            return $list;
+        };
+
         return [
             self::LEVEL_GENERAL => [
-                'hint' => 'The learner is practising a general spoken presentation; focus your feedback on '
-                    . 'presentation and public-speaking skills.',
-                'criteria' => self::DEFAULT_CRITERIA,
+                'hint' => prompt_text::get('rubric:hint_general'),
+                'criteria' => self::default_criteria(),
             ],
             self::LEVEL_ESL_BEGINNER => [
-                'hint' => 'The learner is a beginner-level English-as-a-second-language student. Prioritise '
-                    . 'intelligibility and communication over native-like accuracy. Use simple, clear language in '
-                    . 'your feedback, warmly praise successful communication, and give one small, concrete '
-                    . 'improvement per criterion. Do not penalise a noticeable accent.',
-                'criteria' => [
-                    self::speech(
-                        'Pronunciation & Intelligibility',
-                        'Sounds, word stress, and being understood by a patient listener.'
-                    ),
-                    self::speech(
-                        'Fluency & Pace',
-                        'Speaking in connected phrases without long pauses or heavy hesitation.'
-                    ),
-                    self::speech('Basic Grammar', 'Simple tenses, subject-verb agreement, and word order.'),
-                    self::speech(
-                        'Core Vocabulary',
-                        'Using common, topic-relevant words and getting meaning across despite gaps.'
-                    ),
-                    self::speech(
-                        'Task Completion',
-                        'Staying on topic and saying enough on the prompt to be understood.'
-                    ),
-                ],
+                'hint' => prompt_text::get('rubric:hint_beginner'),
+                'criteria' => $criteria('beginner', ['pron', 'fluency', 'grammar', 'vocab', 'task']),
             ],
             self::LEVEL_ESL_INTERMEDIATE => [
-                'hint' => 'The learner is an intermediate-level English-as-a-second-language student. Balance '
-                    . 'encouragement with targeted correction: acknowledge what works, then name a couple of '
-                    . 'concrete, level-appropriate improvements (a grammar pattern, a clearer transition, a more '
-                    . 'precise word). Stretch them slightly beyond their comfort without overwhelming them.',
-                'criteria' => [
-                    self::speech(
-                        'Pronunciation & Clarity',
-                        'Mostly clear sounds and stress; occasional slips that rarely block understanding.'
-                    ),
-                    self::speech(
-                        'Fluency & Pace',
-                        'Reasonably smooth with some hesitation; keeps going through most ideas.'
-                    ),
-                    self::speech(
-                        'Grammar',
-                        'Common tenses and structures handled with some errors in more complex forms.'
-                    ),
-                    self::speech(
-                        'Vocabulary',
-                        'Adequate range for the topic, with some reach for less common or precise words.'
-                    ),
-                    self::speech(
-                        'Organization & Coherence',
-                        'Clear main idea, mostly logical ordering, and basic connectors.'
-                    ),
-                ],
+                'hint' => prompt_text::get('rubric:hint_intermediate'),
+                'criteria' => $criteria('intermediate', ['pron', 'fluency', 'grammar', 'vocab', 'org']),
             ],
             self::LEVEL_ESL_ADVANCED => [
-                'hint' => 'The learner is an advanced English-as-a-second-language student. Hold them to a high '
-                    . 'standard of fluency, range, and accuracy while staying encouraging. Note subtle errors in '
-                    . 'idiom, register, and complex grammar, and push for more natural, native-like phrasing.',
-                'criteria' => [
-                    self::speech(
-                        'Fluency & Naturalness',
-                        'Smooth pace, natural rhythm, and self-correction that does not disrupt flow.'
-                    ),
-                    self::speech(
-                        'Pronunciation & Stress',
-                        'Clear sounds plus sentence stress and intonation that carry meaning.'
-                    ),
-                    self::speech('Grammatical Range & Accuracy', 'Varied, complex structures used accurately.'),
-                    self::speech(
-                        'Vocabulary & Idiom',
-                        'Precise, varied, idiomatic word choice and appropriate register.'
-                    ),
-                    self::speech(
-                        'Coherence & Development',
-                        'Well-organized ideas with connectors and full development.'
-                    ),
-                ],
+                'hint' => prompt_text::get('rubric:hint_advanced'),
+                'criteria' => $criteria('advanced', ['fluency', 'pron', 'grammar', 'vocab', 'coherence']),
             ],
         ];
     }
@@ -273,13 +191,13 @@ final class rubric_manager {
      * A preset's criteria, as the rubric editor starts a new rubric from them.
      *
      * @param string $level One of LEVELS; anything else reads as general.
-     * @param bool $withvisual Whether to append VISUAL_CRITERIA, which the editor does for a video rubric.
+     * @param bool $withvisual Whether to append visual_criteria(), which the editor does for a video rubric.
      * @return array[] A list of ['name', 'description', 'max_score', 'visual'].
      */
     public static function preset_criteria(string $level, bool $withvisual): array {
         $criteria = self::speech_presets()[self::clean_level($level)]['criteria'];
         if ($withvisual) {
-            $criteria = array_merge($criteria, self::VISUAL_CRITERIA);
+            $criteria = array_merge($criteria, self::visual_criteria());
         }
         return self::normalise_criteria($criteria);
     }

@@ -389,11 +389,12 @@ class provider implements
 
         // A score a grader wrote is the learner's record, so it stays, without
         // the grader's identity.
-        $DB->execute(
-            "UPDATE {presenterai_score}
-                SET graderid = 0
-              WHERE graderid = :userid
-                AND recordingid IN (SELECT id FROM {presenterai_recording} WHERE presenteraiid = :instanceid)",
+        $DB->set_field_select(
+            'presenterai_score',
+            'graderid',
+            0,
+            'graderid = :userid
+                AND recordingid IN (SELECT id FROM {presenterai_recording} WHERE presenteraiid = :instanceid)',
             ['userid' => $userid, 'instanceid' => $instanceid]
         );
     }

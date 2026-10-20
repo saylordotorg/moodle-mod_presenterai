@@ -193,7 +193,9 @@ class stt_client implements stt_interface {
             $error = $data['error'];
             $text = is_array($error) ? (string) ($error['message'] ?? 'error') : (string) $error;
         } else {
-            $text = trim($raw) !== '' ? 'Unrecognised response: ' . trim($raw) : 'Empty response';
+            $text = trim($raw) !== ''
+                ? \mod_presenterai\local\prompt_text::get('error:ai_unrecognisedresponse', trim($raw))
+                : \mod_presenterai\local\prompt_text::get('error:ai_emptyresponse');
         }
         if ($this->apikey !== '') {
             $text = str_replace($this->apikey, '[key]', $text);

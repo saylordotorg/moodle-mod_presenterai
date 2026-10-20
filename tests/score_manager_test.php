@@ -420,7 +420,7 @@ final class score_manager_test extends \advanced_testcase {
      */
     private static function ai_criteria(): array {
         $out = [];
-        foreach (\mod_presenterai\local\rubric_manager::DEFAULT_CRITERIA as $criterion) {
+        foreach (\mod_presenterai\local\rubric_manager::default_criteria() as $criterion) {
             $out[] = ['name' => $criterion['name'], 'score' => 4, 'max_score' => 5, 'feedback' => 'Good.',
                 'assessed' => true, 'visual' => false, 'counts' => true];
         }

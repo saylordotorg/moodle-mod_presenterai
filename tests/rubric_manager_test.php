@@ -244,7 +244,7 @@ final class rubric_manager_test extends \advanced_testcase {
             }
             $this->assertNotEmpty(get_string('level_' . $level, 'mod_presenterai'));
         }
-        $this->assertSame(rubric_manager::DEFAULT_CRITERIA, $presets['general']['criteria']);
+        $this->assertSame(rubric_manager::default_criteria(), $presets['general']['criteria']);
         $this->assertStringContainsString('beginner-level', rubric_manager::preset_hint('esl_beginner'));
         $this->assertSame(rubric_manager::preset_hint('general'), rubric_manager::preset_hint('nonsense'));
         $this->assertSame('general', rubric_manager::clean_level(null));
@@ -263,12 +263,12 @@ final class rubric_manager_test extends \advanced_testcase {
      * @return void
      */
     public function test_visual_criteria_text(): void {
-        $this->assertCount(2, rubric_manager::VISUAL_CRITERIA);
-        $body = rubric_manager::VISUAL_CRITERIA[0]['description'];
+        $this->assertCount(2, rubric_manager::visual_criteria());
+        $body = rubric_manager::visual_criteria()[0]['description'];
         $this->assertStringNotContainsString('hair', $body);
         $this->assertStringNotContainsString('clothing', $body);
         $this->assertStringEndsWith('hands in pockets or folded, or playing with an object).', $body);
-        foreach (rubric_manager::VISUAL_CRITERIA as $criterion) {
+        foreach (rubric_manager::visual_criteria() as $criterion) {
             $this->assertTrue($criterion['visual']);
             $this->assertSame(5, $criterion['max_score']);
         }

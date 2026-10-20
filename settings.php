@@ -64,7 +64,7 @@ if ($ADMIN->fulltree) {
     // same values as s3_store::DEFAULT_REGION and s3_store::DEFAULT_PREFIX, so
     // a blank field and a saved default resolve to the same bucket path.
 
-    // PARAM_RAW_TRIMMED on the S3 text fields rather than PARAM_RAW, so a key
+    // The trimmed raw type on the S3 text fields, so a key
     // pasted with a trailing newline is refused on save:
     // admin_setting_configtext::validate() compares the submitted value against
     // clean_param() and reports a mismatch (lib/adminlib.php:2503-2523).

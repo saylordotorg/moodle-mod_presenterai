@@ -2,9 +2,20 @@
 
 An activity module in which a learner records a video or audio presentation in the browser, optionally presents a PDF slide deck while speaking, and receives a transcript, a rubric score and written per criterion feedback.
 
-> **Status: v0.5.1 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's Soapbox feature (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
+> **Status: v0.5.2 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's Soapbox feature (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
 
-## What's new in 0.5.1
+## What's new in 0.5.2
+
+The Moodle plugins directory review found six things ([issues 12 to 17](https://github.com/saylordotorg/moodle-mod_presenterai/issues)). All six are fixed. Nothing a learner or teacher sees changes, and no table does.
+
+- **A `LICENSE` file in the plugin root** (GPL v3), so the package states its terms.
+- **Explicit capability checks.** The download page, file serving and the playback web service now ask for `mod/presenterai:view` right after login, before the per recording checks that decide who may watch or take a copy.
+- **No unchecked parameter types.** Every `PARAM_RAW` is a specific type now: URLs are `PARAM_URL`, JSON and slide images are plain text types, the topic instructions editor is cleaned HTML, and the rubric page's apply preset button is `PARAM_TEXT`.
+- **No `$DB->execute()`.** The five raw `UPDATE`s (spend row anonymising, the grader's identity on erase, and the expiry of raw body language notes) use `set_field_select()`, in batches and transactions.
+- **Model prompts, rubric defaults and error text are language strings.** They're read in English whatever the site language, because a prompt or a criterion name copied into a score has to be the same for everyone, and a snapshot test pins every prompt byte for byte.
+- **No PHP curl function names anywhere,** so nothing can be mistaken for a call that bypasses Moodle's proxy and SSRF rules. The plugin always used Moodle's `\curl` class; a comment explaining that mentioned the function.
+
+## What was new in 0.5.1
 
 - **The S3 secret access key is stored encrypted.** Until now it was kept as plain text in the Moodle config table (the form and the change log masked it, the database didn't). It's encrypted like every AI key. Upgrading encrypts a value that's already stored, once, and leaves one forced in `config.php` alone.
 - **The runbook says what a 403 from the storage check can mean.** A missing object looks the same as a permissions problem when the access key can't list the bucket.

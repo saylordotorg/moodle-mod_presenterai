@@ -68,6 +68,7 @@ class get_playback extends external_api {
 
         [$rec, , , , $context] = recording_manager::load((int) $params['recordingid']);
         self::validate_context($context);
+        require_capability('mod/presenterai:view', $context);
         if (!access::may_view($rec, $context, (int) $USER->id)) {
             throw new \required_capability_exception($context, 'mod/presenterai:viewallattempts', 'nopermissions', '');
         }
@@ -131,13 +132,13 @@ class get_playback extends external_api {
             'recordingid' => new external_value(PARAM_INT, 'Recording id'),
             'mode' => new external_value(PARAM_ALPHA, 'video or audio'),
             'mediaavailable' => new external_value(PARAM_BOOL, 'Whether the media can be played'),
-            'mediaurl' => new external_value(PARAM_RAW, 'URL of the media, empty when it is gone'),
+            'mediaurl' => new external_value(PARAM_URL, 'URL of the media, empty when it is gone'),
             'ttl' => new external_value(PARAM_INT, 'Seconds the URL stays valid, 0 when it does not expire'),
             'pages' => new external_multiple_structure(
-                new external_value(PARAM_RAW, 'Slide page image as a data URI'),
+                new external_value(PARAM_NOTAGS, 'Slide page image as a data URI'),
                 'Ordered slide page images'
             ),
-            'timeline' => new external_value(PARAM_RAW, 'JSON array of {t, i} slide-advance events'),
+            'timeline' => new external_value(PARAM_TEXT, 'JSON array of {t, i} slide-advance events'),
             'mediadeletedat' => new external_value(PARAM_INT, 'When the media was deleted, 0 if it was not'),
             'mediagonereason' => new external_value(PARAM_ALPHANUMEXT, 'Why the media is gone, empty if it is not'),
         ]);

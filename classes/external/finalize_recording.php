@@ -53,7 +53,7 @@ class finalize_recording extends external_api {
             'attempttoken' => new external_value(PARAM_ALPHANUM, 'The token begin_attempt returned with this recording id'),
             'topicid' => new external_value(PARAM_INT, 'Chosen topic id, 0 for none', VALUE_DEFAULT, 0),
             'durationseconds' => new external_value(PARAM_INT, 'Recorded length in seconds', VALUE_DEFAULT, 0),
-            'slidetimeline' => new external_value(PARAM_RAW, 'JSON slide-advance timeline', VALUE_DEFAULT, ''),
+            'slidetimeline' => new external_value(PARAM_TEXT, 'JSON slide-advance timeline', VALUE_DEFAULT, ''),
             'visualoptout' => new external_value(
                 PARAM_INT,
                 '1 when the learner opted this attempt out of body language feedback',

@@ -296,9 +296,9 @@ class openai_client implements client_interface {
                 ? trim((string) ($error['type'] ?? $error['code'] ?? 'error') . ': ' . (string) ($error['message'] ?? ''))
                 : 'error: ' . (string) $error;
         } else if (trim($raw) !== '') {
-            $text = 'Unrecognised response: ' . trim($raw);
+            $text = \mod_presenterai\local\prompt_text::get('error:ai_unrecognisedresponse', trim($raw));
         } else {
-            $text = 'Empty response';
+            $text = \mod_presenterai\local\prompt_text::get('error:ai_emptyresponse');
         }
         if ($this->apikey !== '') {
             $text = str_replace($this->apikey, '[key]', $text);

@@ -201,7 +201,7 @@ class mod_presenterai_generator extends testing_module_generator {
         $defaults = [
             'type' => 'speech',
             'title' => 'Rubric',
-            'criteria' => json_encode(\mod_presenterai\local\rubric_manager::DEFAULT_CRITERIA),
+            'criteria' => json_encode(\mod_presenterai\local\rubric_manager::default_criteria()),
             'active' => 1,
             'timecreated' => $now,
             'timemodified' => $now,
