@@ -126,7 +126,7 @@ if ($action === 'edit') {
     if ($form->is_cancelled()) {
         redirect($baseurl);
     }
-    if ($form->no_submit_button_pressed() && optional_param('applypreset', '', PARAM_RAW) !== '') {
+    if ($form->no_submit_button_pressed() && optional_param('applypreset', '', PARAM_TEXT) !== '') {
         require_sesskey();
         // Reload as a GET, so the preset's rows aren't overridden by the empty ones just posted.
         redirect(new moodle_url($editurl, [

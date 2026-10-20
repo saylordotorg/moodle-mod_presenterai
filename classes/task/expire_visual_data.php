@@ -64,12 +64,11 @@ class expire_visual_data extends \core\task\scheduled_task {
         $params = ['cutoff' => $cutoff];
         $notes = $DB->count_records_select('presenterai_recording', $select, $params);
         if ($notes > 0) {
-            $DB->execute(
-                "UPDATE {presenterai_recording}
-                    SET visualevidence = NULL, visualevidenceat = 0
-                  WHERE {$select}",
-                $params
-            );
+            // Two statements, text first: the condition reads the timestamp, which only the second one clears.
+            $transaction = $DB->start_delegated_transaction();
+            $DB->set_field_select('presenterai_recording', 'visualevidence', null, $select, $params);
+            $DB->set_field_select('presenterai_recording', 'visualevidenceat', 0, $select, $params);
+            $transaction->allow_commit();
         }
         mtrace('mod_presenterai: expired ' . $notes . ' raw body language note(s).');
 

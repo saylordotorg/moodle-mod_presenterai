@@ -452,7 +452,7 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $options = [
             'topicid' => ['type' => PARAM_INT],
             'topictitle' => ['type' => PARAM_TEXT, 'helpbutton' => ['topictitle', 'mod_presenterai']],
-            'topicinstructions' => ['type' => PARAM_RAW],
+            'topicinstructions' => ['type' => PARAM_CLEANHTML],
             'topicfile' => ['helpbutton' => ['topicfile', 'mod_presenterai']],
         ];
 

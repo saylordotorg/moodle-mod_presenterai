@@ -106,7 +106,7 @@ class start_upload extends external_api {
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'method' => new external_value(PARAM_ALPHA, 'HTTP method: PUT for S3, POST for chunked upload'),
-            'url' => new external_value(PARAM_RAW, 'Where to send the bytes'),
+            'url' => new external_value(PARAM_URL, 'Where to send the bytes'),
             'uploadid' => new external_value(PARAM_ALPHANUM, 'Chunked upload id, empty on S3'),
             'chunkbytes' => new external_value(PARAM_INT, 'Chunk size to start with, 0 on S3'),
             'expires' => new external_value(PARAM_INT, 'Seconds the URL stays valid, 0 when it does not expire'),

@@ -91,8 +91,14 @@ final class visual_pipeline {
     /** @var int Default days the raw note is kept (design 7.1). */
     public const DEFAULT_VISUAL_DATA_DAYS = 30;
 
-    /** @var string[] The seed visual criteria, recognised by name when a criterion has no visual flag. */
-    public const VISUAL_CRITERION_NAMES = ['Body Language & Gestures', 'Eye Contact & Camera Presence'];
+    /**
+     * The seed visual criteria's names, recognised by name when a criterion has no visual flag.
+     *
+     * @return string[]
+     */
+    public static function visual_criterion_names(): array {
+        return array_column(\mod_presenterai\local\rubric_manager::visual_criteria(), 'name');
+    }
 
     /**
      * Whether there is usable visual evidence for this attempt, and what it says.
@@ -671,7 +677,7 @@ final class visual_pipeline {
             return !empty($criterion['visual']);
         }
         $name = summary_gate::normalise_name((string) ($criterion['name'] ?? ''));
-        foreach (self::VISUAL_CRITERION_NAMES as $visualname) {
+        foreach (self::visual_criterion_names() as $visualname) {
             if ($name !== '' && $name === summary_gate::normalise_name($visualname)) {
                 return true;
             }

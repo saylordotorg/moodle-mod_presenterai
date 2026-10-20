@@ -164,12 +164,7 @@ final class slide_context {
      */
     public static function vision_prompt(string $ptype): string {
         $ptype = trim($ptype) !== '' ? trim($ptype) : 'informative';
-        return "You are a supportive presentation-design coach. You are shown the slide images from a "
-            . "learner's {$ptype} presentation (a bounded sample if the deck is long). Comment ONLY on the "
-            . "visual design of the slides: layout, visual hierarchy, text density, readability, consistency, "
-            . "and use of visuals. Do not judge the spoken delivery or transcribe the text. Give two or three "
-            . "sentences of encouraging, concrete feedback naming one clear strength and the single "
-            . "highest-leverage visual improvement. Plain prose, no headings, no lists.";
+        return prompt_text::get('prompt:slidevision', $ptype);
     }
 
     /**
@@ -210,7 +205,7 @@ final class slide_context {
         try {
             $note = $client->generate_text(
                 self::vision_prompt((string) ($instance->ptype ?? '')),
-                'Give the slide visual-design note now.',
+                prompt_text::get('prompt:slidevision_user'),
                 [
                     'images' => $images,
                     'max_tokens' => 300,

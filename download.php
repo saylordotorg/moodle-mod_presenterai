@@ -43,6 +43,9 @@ $id = required_param('id', PARAM_INT);
 [$rec, $instance, $course, $cm, $context] = recording_manager::load($id);
 
 require_login($course, false, $cm);
+// Everything below starts from the right to see this activity at all. The checks after it narrow that
+// to this one recording, for this one person.
+require_capability('mod/presenterai:view', $context);
 
 if ((string) $rec->status === recording_manager::STATUS_UPLOADING) {
     throw new moodle_exception('error:recordingnotfound', 'mod_presenterai');

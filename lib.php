@@ -255,6 +255,7 @@ function mod_presenterai_pluginfile($course, $cm, $context, $filearea, array $ar
     }
 
     require_login($course, false, $cm);
+    require_capability('mod/presenterai:view', $context);
 
     $itemid = (int) array_shift($args);
     $filename = array_pop($args);

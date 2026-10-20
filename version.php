@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'mod_presenterai';
-$plugin->version   = 2026102001;
-$plugin->release   = '0.5.1';
+$plugin->version   = 2026102002;
+$plugin->release   = '0.5.2';
 $plugin->maturity  = MATURITY_BETA;
 
 // Moodle 4.5. Both Saylor production sites run 4.5.13+, verified 2026-09-20, so

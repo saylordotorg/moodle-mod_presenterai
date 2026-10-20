@@ -63,7 +63,7 @@ final class s3_object_checker implements object_checker {
             return false;
         }
         if ($status !== 200) {
-            throw new \RuntimeException('Storage check failed with HTTP status ' . $status, $status);
+            throw new \RuntimeException(\mod_presenterai\local\prompt_text::get('error:storagecheckstatus', $status), $status);
         }
         $reported = $head['bytes'] ?? null;
 

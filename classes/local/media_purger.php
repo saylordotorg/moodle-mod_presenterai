@@ -125,7 +125,7 @@ final class media_purger {
         if ($aiusagemode === self::AIUSAGE_DELETE) {
             $DB->delete_records_select('presenterai_aiusage', "recordingid {$insql}", $params);
         } else {
-            $DB->execute("UPDATE {presenterai_aiusage} SET userid = 0, recordingid = 0 WHERE recordingid {$insql}", $params);
+            self::anonymise_aiusage("recordingid {$insql}", $params);
         }
 
         // Step f: and last, the rows.
@@ -149,10 +149,7 @@ final class media_purger {
         if ($aiusagemode === self::AIUSAGE_DELETE) {
             $DB->delete_records('presenterai_aiusage', ['presenteraiid' => $presenteraiid]);
         } else {
-            $DB->execute(
-                'UPDATE {presenterai_aiusage} SET userid = 0, recordingid = 0 WHERE presenteraiid = :presenteraiid',
-                ['presenteraiid' => $presenteraiid]
-            );
+            self::anonymise_aiusage('presenteraiid = :presenteraiid', ['presenteraiid' => $presenteraiid]);
         }
     }
 
@@ -178,11 +175,31 @@ final class media_purger {
         if ($aiusagemode === self::AIUSAGE_DELETE) {
             $DB->delete_records('presenterai_aiusage', $params);
         } else {
-            $DB->execute(
-                'UPDATE {presenterai_aiusage} SET userid = 0, recordingid = 0
-                  WHERE presenteraiid = :presenteraiid AND userid = :userid',
-                $params
-            );
+            self::anonymise_aiusage('presenteraiid = :presenteraiid AND userid = :userid', $params);
+        }
+    }
+
+    /**
+     * Detach spend rows from the learner and the recording, keeping what they cost.
+     *
+     * The rows are found first and changed by id, in batches and one transaction per batch, because the
+     * two columns are set by two statements and the condition that found a row (a user id, a recording id)
+     * stops matching once its own column is zero.
+     *
+     * @param string $select SQL selecting presenterai_aiusage rows.
+     * @param array $params Its named parameters.
+     * @return void
+     */
+    private static function anonymise_aiusage(string $select, array $params): void {
+        global $DB;
+
+        $ids = $DB->get_fieldset_select('presenterai_aiusage', 'id', $select, $params);
+        foreach (array_chunk($ids, 500) as $chunk) {
+            [$insql, $inparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'usageid');
+            $transaction = $DB->start_delegated_transaction();
+            $DB->set_field_select('presenterai_aiusage', 'userid', 0, "id {$insql}", $inparams);
+            $DB->set_field_select('presenterai_aiusage', 'recordingid', 0, "id {$insql}", $inparams);
+            $transaction->allow_commit();
         }
     }
 

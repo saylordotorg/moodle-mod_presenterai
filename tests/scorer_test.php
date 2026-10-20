@@ -260,7 +260,7 @@ final class scorer_test extends \advanced_testcase {
      */
     private static function default_answer(): string {
         $scores = [];
-        foreach (rubric_manager::DEFAULT_CRITERIA as $criterion) {
+        foreach (rubric_manager::default_criteria() as $criterion) {
             $scores[$criterion['name']] = [4, true];
         }
         return self::answer($scores);
@@ -441,7 +441,7 @@ final class scorer_test extends \advanced_testcase {
         global $DB;
 
         $scores = [];
-        foreach (rubric_manager::DEFAULT_CRITERIA as $criterion) {
+        foreach (rubric_manager::default_criteria() as $criterion) {
             $scores[$criterion['name']] = [5, true];
         }
         $scores['Time Management'] = [0, false];
@@ -472,10 +472,10 @@ final class scorer_test extends \advanced_testcase {
         global $DB;
 
         $scores = [];
-        foreach (rubric_manager::DEFAULT_CRITERIA as $criterion) {
+        foreach (rubric_manager::default_criteria() as $criterion) {
             $scores[$criterion['name']] = [0, false];
         }
-        $first = rubric_manager::DEFAULT_CRITERIA[0]['name'];
+        $first = rubric_manager::default_criteria()[0]['name'];
         $scores[$first] = [5, true];
         route_resolver::set_test_stt(self::fake_stt([]));
         route_resolver::set_test_client(route_resolver::PURPOSE_SCORE, self::fake_client([self::answer($scores)]));
@@ -899,7 +899,7 @@ final class scorer_test extends \advanced_testcase {
         global $DB;
 
         $scores = [];
-        foreach (rubric_manager::DEFAULT_CRITERIA as $criterion) {
+        foreach (rubric_manager::default_criteria() as $criterion) {
             $scores[$criterion['name']] = [2, true];
         }
         route_resolver::set_test_stt(self::fake_stt([]));

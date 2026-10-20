@@ -386,9 +386,9 @@ class claude_client implements client_interface {
         if (is_array($data) && isset($data['error']) && is_array($data['error'])) {
             $text = trim((string) ($data['error']['type'] ?? 'error') . ': ' . (string) ($data['error']['message'] ?? ''));
         } else if (trim($raw) !== '') {
-            $text = 'Unrecognised response: ' . trim($raw);
+            $text = \mod_presenterai\local\prompt_text::get('error:ai_unrecognisedresponse', trim($raw));
         } else {
-            $text = 'Empty response';
+            $text = \mod_presenterai\local\prompt_text::get('error:ai_emptyresponse');
         }
         if ($this->apikey !== '') {
             $text = str_replace($this->apikey, '[key]', $text);
