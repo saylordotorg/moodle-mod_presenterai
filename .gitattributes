@@ -1,0 +1,4 @@
+# Developer-only files stay out of the release ZIP (git archive skips whatever is marked export-ignore).
+/.github export-ignore
+/.gitattributes export-ignore
+/docs/superpowers export-ignore
