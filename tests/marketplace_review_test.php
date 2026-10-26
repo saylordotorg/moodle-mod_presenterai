@@ -20,7 +20,7 @@ use mod_presenterai\external\get_playback;
 use mod_presenterai\local\media_purger;
 
 /**
- * What the plugin directory review (Volodymyr's issues 12 to 17) found, pinned so it stays fixed.
+ * What the plugin directory review (Volodymyr's issues 12 to 17 and 20) found, pinned so it stays fixed.
  *
  * The static checks read the plugin's own files, so a new offender fails here before a reviewer finds it.
  *
@@ -72,6 +72,26 @@ final class marketplace_review_test extends \advanced_testcase {
         $this->assertStringContainsString('GNU GENERAL PUBLIC LICENSE', $text);
         $this->assertStringContainsString('Version 3, 29 June 2007', $text);
         $this->assertGreaterThan(30000, strlen($text), 'the full licence, not a stub');
+    }
+
+    /**
+     * Issue 20: the release ZIP leaves out the assistant planning files and the Claude workflows.
+     *
+     * A release ZIP is built with git archive, which skips whatever .gitattributes marks export-ignore. The file
+     * is not in the ZIP itself, so a site installed from one has nothing to check and the test skips.
+     *
+     * @return void
+     */
+    public function test_the_release_zip_leaves_out_the_assistant_files(): void {
+        global $CFG;
+        $path = $CFG->dirroot . '/mod/presenterai/.gitattributes';
+        if (!file_exists($path)) {
+            $this->markTestSkipped('Installed without .gitattributes, as from a release ZIP.');
+        }
+        $rules = (string) file_get_contents($path);
+        foreach (['/.github', '/docs/superpowers'] as $excluded) {
+            $this->assertMatchesRegularExpression('~^' . preg_quote($excluded, '~') . '\s+export-ignore\s*$~m', $rules, $excluded);
+        }
     }
 
     /**
