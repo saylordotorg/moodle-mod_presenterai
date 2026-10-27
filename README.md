@@ -2,9 +2,16 @@
 
 An activity module in which a learner records a video or audio presentation in the browser, optionally presents a PDF slide deck while speaking, and receives a transcript, a rubric score and written per criterion feedback.
 
-> **Status: v0.5.2 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's Soapbox feature (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
+> **Status: v0.5.3 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's Soapbox feature (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
 
-## What's new in 0.5.2
+## What's new in 0.5.3
+
+The Moodle plugins directory reviewer had two low priority follow-ups. Both are packaging, so nothing the plugin does changes: no code, no table, no setting.
+
+- **The release ZIP leaves out developer-only files.** The CI and Claude workflows (`.github/`) and the importer's planning notes (`docs/superpowers/`) stay in the repository but are no longer in the package. `.gitattributes` marks them `export-ignore`, and a test pins it.
+- **The design docs no longer cite a developer's local paths.** Moodle core files are cited relative to the checkout root.
+
+## What was new in 0.5.2
 
 The Moodle plugins directory review found six things ([issues 12 to 17](https://github.com/saylordotorg/moodle-mod_presenterai/issues)). All six are fixed. Nothing a learner or teacher sees changes, and no table does.
 
