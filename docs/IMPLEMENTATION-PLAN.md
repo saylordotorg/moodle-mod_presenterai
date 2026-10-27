@@ -1,7 +1,7 @@
 # PresenterAI (`mod_presenterai`) implementation plan
 
 **Status:** founding plan, nothing built yet. Repository `https://github.com/saylordotorg/moodle-mod_presenterai`, empty at the time of writing.
-**Written:** 20 September 2026, against SOLA `local_ai_course_assistant` v7.5.2 (`version.php:28,32`: `$plugin->version = 2026091900`, `$plugin->release = '7.5.2'`) and the Moodle 4.5 checkout at `/Users/tom.caswell/Sites/moodle`.
+**Written:** 20 September 2026, against SOLA `local_ai_course_assistant` v7.5.2 (`version.php:28,32`: `$plugin->version = 2026091900`, `$plugin->release = '7.5.2'`) and a Moodle 4.5 checkout (Moodle core files are cited relative to its root).
 **Supersedes:** `moodle-mod_soapbox/docs/IMPLEMENTATION-PLAN.md`, which was written for a plugin called `mod_soapbox` against SOLA 7.5.0, before the rename and before the two product requirements in section 1.3.
 
 ## How to read this document
@@ -524,7 +524,7 @@ Saylor stays on `s3`, because identical bucket, region and prefix is what keeps 
 
 ### 5.1 The one thing a reader must not get wrong
 
-**Moodle core's AI subsystem cannot transcribe audio and cannot accept an image.** This is not a 4.5 limitation that goes away on upgrade. On 4.5 the action classes are `base`, `generate_image`, `generate_text` and `summarise_text` (`/Users/tom.caswell/Sites/moodle/ai/classes/aiactions/`), 5.0 through 5.3beta add only `explain_text`, and a `git grep -iE "transcri|whisper|vision|image_url|multimodal|base64_image"` over `public/ai` on the development branch returns zero matches. The action constructors are the entire input surface and all three text actions take exactly `(int $contextid, int $userid, string $prompttext)` (`ai/classes/aiactions/generate_text.php:39-47`). There is no parameter for a file, an image, a model, a temperature, a token ceiling, structured output, or a system prompt. `core_ai\ai_image` is a GD wrapper for watermarking a **generated** image (`ai/classes/ai_image.php:28-60`), not a path for sending one.
+**Moodle core's AI subsystem cannot transcribe audio and cannot accept an image.** This is not a 4.5 limitation that goes away on upgrade. On 4.5 the action classes are `base`, `generate_image`, `generate_text` and `summarise_text` (`ai/classes/aiactions/`), 5.0 through 5.3beta add only `explain_text`, and a `git grep -iE "transcri|whisper|vision|image_url|multimodal|base64_image"` over `public/ai` on the development branch returns zero matches. The action constructors are the entire input surface and all three text actions take exactly `(int $contextid, int $userid, string $prompttext)` (`ai/classes/aiactions/generate_text.php:39-47`). There is no parameter for a file, an image, a model, a temperature, a token ceiling, structured output, or a system prompt. `core_ai\ai_image` is a GD wrapper for watermarking a **generated** image (`ai/classes/ai_image.php:28-60`), not a path for sending one.
 
 A plugin also cannot add its own action: `manager::process_action()` builds the response class by string concatenation from a hardcoded `core_ai\aiactions\responses\response_` prefix (`ai/classes/manager.php:117-121`), and on the development branch the set is pinned in a private constant. A third party `transcribe_audio` action would also require every provider plugin to ship a matching processor. Adding an action means patching core.
 

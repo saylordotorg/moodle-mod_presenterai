@@ -1,6 +1,6 @@
 # Visual feedback and retention: the working design
 
-**Status:** working design for decisions D21 and D22 in [DECISIONS.md](DECISIONS.md), written 20 September 2026 against SOLA `local_ai_course_assistant` v7.5.2 and the Moodle 4.5.10+ checkout at `/Users/tom.caswell/Sites/moodle`.
+**Status:** working design for decisions D21 and D22 in [DECISIONS.md](DECISIONS.md), written 20 September 2026 against SOLA `local_ai_course_assistant` v7.5.2 and a Moodle 4.5.10+ checkout (Moodle core files are cited relative to its root).
 **Covers:** plan sections 9.1 and 9.2, both of which were blocking phase 3.
 **Reading rule, same as the plan:** everything asserted about existing code carries a `file:line` reference and was read, not remembered. Where a fact could not be established it says so.
 
@@ -34,7 +34,7 @@ Section 12 lists what an adversarial pass found, what changed in response, and w
 
 **2.7 The frames are six moments, not continuous video.** `amd/src/soapbox_frames.js:47-56` sets `FRAME_COUNT = 6`, `COLS = 3`, `CELL_W = 426`, `CELL_H = 240`, `QUALITY = 0.72`, and `sampleTimes` at `:73-88` spreads them across the middle 80 percent. On a 12 minute attempt (`classes/soapbox_config.php:32`, `DEFAULT_MAX_SECONDS = 720`) that is roughly one still every 96 seconds. Any learner facing number must match these, per C5 in DECISIONS.md.
 
-**2.8 Core AI on 4.5 takes three arguments and stores the prompt forever.** `core_ai\aiactions\generate_text::__construct()` takes `contextid`, `userid` and `prompttext` and nothing else (`~/Sites/moodle/ai/classes/aiactions/generate_text.php:39-47`). There is no response format, no JSON schema, no strict mode. `core_ai\manager::process_action()` calls `store_action_result()` unconditionally on success and on failure (`~/Sites/moodle/ai/classes/manager.php:130,160-172`), `generate_text::store()` writes `$record->prompt = $this->prompttext` and inserts it (`:50-64`) into `ai_action_generate_text` (`~/Sites/moodle/lib/db/install.xml:4914`), and **there is no `ai/db/` directory at all in the 4.5 tree**, so core ships no scheduled task that ever prunes that table. Both consequences are handled in section 3.6.
+**2.8 Core AI on 4.5 takes three arguments and stores the prompt forever.** `core_ai\aiactions\generate_text::__construct()` takes `contextid`, `userid` and `prompttext` and nothing else (`ai/classes/aiactions/generate_text.php:39-47`). There is no response format, no JSON schema, no strict mode. `core_ai\manager::process_action()` calls `store_action_result()` unconditionally on success and on failure (`ai/classes/manager.php:130,160-172`), `generate_text::store()` writes `$record->prompt = $this->prompttext` and inserts it (`:50-64`) into `ai_action_generate_text` (`lib/db/install.xml:4914`), and **there is no `ai/db/` directory at all in the 4.5 tree**, so core ships no scheduled task that ever prunes that table. Both consequences are handled in section 3.6.
 
 ---
 
@@ -146,7 +146,7 @@ If the visual evidence does not support two sentences of this kind, write one
 and stop. If it supports none, return an empty string.
 ```
 
-`{LANGUAGE}` is the English name of the learner's Moodle language, resolved from the loaded user record as `$user->lang ?: $CFG->lang`. **It is not `current_language()`.** That function checks `$SESSION->forcelang`, `$PAGE->cm->lang`, `$PAGE->course->lang` and `$SESSION->lang` before it reaches `$USER->lang`, and SOLA's scorer sets the user with `\core\session\manager::set_user($user)` (`classes/soapbox_scorer.php:177`), which does not reinitialise `$SESSION`, rather than `\core\cron::setup_user()`, which does (`~/Sites/moodle/lib/classes/cron.php:670-678`). In a cron run scoring a queue of attempts, a stale session language would outrank the learner's own, deterministically, for the rest of that run, and learner B would get a summary in learner A's language.
+`{LANGUAGE}` is the English name of the learner's Moodle language, resolved from the loaded user record as `$user->lang ?: $CFG->lang`. **It is not `current_language()`.** That function checks `$SESSION->forcelang`, `$PAGE->cm->lang`, `$PAGE->course->lang` and `$SESSION->lang` before it reaches `$USER->lang`, and SOLA's scorer sets the user with `\core\session\manager::set_user($user)` (`classes/soapbox_scorer.php:177`), which does not reinitialise `$SESSION`, rather than `\core\cron::setup_user()`, which does (`lib/classes/cron.php:670-678`). In a cron run scoring a queue of attempts, a stale session language would outrank the learner's own, deterministically, for the rest of that run, and learner B would get a summary in learner A's language.
 
 Schema change on the existing object at `classes/external/score_speech.php:234-262`: add `'visual_summary' => ['type' => 'string']` to `properties` **and** add `'visual_summary'` to `required`, because OpenAI strict mode rejects a property present in `properties` and absent from `required`. The comment at `:245-248` records that the hard way. The empty string is how the model declines under that constraint.
 
