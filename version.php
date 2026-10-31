@@ -35,4 +35,4 @@ $plugin->maturity  = MATURITY_BETA;
 // instance API on 5.x; the adapter carries that branch rather than the floor
 // being raised to avoid it. See docs/IMPLEMENTATION-PLAN.md section 5.
 $plugin->requires  = 2024100700;
-$plugin->supported = [405, 502];
+$plugin->supported = [405, 503];
