@@ -61,6 +61,7 @@ class usage {
         'claude-haiku-4-5' => [100, 500],
         'gpt-4o-mini' => [15, 60],
         'gemini-2.5-flash' => [30, 250],
+        'gemini-3.1-flash-lite' => [25, 150],
     ];
 
     /** @var array Model prefix => microcents per second of audio ($0.006 a minute). */

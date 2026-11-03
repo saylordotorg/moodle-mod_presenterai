@@ -116,6 +116,7 @@ final class ai_usage_test extends \advanced_testcase {
         $this->assertSame(1000 * 100 + 100 * 500, usage::estimate('claude-haiku-4-5-20251001', 1000, 100));
         $this->assertSame(1000 * 15 + 100 * 60, usage::estimate('gpt-4o-mini-2024-07-18', 1000, 100));
         $this->assertSame(1000 * 30 + 100 * 250, usage::estimate('gemini-2.5-flash', 1000, 100));
+        $this->assertSame(1000 * 25 + 100 * 150, usage::estimate('gemini-3.1-flash-lite', 1000, 100));
         $this->assertSame(0, usage::estimate('core_ai', 1000, 100));
         $this->assertSame(0, usage::estimate('some-new-model', 1000, 100));
     }
