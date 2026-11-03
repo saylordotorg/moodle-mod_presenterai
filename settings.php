@@ -303,14 +303,14 @@ if ($ADMIN->fulltree) {
         'mod_presenterai/geminimodel',
         get_string('geminimodel', 'mod_presenterai'),
         get_string('geminimodel_desc', 'mod_presenterai'),
-        'gemini-2.5-flash',
+        'gemini-3.1-flash-lite',
         PARAM_RAW_TRIMMED
     ));
     $settings->add(new admin_setting_configtext(
         'mod_presenterai/geminijudgemodel',
         get_string('geminijudgemodel', 'mod_presenterai'),
         get_string('geminijudgemodel_desc', 'mod_presenterai'),
-        'gemini-2.5-flash',
+        'gemini-3.1-flash-lite',
         PARAM_RAW_TRIMMED
     ));
 

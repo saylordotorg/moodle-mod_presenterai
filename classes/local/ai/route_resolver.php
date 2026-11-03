@@ -330,7 +330,7 @@ class route_resolver {
                 return $key === '' ? null : new openai_client($key, $model);
             case 'gemini':
                 $key = secrets::get('geminiapikey');
-                $model = self::model('gemini', $judge, 'gemini-2.5-flash', 'gemini-2.5-flash');
+                $model = self::model('gemini', $judge, 'gemini-3.1-flash-lite', 'gemini-3.1-flash-lite');
                 return $key === '' ? null : new gemini_client($key, $model);
             case 'compatible':
                 $endpoint = trim((string) get_config('mod_presenterai', 'compatibleendpoint'));
