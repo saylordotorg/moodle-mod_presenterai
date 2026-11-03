@@ -2,9 +2,16 @@
 
 An activity module in which a learner records a video or audio presentation in the browser, optionally presents a PDF slide deck while speaking, and receives a transcript, a rubric score and written per criterion feedback.
 
-> **Status: v0.5.3 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's Soapbox feature (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
+> **Status: v0.5.4 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's Soapbox feature (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
 
-## What's new in 0.5.3
+## What's new in 0.5.4
+
+Two changes, and neither touches a table or a learner's screen.
+
+- **Moodle 5.3 is supported.** The plugin now declares support for 5.3 and runs in CI on it, next to 4.5, 5.0 and 5.1.
+- **New installs default the Gemini route to `gemini-3.1-flash-lite`.** Google redirects `gemini-2.5-flash` to a weaker model on 1 December 2026, and 3.1 Flash-Lite held up better in Saylor's tests (jailbreak resistance within two points of 2.5 Flash, about a ninth of the cost). The spend ledger now prices it, so it doesn't count as free. A site that already saved a Gemini model keeps it, and the setting is still free text if you want another model.
+
+## What was new in 0.5.3
 
 The Moodle plugins directory reviewer had two low priority follow-ups. Both are packaging, so nothing the plugin does changes: no code, no table, no setting.
 
