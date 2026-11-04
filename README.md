@@ -49,9 +49,9 @@ The Moodle plugins directory review found six things ([issues 12 to 17](https://
 
 ## Demo video
 
-[![PresenterAI demo video](https://img.youtube.com/vi/at8A3MCoh8s/maxresdefault.jpg)](https://youtu.be/at8A3MCoh8s)
+[![PresenterAI demo video](https://img.youtube.com/vi/pbhYyMntobc/maxresdefault.jpg)](https://youtu.be/pbhYyMntobc)
 
-[Watch the three-minute demo on YouTube](https://youtu.be/at8A3MCoh8s). It shows 0.4.1 on Saylor University's development site: a teacher adds the activity, picks a rubric preset or builds a custom course rubric, and sets attempt limits and review before release; a learner presents with slides; the teacher reviews the AI's score, changes one criterion and releases it; and the learner reads their feedback and replays the attempt with the slides in sync. It also covers Moodle or S3 storage with automatic deletion, speaking levels for English learners, and the gradebook. The narration is AI-generated.
+[Watch the three-minute demo on YouTube](https://youtu.be/pbhYyMntobc). It shows 0.5.4 on Saylor University's development site, with the automatic workflow Saylor uses: an instructor adds the activity, sets the length limits and picks the course rubric, with review before release off; a learner records a speech; and a transcript, a score on every criterion and tips for next time come back within a few minutes. The instructor can still open any attempt and change a score, but nothing waits for them. The learner on camera is an AI-generated person, not a real student, and the narration is AI-generated.
 
 ## What it does
 
