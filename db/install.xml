@@ -19,6 +19,7 @@
         <FIELD NAME="storedattempts" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="rubricid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="speakinglevel" TYPE="char" LENGTH="20" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="preset" TYPE="char" LENGTH="20" NOTNULL="false" SEQUENCE="false" COMMENT="0.6.0: the in-code rubric preset this activity falls back to when no stored rubric applies. Null, as on every activity made before 0.6.0, means the speaking level's preset."/>
         <FIELD NAME="slidesenabled" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="slidevision" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="videovision" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>

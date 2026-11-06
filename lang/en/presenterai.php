@@ -401,6 +401,7 @@ $string['modulename_help'] = 'PresenterAI asks a learner to record a spoken pres
 
 Recordings can be stored in Moodle\'s own file storage or in an S3-compatible bucket, and can be kept until someone removes them or deleted automatically after a set number of days.';
 $string['modulenameplural'] = 'PresenterAI activities';
+$string['moresettings'] = 'More settings';
 $string['noattempts'] = 'You have not recorded an attempt yet.';
 $string['nopresenterais'] = 'There are no PresenterAI activities in this course.';
 $string['nostorage'] = 'Recording is not available in this activity yet, because storage for recordings has not been set up on this site. Any attempts you have already made are listed below.';
@@ -414,11 +415,23 @@ $string['player_loading'] = 'Loading the recording.';
 $string['player_media_gone'] = 'This recording can no longer be played.';
 $string['pluginadministration'] = 'PresenterAI administration';
 $string['pluginname'] = 'PresenterAI';
+$string['presentationtype'] = 'Presentation type';
 $string['presentationtype_entertain'] = 'Speech to entertain';
 $string['presentationtype_esl_advanced'] = 'ESL Advanced';
 $string['presentationtype_esl_beginner'] = 'ESL Beginner';
 $string['presentationtype_esl_intermediate'] = 'ESL Intermediate';
 $string['presentationtype_general'] = 'General presentation (the rubric used before 0.6)';
+$string['presentationtype_general_informative'] = 'Informative, with the general rubric used before 0.6';
+$string['presentationtype_general_persuasive'] = 'Persuasive, with the general rubric used before 0.6';
+$string['presentationtype_help'] = 'What learners are asked to do. The type sets the built-in rubric and the tone of the AI feedback, and picking one fills in a suggested length, slides and starter topics, which you can change.
+
+* Introduction or practice: a short, low-stakes talk, 0:20 to 1:30, with a short, encouraging rubric.
+* Informative: explaining or teaching a topic, 3 to 5 minutes, with the COMM101 informative speech rubric.
+* Persuasive: arguing for a position, 4 to 6 minutes, with the COMM101 persuasive speech rubric.
+* Speech to entertain: engaging an audience with stories and humor, 3 to 5 minutes.
+* ESL Beginner, Intermediate and Advanced: English as a second language practice, 1 to 3 minutes, with criteria for that level. An accent is never marked down.
+
+A rubric chosen below, or defined for this activity or course, replaces the built-in rubric but keeps the tone.';
 $string['presentationtype_informative'] = 'Informative';
 $string['presentationtype_persuasive'] = 'Persuasive';
 $string['presentationtype_practice'] = 'Introduction or practice';
@@ -1079,9 +1092,10 @@ $string['rubricerror_noname'] = 'Give this criterion a name, or clear its descri
 $string['rubricerror_notfound'] = 'That rubric was not found, or you cannot change it from this activity.';
 $string['rubricerror_type'] = 'Choose a rubric type.';
 $string['rubricerror_visualspeech'] = 'Only a video rubric can have criteria judged from the video.';
+$string['rubricheading'] = 'Rubric';
 $string['rubricid'] = 'Rubric';
 $string['rubricid_auto'] = 'Automatic';
-$string['rubricid_help'] = 'Automatic uses the nearest active rubric defined for this activity, its course or a category above it, preferring a video rubric for a video activity. When there is none it uses the built-in criteria for the speaking level. Choosing a rubric uses that one whatever else is defined.';
+$string['rubricid_help'] = 'Automatic uses the nearest active rubric defined for this activity, its course or a category above it, preferring a video rubric for a video activity. When there is none it uses the built-in rubric for the presentation type, shown below. Choosing a rubric uses that one whatever else is defined.';
 $string['rubriclevel_activity'] = 'This activity';
 $string['rubriclevel_course'] = 'This course';
 $string['rubricleveldesc'] = 'Level {$a} description';
@@ -1094,6 +1108,11 @@ $string['rubricnone'] = 'No rubrics are defined yet, so this activity uses the b
 $string['rubricpreset'] = 'Start from a preset';
 $string['rubricpreset_apply'] = 'Use this preset';
 $string['rubricpreset_help'] = 'Replaces the criteria below with a preset\'s, which you can then edit. A video rubric also gets the two criteria judged from the video. Nothing is saved until you save the rubric.';
+$string['rubricpreview'] = 'Criteria and levels';
+$string['rubricpreview_edit'] = 'Edit rubric';
+$string['rubricpreview_max'] = 'Scored out of {$a}.';
+$string['rubricpreview_preset'] = 'Built-in rubric for this presentation type';
+$string['rubricpreview_savefirst'] = 'Save the activity first, then you can edit its rubric from here.';
 $string['rubricreadonly'] = 'Defined elsewhere';
 $string['rubrics'] = 'Rubrics';
 $string['rubrics_intro'] = 'A rubric lists the criteria an attempt is scored against. Rubrics defined further out, in the course or a category, are shown so you can see what this activity would use, and can only be changed where they are defined.';
@@ -1146,6 +1165,27 @@ $string['slidevision'] = 'Slide design feedback';
 $string['slidevision_help'] = 'Sends images of the learner\'s slides to the AI service for one short comment on their visual design, added to the overall feedback. Only used when the activity has slides. It\'s off on a site that scores with Moodle core AI, because slide images are never sent to another service there.';
 $string['speakinglevel'] = 'Speaking level';
 $string['speakinglevel_help'] = 'Sets the built-in criteria and the tone of the feedback. The English as a second language levels weigh pronunciation, fluency, grammar and vocabulary for that level and do not mark down an accent. A rubric chosen below, or defined for this activity or course, replaces the built-in criteria but keeps the tone.';
+$string['startertopic_entertain_1'] = 'A lesson I learned the hard way';
+$string['startertopic_entertain_2'] = 'The most surprising thing that happened on a trip';
+$string['startertopic_entertain_3'] = 'A day in the life of a household object';
+$string['startertopic_esl_advanced_1'] = 'Remote work: benefits and drawbacks';
+$string['startertopic_esl_advanced_2'] = 'How technology has changed the way we communicate';
+$string['startertopic_esl_advanced_3'] = 'A tradition from your culture and what it means';
+$string['startertopic_esl_beginner_1'] = 'My daily routine';
+$string['startertopic_esl_beginner_2'] = 'My favorite food';
+$string['startertopic_esl_beginner_3'] = 'A place in my town';
+$string['startertopic_esl_intermediate_1'] = 'A place I want to visit';
+$string['startertopic_esl_intermediate_2'] = 'A person who inspires me';
+$string['startertopic_esl_intermediate_3'] = 'The best advice I have received';
+$string['startertopic_informative_1'] = 'How an everyday technology works';
+$string['startertopic_informative_2'] = 'An event that shaped your community';
+$string['startertopic_informative_3'] = 'A healthy habit and why it helps';
+$string['startertopic_persuasive_1'] = 'Why everyone should learn a second language';
+$string['startertopic_persuasive_2'] = 'One change that would improve your community';
+$string['startertopic_persuasive_3'] = 'Why people should read more books';
+$string['startertopic_practice_1'] = 'Introduce yourself';
+$string['startertopic_practice_2'] = 'A skill you would like to learn';
+$string['startertopic_practice_3'] = 'Your favorite way to relax';
 $string['status_abandoned'] = 'Not submitted';
 $string['status_awaitingreview'] = 'Awaiting review';
 $string['status_failed'] = 'Could not be scored';
@@ -1180,6 +1220,7 @@ $string['topicfile'] = 'Topic brief (PDF)';
 $string['topicfile_help'] = 'An optional PDF for this topic, such as a case study, that learners can open while they prepare. One file per topic.';
 $string['topicinstructions'] = 'Topic instructions';
 $string['topicsheading'] = 'Topics';
+$string['topicsintro'] = 'Starter topics are filled in for the presentation type. Edit or delete them, or add your own.';
 $string['topictitle'] = 'Topic title';
 $string['topictitle_help'] = 'When an activity has topics, a learner picks one before recording, and the topic is shown against their attempt. Leave every title empty for an activity with no topics. Clearing the title of an existing topic deletes that topic and its file when you save; attempts already made on it are kept, without the topic name.';
 $string['trustedhosts'] = 'Trusted hosts';

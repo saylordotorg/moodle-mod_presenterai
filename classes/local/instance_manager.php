@@ -46,8 +46,8 @@ final class instance_manager {
     /** @var string[] Recording modes an activity may use. */
     public const MODES = ['video', 'audio'];
 
-    /** @var string[] Presentation types, the default first. */
-    public const PTYPES = ['informative', 'persuasive'];
+    /** @var string[] Presentation types, the default first. Practice and entertain are 0.6.0's. */
+    public const PTYPES = ['informative', 'persuasive', 'practice', 'entertain'];
 
     /** @var int retentiondays value meaning "use the site setting" (db/install.xml default). */
     public const RETENTION_SITE = -1;
@@ -129,6 +129,20 @@ final class instance_manager {
             $data->reviewbeforerelease = empty($data->reviewbeforerelease) ? 0 : 1;
         }
 
+        // The settings form's one presentation type select (0.6.0) is not a
+        // column: it's stored as ptype, speakinglevel and preset, which is
+        // what everything else reads. presentation_types::columns() decides.
+        if (property_exists($data, 'presentationtype')) {
+            $columns = presentation_types::columns(
+                (string) $data->presentationtype,
+                $existing ? (string) ($existing->ptype ?? '') : null
+            );
+            foreach ($columns as $field => $value) {
+                $data->$field = $value;
+            }
+            unset($data->presentationtype);
+        }
+
         // The presentation type and speaking level steer the scoring prompt.
         // An unknown value falls back rather than reaching the prompt.
         if (property_exists($data, 'ptype')) {
@@ -139,6 +153,10 @@ final class instance_manager {
             $data->speakinglevel = in_array($level, rubric_manager::LEVELS, true) && $level !== rubric_manager::LEVEL_GENERAL
                 ? $level
                 : null;
+        }
+        // An unknown preset is stored as null, which falls back to the speaking level's.
+        if (property_exists($data, 'preset')) {
+            $data->preset = rubric_manager::clean_preset($data->preset === null ? null : (string) $data->preset) ?: null;
         }
         // 0 means automatic, stored as null. A chosen rubric must be active and
         // visible from this activity, so an id from another course is dropped.

@@ -159,11 +159,17 @@ final class slide_context {
     /**
      * The system prompt for the slide design pass, from SOLA's soapbox_slide_vision.
      *
+     * The type is an adjective in the sentence ("a learner's persuasive
+     * presentation"), so 0.6.0's entertain reads as "entertaining".
+     *
      * @param string $ptype The presentation type.
      * @return string
      */
     public static function vision_prompt(string $ptype): string {
         $ptype = trim($ptype) !== '' ? trim($ptype) : 'informative';
+        if ($ptype === 'entertain') {
+            $ptype = 'entertaining';
+        }
         return prompt_text::get('prompt:slidevision', $ptype);
     }
 
