@@ -26,15 +26,25 @@ use mod_presenterai\local\topic_manager;
 use mod_presenterai\local\vision\visual_pipeline;
 
 /**
- * The learner's page for one activity: topics, policy, recorder and attempts.
+ * The learner's page for one activity: three steps, then every attempt.
  *
- * The order is reading order and it is deliberate. The policy callout comes
+ * Since 0.6.0 the page is a numbered panel: 1 choose a topic (only when the
+ * activity has topics), 2 record, 3 read your feedback, with the latest
+ * attempt's feedback in step 3 and the full attempt table below, collapsed.
+ *
+ * The order is reading order and it is deliberate. The retention line comes
  * before the record button because a learner who learns their recording will
  * be deleted, or cannot be downloaded, after speaking for seven minutes has
- * been misled by omission (design 9.3). The callout is a sibling of the attempt
- * table and never a child of the recorder: SOLA's old speech tool nested its retention
- * statement inside the storage-ready branch, so on a site with storage
- * unconfigured the table showed and the policy did not.
+ * been misled by omission (design 9.3). It is a sibling of the recorder and
+ * never a child of it: SOLA's old speech tool nested its retention statement
+ * inside the storage-ready branch, so on a site with storage unconfigured the
+ * table showed and the policy did not. One line replaces the callout and the
+ * privacy paragraph (policy::retention_line()).
+ *
+ * While the latest attempt is being scored, mod_presenterai/view refreshes
+ * its card every 20 seconds through core's fragment API
+ * (mod_presenterai_output_fragment_latest() in lib.php, which renders
+ * latest_card()), so no new web service is needed.
  *
  * The recorder's configuration travels as data attributes on the root element
  * rather than as js_call_amd() arguments, which Moodle warns about above 1024
@@ -94,9 +104,11 @@ final class view_page implements \renderable, \templatable {
 
         $data = [
             'cmid' => (int) $this->context->instanceid,
+            'contextid' => (int) $this->context->id,
             'topics' => $this->topics(),
-            'callout' => policy::callout($this->instance, $this->context, $this->userid),
-            'privacy' => policy::privacy_paragraph($this->instance, $candownload),
+            'retentionline' => policy::retention_line($this->instance, $this->context, $this->userid),
+            'prunewarning' => policy::prune_warning($this->instance, $this->userid),
+            'latest' => self::card(reset($attempts) ?: null),
             'canrecord' => has_capability('mod/presenterai:submit', $this->context, $this->userid),
             // Staff reach the submissions report from here as well as from the
             // activity's settings menu.
@@ -109,6 +121,7 @@ final class view_page implements \renderable, \templatable {
             'config' => null,
             'attempts' => [
                 'hasattempts' => !empty($attempts),
+                'count' => count($attempts),
                 'rows' => $attempts,
                 // Once, below the table, and only when there is something a
                 // learner might look for a Download link against (design 9.5).
@@ -127,6 +140,63 @@ final class view_page implements \renderable, \templatable {
         }
 
         return $data;
+    }
+
+    /**
+     * The latest attempt's feedback card, as the fragment refreshes it.
+     *
+     * @return array Context for templates/latest.mustache.
+     */
+    public function latest_card(): array {
+        $attempts = $this->attempts();
+        return self::card(reset($attempts) ?: null);
+    }
+
+    /**
+     * Context for templates/latest.mustache, from one exported attempt row.
+     *
+     * The status reads "Scoring, usually about 2 minutes" while the attempt
+     * is uploaded or being scored (which is what the page polls on), "Ready"
+     * once a released score is there, the review sentence while a teacher
+     * holds it (D28), and the row's own status otherwise. Everything else,
+     * including whether the gradebook hides the score, comes from the row as
+     * attempt_row::export() built it, so the card can't say more than the
+     * table below it.
+     *
+     * @param array|null $row An attempt_row::export() result, or null when there's no attempt yet.
+     * @return array
+     */
+    private static function card(?array $row): array {
+        if ($row === null) {
+            return ['hasattempt' => false, 'scoring' => false];
+        }
+        $statuscode = (string) ($row['statuscode'] ?? '');
+        $scoring = in_array($statuscode, ['uploaded', 'scoring'], true) && !$row['inreview'];
+        $ready = $statuscode === 'scored' && !$row['inreview'] && $row['hasfeedback'];
+        if ($scoring) {
+            $status = get_string('card_status_scoring', 'mod_presenterai');
+        } else if ($ready) {
+            $status = get_string('card_status_ready', 'mod_presenterai');
+        } else {
+            $status = $row['status'];
+        }
+
+        return [
+            'hasattempt' => true,
+            'recid' => $row['recid'],
+            'heading' => get_string('card_heading', 'mod_presenterai', $row['recorded']),
+            'status' => $status,
+            'scoring' => $scoring,
+            'failed' => $statuscode === 'failed',
+            'inreview' => $row['inreview'],
+            'reviewnote' => $row['reviewnote'],
+            'hasscore' => $row['hasscore'],
+            'score' => $row['score'],
+            'hasfeedback' => $row['hasfeedback'],
+            'feedback' => $row['feedback'],
+            'canwatch' => $row['canwatch'],
+            'watcharia' => $row['watcharia'],
+        ];
     }
 
     /**
@@ -191,11 +261,16 @@ final class view_page implements \renderable, \templatable {
             // D24: the opt out and the sentence saying it costs no marks, only
             // where the activity offers it and frames would be taken.
             'visualoptout' => $frames && !empty($this->instance->allowvisualoptout),
-            'limits' => get_string('rec_limits', 'mod_presenterai', (object) [
+            // Beside the timer: "minimum 0:20, maximum 1:30" (0.6.0).
+            'timerlimits' => get_string('rec_timer_limits', 'mod_presenterai', (object) [
                 'min' => attempt_row::duration($min),
                 'max' => attempt_row::duration($this->max_seconds()),
-                'size' => display_size(recording_manager::max_media_bytes($this->course)),
             ]),
+            // How long the AI's note about the frames is kept, which the
+            // privacy paragraph said before 0.6.0, now beside the disclosure.
+            'visualnote' => $frames
+                ? get_string('privacy_visualnote', 'mod_presenterai', visual_pipeline::visual_data_days())
+                : '',
         ];
     }
 
@@ -286,7 +361,7 @@ final class view_page implements \renderable, \templatable {
                 $cleanupenabled,
                 $s3lifecycle,
                 $scorehidden
-            );
+            ) + ['statuscode' => (string) $row->status];
         }
 
         return $out;

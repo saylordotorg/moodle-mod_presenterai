@@ -17,6 +17,22 @@
     gap: 12px;
 }
 
+/* The learner page's numbered steps (0.6.0): the number reads as part of the step heading. */
+.mod-presenterai-steps > li::marker {
+    font-weight: bold;
+    font-size: 1.1rem;
+}
+
+/* Finish before the minimum length: still focusable, but looks unavailable. */
+.mod-presenterai-controls .btn.disabled[aria-disabled="true"] {
+    pointer-events: auto;
+    cursor: not-allowed;
+}
+
+.mod-presenterai-allattempts > summary {
+    cursor: pointer;
+}
+
 .mod-presenterai-audio {
     gap: 10px;
 }

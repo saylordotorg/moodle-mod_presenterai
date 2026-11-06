@@ -18,13 +18,17 @@
     @template mod_presenterai/recorder
 
     The recorder: an optional slide deck, the camera preview or a microphone
-    indicator, Record and Stop, the timer and a status line. Behaviour is in
-    mod_presenterai/recorder and mod_presenterai/view, which find elements by
-    data-region and data-action, so those attributes are the contract.
+    indicator, one Start and Finish button, the timer and a status line.
+    Behaviour is in mod_presenterai/recorder and mod_presenterai/view, which
+    find elements by data-region and data-action, so those attributes are the
+    contract.
 
-    The limits line is the published ceiling of plan section 4.4, shown before
-    the learner starts. The recording and near-the-limit indicators carry
-    words, not only a colour (design section 11, rule 9).
+    Start and Finish are two buttons, one hidden at a time, so each keeps its
+    own label and action (0.6.0). Finish is marked aria-disabled until the
+    minimum length has passed, rather than disabled, so it can hold focus.
+    The timer shows the limits beside it ("minimum 0:20, maximum 1:30"). The
+    recording and near-the-limit indicators carry words, not only a colour
+    (design section 11, rule 9).
 
     Where still frames are taken for body language feedback, one sentence of
     static text says so before the learner records (DECISIONS.md Part 1). Where
@@ -36,8 +40,9 @@
     * isaudio - Audio only.
     * isvideo - Camera and microphone.
     * slides - Whether a slide deck may be added.
-    * limits - The length and size limits sentence.
+    * timerlimits - The minimum and maximum, shown beside the timer.
     * visualdisclosure - Whether still frames are taken, so the disclosure shows.
+    * visualnote - How long the AI's note about the frames is kept, or empty.
     * visualoptout - Whether to offer the body language opt out.
 
     Example context (json):
@@ -45,15 +50,15 @@
         "isaudio": false,
         "isvideo": true,
         "slides": true,
-        "limits": "Record for between 5:00 and 7:00. The largest recording this site accepts is 150 MB.",
+        "timerlimits": "minimum 5:00, maximum 7:00",
         "visualdisclosure": true,
+        "visualnote": "The note the AI writes about what it saw in those frames is deleted after 30 days.",
         "visualoptout": true
     }
 }}
 <div class="mod-presenterai-recorder card p-3 mb-4" data-region="recorder">
-    <p class="mod-presenterai-limits small mb-2">{{limits}}</p>
     {{#visualdisclosure}}
-    <p class="mod-presenterai-visual-disclosure small mb-2" data-region="visual-disclosure">{{#str}}visual_disclosure, mod_presenterai{{/str}}</p>
+    <p class="mod-presenterai-visual-disclosure small mb-2" data-region="visual-disclosure">{{#str}}visual_disclosure, mod_presenterai{{/str}} {{visualnote}}</p>
     {{/visualdisclosure}}
     {{#visualoptout}}
     <div class="mod-presenterai-visualoptout form-check mb-3">
@@ -80,9 +85,10 @@
     </div>
     {{/isaudio}}
     <div class="mod-presenterai-controls d-flex flex-wrap align-items-center mb-2">
-        <button type="button" class="btn btn-primary" data-action="record">{{#str}}record, mod_presenterai{{/str}}</button>
-        <button type="button" class="btn btn-secondary" data-action="stop" disabled>{{#str}}stop, mod_presenterai{{/str}}</button>
+        <button type="button" class="btn btn-primary" data-action="record">{{#str}}rec_start, mod_presenterai{{/str}}</button>
+        <button type="button" class="btn btn-primary" data-action="stop" hidden>{{#str}}rec_finish, mod_presenterai{{/str}}</button>
         <span class="mod-presenterai-timer font-weight-bold" data-region="timer">0:00</span>
+        <span class="mod-presenterai-timer-limits small" data-region="timer-limits">{{timerlimits}}</span>
         <span class="mod-presenterai-rec-indicator" data-region="recording-indicator" hidden>{{#str}}rec_status_recording, mod_presenterai{{/str}}</span>
         <span class="mod-presenterai-near-max-text" data-region="near-max" hidden>{{#str}}rec_near_max, mod_presenterai{{/str}}</span>
     </div>

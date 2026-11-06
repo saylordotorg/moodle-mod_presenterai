@@ -20,6 +20,12 @@
  * a capped bitrate, MP4 where the browser can record it (it plays on more
  * devices) and WebM otherwise, and a min/max timer.
  *
+ * One control (0.6.0): Start, which becomes Finish while recording. They're
+ * two buttons and only one shows at a time. Finish is aria-disabled, not
+ * disabled, until the minimum length has passed, so focus can move to it
+ * when recording starts; pressing it early says how long is left to go. The
+ * maximum still stops the recording on its own.
+ *
  * Body language feedback (D17): when the activity takes still frames, Stop
  * builds one contact sheet in the browser (mod_presenterai/frames) and sends
  * it, best effort, before the recording's own start_upload, which is the
@@ -220,6 +226,32 @@ export const init = (root, config, hooks) => {
     const show = (el, visible) => {
         if (el) {
             el.hidden = !visible;
+        }
+    };
+    /**
+     * Show Finish in place of Start while recording, and Start again after.
+     *
+     * @param {boolean} recording Whether a recording is under way.
+     */
+    const showFinish = (recording) => {
+        show(recbtn, !recording);
+        show(stopbtn, recording);
+    };
+    /**
+     * Mark Finish as not yet available, or available.
+     *
+     * @param {boolean} early Whether the minimum length hasn't passed yet.
+     */
+    const setFinishEarly = (early) => {
+        if (!stopbtn) {
+            return;
+        }
+        if (early) {
+            stopbtn.setAttribute('aria-disabled', 'true');
+            stopbtn.classList.add('disabled');
+        } else {
+            stopbtn.removeAttribute('aria-disabled');
+            stopbtn.classList.remove('disabled');
         }
     };
     const setBusy = (value, state) => {
@@ -500,6 +532,8 @@ export const init = (root, config, hooks) => {
         const elapsed = Math.floor((Date.now() - startedat) / 1000);
         const audio = await takeAudioTrack();
         stopStream();
+        showFinish(false);
+        setFinishEarly(false);
         show(indicator, false);
         show(nearmax, false);
         root.classList.remove('mod-presenterai-recording', 'mod-presenterai-near-max');
@@ -596,6 +630,9 @@ export const init = (root, config, hooks) => {
         if (timer) {
             timer.textContent = _fmt(elapsed);
         }
+        if (elapsed >= config.minseconds) {
+            setFinishEarly(false);
+        }
         if (config.maxseconds && elapsed >= config.maxseconds - NEAR_MAX_SECONDS
                 && !root.classList.contains('mod-presenterai-near-max')) {
             // Words as well as a colour change (design section 11, rule 9).
@@ -676,6 +713,8 @@ export const init = (root, config, hooks) => {
         if (timer) {
             timer.textContent = _fmt(0);
         }
+        showFinish(true);
+        setFinishEarly(config.minseconds > 0);
         if (stopbtn) {
             stopbtn.disabled = false;
             stopbtn.focus();
@@ -711,7 +750,16 @@ export const init = (root, config, hooks) => {
     }
     if (stopbtn) {
         stopbtn.disabled = true;
-        stopbtn.addEventListener('click', stop);
+        stopbtn.addEventListener('click', () => {
+            // Before the minimum, Finish says how long is left rather than
+            // ending a recording that would be refused as too short.
+            if (stopbtn.getAttribute('aria-disabled') === 'true') {
+                const left = Math.max(0, config.minseconds - Math.floor((Date.now() - startedat) / 1000));
+                say('rec_finish_wait', _fmt(left), true);
+                return;
+            }
+            stop();
+        });
     }
     if (retrybtn) {
         retrybtn.addEventListener('click', () => {

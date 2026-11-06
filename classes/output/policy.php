@@ -91,6 +91,39 @@ final class policy {
     }
 
     /**
+     * The one line the learner's page shows about their recording (0.6.0).
+     *
+     * It replaces the callout and the privacy paragraph on view.php, which
+     * said the same things several times over. It keeps what D22 makes
+     * mandatory: the deletion period, from the same prospective day count the
+     * callout used, and, where downloading is off, that a copy can't be kept,
+     * followed by the site's support contact when the site has one (the only
+     * notice text an administrator configures). callout() and
+     * privacy_paragraph() stay for anything else that wants the long form.
+     *
+     * @param \stdClass $instance The presenterai row.
+     * @param \context_module $ctx The activity's context.
+     * @param int $userid The learner the page is for.
+     * @return string HTML: plain text, plus the support link when there is one.
+     */
+    public static function retention_line(\stdClass $instance, \context_module $ctx, int $userid): string {
+        $days = retention::prospective_days($instance);
+        $candownload = access::may_download_own_prospectively($ctx, $userid);
+
+        $key = 'retentionline_' . ($days > 0 ? 'delete' : 'keep') . ($candownload ? '' : '_nodl');
+        $daystext = $days === 1 ? get_string('numday', 'moodle', $days) : get_string('numdays', 'moodle', $days);
+        $line = s(get_string($key, 'mod_presenterai', $days > 0 ? $daystext : null));
+
+        if (!$candownload) {
+            $contact = self::support_link();
+            if ($contact !== '') {
+                $line .= ' ' . get_string('record_nodl_contact_' . ($days > 0 ? 'delete' : 'keep'), 'mod_presenterai', $contact);
+            }
+        }
+        return $line;
+    }
+
+    /**
      * The privacy paragraph, assembled from whole sentence clauses (design 9.4).
      *
      * Order: stem, deletion, frames, visual note, kept after, download, joined

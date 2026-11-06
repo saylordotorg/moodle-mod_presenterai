@@ -18,10 +18,15 @@ namespace mod_presenterai;
 
 use mod_presenterai\output\view_page;
 
+defined('MOODLE_INTERNAL') || die();
+
+global $CFG;
+require_once($CFG->dirroot . '/mod/presenterai/lib.php');
+
 /**
  * The learner's page: what renders for whom, and what survives a blocked recorder.
  *
- * The property most worth holding is the one SOLA's old speech tool lost: the policy callout
+ * The property most worth holding is the one SOLA's old speech tool lost: the retention line
  * and the attempt list render whether or not the recorder does. A learner at
  * the attempt cap, or on a site whose storage is unconfigured, is still told
  * the policy and still sees their attempts.
@@ -31,6 +36,8 @@ use mod_presenterai\output\view_page;
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \mod_presenterai\output\view_page
+ * @covers     \mod_presenterai\output\policy
+ * @covers     ::mod_presenterai_output_fragment_latest
  * @covers     \mod_presenterai\event\course_module_viewed
  */
 final class view_page_test extends \advanced_testcase {
@@ -81,7 +88,7 @@ final class view_page_test extends \advanced_testcase {
     }
 
     /**
-     * A learner gets the callout, the privacy paragraph and the recorder.
+     * A learner gets the retention line and the recorder.
      *
      * @return void
      */
@@ -92,9 +99,9 @@ final class view_page_test extends \advanced_testcase {
 
         $data = $this->export($instance, $course, $context, $student);
 
-        $this->assertNotEmpty($data['callout']['heading']);
-        $this->assertNotEmpty($data['callout']['body']);
-        $this->assertNotSame('', $data['privacy']);
+        $this->assertNotSame('', $data['retentionline']);
+        $this->assertArrayNotHasKey('callout', $data, 'The long callout is replaced by one line.');
+        $this->assertArrayNotHasKey('privacy', $data);
         $this->assertTrue($data['canrecord']);
         $this->assertSame('', $data['blocked']);
         $this->assertNotNull($data['recorder']);
@@ -124,7 +131,7 @@ final class view_page_test extends \advanced_testcase {
         $this->assertSame(get_string('recording_blocked_cap', 'mod_presenterai', 1), $data['blocked']);
         $this->assertNull($data['recorder']);
         $this->assertNull($data['config']);
-        $this->assertNotEmpty($data['callout']['heading']);
+        $this->assertNotSame('', $data['retentionline']);
         $this->assertTrue($data['attempts']['hasattempts']);
         $this->assertCount(1, $data['attempts']['rows']);
     }
@@ -146,7 +153,7 @@ final class view_page_test extends \advanced_testcase {
 
         $this->assertSame(get_string('nostorage', 'mod_presenterai'), $data['blocked']);
         $this->assertNull($data['recorder']);
-        $this->assertNotEmpty($data['callout']['heading']);
+        $this->assertNotSame('', $data['retentionline']);
         $this->assertTrue($data['attempts']['hasattempts']);
     }
 
@@ -366,6 +373,181 @@ final class view_page_test extends \advanced_testcase {
             'The still frames disclosure rendered in the wrong case.'
         );
         $this->assertStringContainsString('data-videovision="' . ($disclosure ? 1 : 0) . '"', $html);
+    }
+
+    /**
+     * The page says once, in one line, how long the recording is kept, using the activity's real retention, and
+     * none of the long paragraphs it replaced.
+     *
+     * @return void
+     */
+    public function test_one_retention_line(): void {
+        global $DB, $PAGE;
+
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student] = $this->setup_activity(['retentiondays' => 30]);
+        set_config('allowlearnerdownload', 1, 'mod_presenterai');
+
+        $data = $this->export($instance, $course, $context, $student);
+        $expected = get_string('retentionline_delete', 'mod_presenterai', get_string('numdays', 'moodle', 30));
+        $this->assertSame(s($expected), $data['retentionline']);
+        $this->assertSame(
+            'Your recording is private to you and your instructors and is deleted after 30 days '
+                . '(your transcript and feedback are kept).',
+            $expected
+        );
+
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/view', $data);
+        $this->assertSame(1, substr_count($html, 'data-region="retention"'));
+        $this->assertSame(1, substr_count($html, 'is deleted after 30 days'), 'The retention period is said more than once.');
+        foreach (['record_delete_dl_body', 'privacy_kept_after', 'privacy_delete'] as $key) {
+            $this->assertStringNotContainsString(
+                get_string($key, 'mod_presenterai', 30),
+                $html,
+                "The {$key} paragraph is still on the page."
+            );
+        }
+
+        // The real value, not a fixed 30, and the kept wording with deletion off.
+        $DB->set_field('presenterai', 'retentiondays', 7, ['id' => $instance->id]);
+        $data = $this->export($instance, $course, $context, $student);
+        $this->assertStringContainsString('deleted after 7 days', $data['retentionline']);
+        $DB->set_field('presenterai', 'retentiondays', 0, ['id' => $instance->id]);
+        $data = $this->export($instance, $course, $context, $student);
+        $this->assertSame(s(get_string('retentionline_keep', 'mod_presenterai')), $data['retentionline']);
+
+        // With downloading off the line says so, and the site's support contact follows.
+        set_config('allowlearnerdownload', 0, 'mod_presenterai');
+        set_config('supportemail', 'help@example.com');
+        $data = $this->export($instance, $course, $context, $student);
+        $this->assertStringContainsString(s("can't be downloaded"), $data['retentionline']);
+        $this->assertStringContainsString('mailto:help@example.com', $data['retentionline']);
+    }
+
+    /**
+     * The steps: choose a topic only when there are topics, then record, then read your feedback; and every
+     * attempt below, collapsed, with the count.
+     *
+     * @return void
+     */
+    public function test_steps_and_collapsed_attempts(): void {
+        global $PAGE;
+
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student] = $this->setup_activity();
+        $renderer = $PAGE->get_renderer('core');
+
+        $html = $renderer->render_from_template('mod_presenterai/view', $this->export($instance, $course, $context, $student));
+        $this->assertStringNotContainsString('data-step="topic"', $html);
+        $this->assertStringContainsString('data-step="record"', $html);
+        $this->assertStringContainsString('data-step="feedback"', $html);
+        $this->assertStringContainsString(get_string('card_none', 'mod_presenterai'), $html);
+        $this->assertStringNotContainsString('data-region="allattempts"', $html, 'No attempts, nothing to expand.');
+
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $generator->create_topic(['presenteraiid' => $instance->id, 'title' => 'Rivers']);
+        $generator->create_recording(['presenteraiid' => $instance->id, 'userid' => $student->id, 'storagekey' => 'a.webm']);
+        $generator->create_recording(['presenteraiid' => $instance->id, 'userid' => $student->id, 'storagekey' => 'b.webm',
+            'attemptnumber' => 2]);
+        $data = $this->export($instance, $course, $context, $student);
+        $html = $renderer->render_from_template('mod_presenterai/view', $data);
+
+        $this->assertSame(2, $data['attempts']['count']);
+        $this->assertLessThan(strpos($html, 'data-step="record"'), strpos($html, 'data-step="topic"'));
+        $this->assertLessThan(strpos($html, 'data-step="feedback"'), strpos($html, 'data-step="record"'));
+        // Collapsed: a details element without the open attribute.
+        $this->assertMatchesRegularExpression(
+            '/<details class="mod-presenterai-allattempts[^"]*" data-region="allattempts">/',
+            $html
+        );
+        $this->assertStringContainsString(get_string('allattempts', 'mod_presenterai', 2), $html);
+        $this->assertGreaterThan(strpos($html, 'data-step="feedback"'), strpos($html, 'data-region="attempts"'));
+    }
+
+    /**
+     * The latest attempt's card: scoring while it's scored (which the page polls on), then ready with each
+     * criterion's level and the tips as "Try next time".
+     *
+     * @return void
+     */
+    public function test_latest_card(): void {
+        global $DB, $PAGE;
+
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student] = $this->setup_activity();
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $rec = $generator->create_recording(['presenteraiid' => $instance->id, 'userid' => $student->id,
+            'storagekey' => 'a.webm', 'status' => 'scoring']);
+
+        $data = $this->export($instance, $course, $context, $student);
+        $this->assertTrue($data['latest']['hasattempt']);
+        $this->assertTrue($data['latest']['scoring']);
+        $this->assertSame(get_string('card_status_scoring', 'mod_presenterai'), $data['latest']['status']);
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/view', $data);
+        $this->assertStringContainsString('data-scoring="1"', $html);
+        $this->assertStringContainsString('Scoring, usually about 2 minutes', $html);
+
+        $DB->set_field('presenterai_recording', 'status', 'scored', ['id' => $rec->id]);
+        $generator->create_score([
+            'recordingid' => $rec->id,
+            'scores' => json_encode([
+                ['name' => 'Introduction', 'score' => 4, 'max_score' => 5, 'feedback' => 'Clear opener.', 'assessed' => true,
+                    'level' => 'Proficient'],
+                ['name' => 'Delivery', 'score' => 3, 'max_score' => 5, 'feedback' => '', 'assessed' => true],
+            ]),
+            'rawsum' => 7,
+            'rawmax' => 10,
+            'overallpct' => 70,
+            'tips' => json_encode(['Pause after each point.']),
+        ]);
+        $data = $this->export($instance, $course, $context, $student);
+        $card = $data['latest'];
+        $this->assertFalse($card['scoring']);
+        $this->assertSame(get_string('card_status_ready', 'mod_presenterai'), $card['status']);
+        $this->assertSame('4 of 5, Proficient', $card['feedback']['criteria'][0]['scoretext']);
+        $this->assertSame(
+            get_string('feedback_criterion_score', 'mod_presenterai', (object) ['score' => 3, 'max' => 5]),
+            $card['feedback']['criteria'][1]['scoretext'],
+            'A criterion scored without levels keeps "3 out of 5".'
+        );
+
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/latest', $card);
+        $this->assertStringContainsString('data-scoring="0"', $html);
+        $this->assertStringContainsString('4 of 5, Proficient', $html);
+        $this->assertStringContainsString(get_string('card_tips', 'mod_presenterai'), $html);
+        $this->assertStringContainsString('Pause after each point.', $html);
+        $this->assertStringContainsString(format_float(70, 2) . '%', $html);
+
+        // The fragment the page polls renders the same card, for the learner only.
+        $this->setUser($student);
+        $fragment = mod_presenterai_output_fragment_latest(['context' => $context]);
+        $this->assertStringContainsString('4 of 5, Proficient', $fragment);
+        $this->assertStringContainsString('data-region="latest-card"', $fragment);
+    }
+
+    /**
+     * The recorder is one Start button that becomes Finish, with the limits beside the timer.
+     *
+     * @return void
+     */
+    public function test_start_finish_and_timer_limits(): void {
+        global $PAGE;
+
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student] = $this->setup_activity(['minseconds' => 20, 'maxseconds' => 90]);
+
+        $data = $this->export($instance, $course, $context, $student);
+        $this->assertSame('minimum 0:20, maximum 1:30', $data['recorder']['timerlimits']);
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/view', $data);
+        $start = get_string('rec_start', 'mod_presenterai');
+        $finish = get_string('rec_finish', 'mod_presenterai');
+        $this->assertStringContainsString('data-action="record">' . $start . '</button>', $html);
+        $this->assertStringContainsString('data-action="stop" hidden>' . $finish . '</button>', $html);
+        $this->assertStringContainsString('minimum 0:20, maximum 1:30', $html);
     }
 
     /**

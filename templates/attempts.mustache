@@ -20,6 +20,8 @@
     The learner's own attempts, newest first, including attempts whose media
     is gone: those keep their row, their date and their status, and the
     actions cell says in words that the recording is no longer available.
+    Since 0.6.0 it sits inside the learner page's collapsed "All attempts (n)",
+    whose summary is its heading.
 
     Every value comes from attempt_row::export, which reads the row and never
     the site settings (design section 9.1). This template reads nothing else.
@@ -130,7 +132,6 @@
         ]
     }
 }}
-<h3 class="mod-presenterai-attempts-heading mt-4">{{#str}}yourattempts, mod_presenterai{{/str}}</h3>
 {{^hasattempts}}
 <p class="mod-presenterai-noattempts">{{#str}}noattempts, mod_presenterai{{/str}}</p>
 {{/hasattempts}}
