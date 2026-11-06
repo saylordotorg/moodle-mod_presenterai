@@ -98,6 +98,9 @@ class restore_presenterai_activity_structure_step extends restore_activity_struc
         $data->visualscored = (int) ($data->visualscored ?? 0);
         $data->allowvisualoptout = (int) ($data->allowvisualoptout ?? 0);
         $data->reviewbeforerelease = (int) ($data->reviewbeforerelease ?? 0);
+        // A backup from before 0.6.0 has no preset, and null keeps the activity
+        // on its speaking level's rubric, as it was where it was backed up.
+        $data->preset = \mod_presenterai\local\rubric_manager::clean_preset($data->preset ?? null) ?: null;
 
         // The rubric rows are restored after this one, so the reference is
         // remembered and set in after_execute(), once the mapping exists. A

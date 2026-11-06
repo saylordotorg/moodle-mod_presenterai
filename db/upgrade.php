@@ -244,5 +244,17 @@ function xmldb_presenterai_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026102001, 'presenterai');
     }
 
+    if ($oldversion < 2026110601) {
+        // 0.6.0: the presentation type's rubric preset. Existing rows stay null, which keeps them on the
+        // speaking level's preset, so no activity's rubric changes on upgrade.
+        $table = new xmldb_table('presenterai');
+        $field = new xmldb_field('preset', XMLDB_TYPE_CHAR, '20', null, null, null, null, 'speakinglevel');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026110601, 'presenterai');
+    }
+
     return true;
 }

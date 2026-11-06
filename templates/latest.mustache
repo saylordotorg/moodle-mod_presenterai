@@ -1,0 +1,118 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/latest
+
+    The latest attempt's feedback card, step 3 of the learner's page: its
+    status, the overall result, each criterion with its score and the level
+    reached, the written feedback, and the tips as "Try next time". Before the
+    first attempt it says where feedback will appear.
+
+    data-scoring is 1 while the attempt is being scored, and
+    mod_presenterai/view refreshes the card through the fragment API until it
+    isn't. data-region="latest-status" is where the script writes "Uploading"
+    while a recording is on its way. The status is a polite live region, so a
+    screen reader hears it change.
+
+    Context variables required for this template:
+    * hasattempt - Whether there is an attempt to show.
+    * recid, heading, status, scoring, failed, inreview, reviewnote, hasscore, score,
+      hasfeedback, feedback (as in mod_presenterai/attempts), canwatch, watcharia.
+
+    Example context (json):
+    {
+        "hasattempt": true,
+        "recid": 8,
+        "heading": "Your attempt on 6/10/26, 14:00",
+        "status": "Ready",
+        "scoring": false,
+        "failed": false,
+        "inreview": false,
+        "reviewnote": "",
+        "hasscore": true,
+        "score": "80.00%",
+        "hasfeedback": true,
+        "canwatch": true,
+        "watcharia": "Watch the recording you made on 6/10/26, 14:00",
+        "feedback": {
+            "criteria": [
+                {"name": "Introduction", "scoretext": "4 of 5, Proficient", "level": "Proficient",
+                    "feedback": "You named your topic in the first sentence.", "notcounted": false}
+            ],
+            "overall": "A well organized talk.",
+            "hastips": true,
+            "tips": ["Pause after each main point."],
+            "hasvisual": false,
+            "visualstatus": "",
+            "visualheading": "",
+            "visualnote": "",
+            "visualtext": ""
+        }
+    }
+}}
+<div class="mod-presenterai-latest card mb-3" data-region="latest-card" data-scoring="{{#scoring}}1{{/scoring}}{{^scoring}}0{{/scoring}}"{{#hasattempt}} data-recid="{{recid}}"{{/hasattempt}}>
+    <div class="card-body">
+        {{^hasattempt}}
+        <p class="mb-0" data-region="latest-status" aria-live="polite">{{#str}}card_none, mod_presenterai{{/str}}</p>
+        {{/hasattempt}}
+        {{#hasattempt}}
+        <h4 class="h6 mb-1">{{heading}}</h4>
+        <p class="mb-2"><span class="font-weight-bold fw-bold">{{#str}}card_status, mod_presenterai{{/str}}</span> <span data-region="latest-status" aria-live="polite">{{status}}</span></p>
+        {{#inreview}}
+        <p class="mod-presenterai-inreview">{{reviewnote}}</p>
+        {{/inreview}}
+        {{#failed}}
+        <p class="small">{{#str}}card_failed_note, mod_presenterai{{/str}}</p>
+        {{/failed}}
+        {{#hasscore}}
+        <p class="mb-2"><span class="font-weight-bold fw-bold">{{#str}}card_overall, mod_presenterai{{/str}}</span> {{score}}</p>
+        {{/hasscore}}
+        {{#hasfeedback}}
+        {{#feedback}}
+        <ul class="mod-presenterai-feedback-criteria list-unstyled mb-2">
+            {{#criteria}}
+            <li class="mb-2"><strong>{{{name}}}</strong>: {{scoretext}}{{#notcounted}} <span class="badge badge-info bg-info mod-presenterai-notcounted">{{#str}}feedback_criterion_notcounted, mod_presenterai{{/str}}</span>{{/notcounted}}{{#feedback}}<br>{{feedback}}{{/feedback}}</li>
+            {{/criteria}}
+        </ul>
+        {{#overall}}
+        <p class="mod-presenterai-feedback-overall">{{{overall}}}</p>
+        {{/overall}}
+        {{#hasvisual}}
+        <div class="mod-presenterai-visual-feedback mb-2" data-region="visual-feedback" data-visualstatus="{{visualstatus}}">
+            <p class="mb-1"><strong>{{visualheading}}</strong></p>
+            {{#visualnote}}
+            <p class="mod-presenterai-visual-note small mb-1">{{visualnote}}</p>
+            {{/visualnote}}
+            <p class="mod-presenterai-visual-text mb-0">{{visualtext}}</p>
+        </div>
+        {{/hasvisual}}
+        {{#hastips}}
+        <p class="mb-1"><strong>{{#str}}card_tips, mod_presenterai{{/str}}</strong></p>
+        <ul class="mod-presenterai-feedback-tips">
+            {{#tips}}
+            <li>{{.}}</li>
+            {{/tips}}
+        </ul>
+        {{/hastips}}
+        {{/feedback}}
+        {{/hasfeedback}}
+        {{#canwatch}}
+        <button type="button" class="btn btn-link p-0" data-action="watch" data-recid="{{recid}}" aria-label="{{watcharia}}">{{#str}}watch, mod_presenterai{{/str}}</button>
+        {{/canwatch}}
+        {{/hasattempt}}
+    </div>
+</div>

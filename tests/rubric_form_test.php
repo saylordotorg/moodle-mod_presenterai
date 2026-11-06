@@ -167,7 +167,8 @@ final class rubric_form_test extends \advanced_testcase {
         $this->assertStringContainsString('name="applypreset"', $html);
         $this->assertSame(1, preg_match('/<select[^>]*name="preset"[^>]*>(.*?)<\/select>/s', $html, $m));
         preg_match_all('/<option value="([^"]*)"/', $m[1], $values);
-        $this->assertSame(['', 'general', 'esl_beginner', 'esl_intermediate', 'esl_advanced'], $values[1]);
+        $this->assertSame(['', 'practice', 'informative', 'persuasive', 'entertain', 'esl_beginner', 'esl_intermediate',
+            'esl_advanced', 'general'], $values[1]);
 
         // A preset's rows fill the form; a video rubric gets the two visual criteria.
         $criteria = rubric_manager::preset_criteria('esl_beginner', true);
@@ -179,6 +180,92 @@ final class rubric_form_test extends \advanced_testcase {
         $this->assertMatchesRegularExpression('/name="criterionvisual\[6\]"[^>]*checked/', $html);
         $this->assertSame(8, rubric_form::rows_for($criteria));
         $this->assertSame(rubric_form::NEW_ROWS, rubric_form::rows_for([]));
+    }
+
+    /**
+     * Five level rows per criterion, prefilled with the default labels; written levels round trip through a save.
+     *
+     * @return void
+     */
+    public function test_levels_round_trip(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $html = $this->form()->render();
+        $this->assertMatchesRegularExpression('/name="level5label\[0\]"[^>]*value="Excellent"/', $html);
+        $this->assertMatchesRegularExpression('/name="level1label\[2\]"[^>]*value="Not yet"/', $html);
+        $this->assertStringContainsString('name="level3desc[1]"', $html);
+
+        $submission = $this->submission([
+            'criterionmax' => [5, 4, 5],
+            'level5label' => ['Star', 'Excellent', 'Excellent'],
+            'level4label' => ['Proficient', 'Proficient', 'Proficient'],
+            'level3label' => ['Developing', 'Developing', 'Developing'],
+            'level2label' => ['Beginning', 'Beginning', 'Beginning'],
+            'level1label' => ['', 'Not yet', 'Not yet'],
+            'level5desc' => ['All of it.', '', ''],
+            'level4desc' => ['Most of it.', '', ''],
+            'level3desc' => ['Some of it.', '', ''],
+            'level2desc' => ['', '', ''],
+            'level1desc' => ['', '', ''],
+        ]);
+        rubric_form::mock_submit($submission);
+        $form = $this->form();
+        $data = $form->get_data();
+        $this->assertNotNull($data, 'A valid rubric with levels was refused.');
+        $criteria = $form->to_criteria($data);
+
+        $this->assertSame([
+            ['score' => 5, 'label' => 'Star', 'description' => 'All of it.'],
+            ['score' => 4, 'label' => 'Proficient', 'description' => 'Most of it.'],
+            ['score' => 3, 'label' => 'Developing', 'description' => 'Some of it.'],
+            ['score' => 2, 'label' => 'Beginning', 'description' => ''],
+            ['score' => 1, 'label' => 'Not yet', 'description' => ''],
+        ], $criteria[0]['levels'], 'An empty label on a level with no description takes the default.');
+        $this->assertSame(5, $criteria[0]['max_score']);
+        $this->assertArrayNotHasKey('levels', $criteria[1], 'A row with no level description has no levels.');
+        $this->assertSame(4, $criteria[1]['max_score']);
+
+        // Stored and read back, then into a fresh form.
+        $course = $this->getDataGenerator()->create_course();
+        $id = rubric_manager::create((int) \context_course::instance($course->id)->id, 'video', 'Levels', $criteria);
+        $stored = rubric_manager::normalise_criteria((string) $this->get_rubric($id)->criteria);
+        $this->assertSame($criteria, $stored);
+
+        $_POST = [];
+        $edit = $this->form(rubric_form::rows_for($stored), 'video');
+        $edit->set_rubric('Levels', 'video', true, $stored);
+        $html = $edit->render();
+        $this->assertMatchesRegularExpression('/name="level5label\[0\]"[^>]*value="Star"/', $html);
+        $this->assertMatchesRegularExpression('/name="level4desc\[0\]"[^>]*>\s*Most of it\.\s*<\/textarea>/', $html);
+        $this->assertMatchesRegularExpression('/name="level5label\[1\]"[^>]*value="Excellent"/', $html);
+    }
+
+    /**
+     * A described level needs a label, and a criterion with levels is scored out of 5.
+     *
+     * @return void
+     */
+    public function test_levels_validation(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $form = $this->form();
+
+        $errors = $form->validation($this->submission([
+            'criterionmax' => [6, 4, 5],
+            'level3label' => ['  ', 'Developing', 'Developing'],
+            'level3desc' => ['Some of it.', '', ''],
+        ]), []);
+        $this->assertSame(get_string('rubricerror_levellabel', 'mod_presenterai'), $errors['level3label[0]']);
+        $this->assertSame(get_string('rubricerror_levelsmax', 'mod_presenterai'), $errors['criterionmax[0]']);
+        $this->assertArrayNotHasKey('criterionmax[1]', $errors);
+
+        $errors = $form->validation($this->submission([
+            'criterionmax' => [5, 4, 5],
+            'level3label' => ['Developing', 'Developing', 'Developing'],
+            'level3desc' => ['Some of it.', '', ''],
+        ]), []);
+        $this->assertSame([], $errors);
     }
 
     /**

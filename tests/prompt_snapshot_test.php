@@ -29,6 +29,12 @@ use mod_presenterai\local\vision\visual_prompts;
  * changed word in a prompt changes what the model is told, so any difference here is a decision to make on
  * purpose, not a side effect of editing a lang file. To accept one, regenerate the fixture and say why.
  *
+ * Regenerated for 0.6.0, on purpose: the ESL presets and the two visual criteria gained five written levels each,
+ * which adds the levels and one sentence about choosing a level to every prompt built from them; the presentation
+ * type presets (practice, informative, persuasive, entertain) and the practice and entertain hints are new. Every
+ * prompt built from a rubric without levels (the general preset, which every activity made before 0.6.0 falls back
+ * to, and any stored rubric without levels) is byte for byte what it was.
+ *
  * @package    mod_presenterai
  * @category   test
  * @copyright  2026 Saylor Academy
@@ -105,7 +111,7 @@ final class prompt_snapshot_test extends \advanced_testcase {
     }
 
     /**
-     * The default rubric, the visual criteria and every speaking level preset, byte for byte.
+     * The default rubric, the visual criteria, the level labels and every preset, byte for byte.
      *
      * @return void
      */
@@ -114,10 +120,11 @@ final class prompt_snapshot_test extends \advanced_testcase {
         $this->assertSame($expected['default_criteria'], rubric_manager::default_criteria());
         $this->assertSame($expected['visual_criteria'], rubric_manager::visual_criteria());
         $this->assertSame($expected['presets'], rubric_manager::speech_presets());
-        foreach (rubric_manager::LEVELS as $level) {
-            $this->assertSame($expected['hint_' . $level], rubric_manager::preset_hint($level), $level);
-            $this->assertSame($expected['criteria_' . $level], rubric_manager::preset_criteria($level, false), $level);
-            $this->assertSame($expected['criteria_visual_' . $level], rubric_manager::preset_criteria($level, true), $level);
+        $this->assertSame($expected['default_level_labels'], rubric_manager::default_level_labels());
+        foreach (array_keys(rubric_manager::speech_presets()) as $preset) {
+            $this->assertSame($expected['hint_' . $preset], rubric_manager::preset_hint($preset), $preset);
+            $this->assertSame($expected['criteria_' . $preset], rubric_manager::preset_criteria($preset, false), $preset);
+            $this->assertSame($expected['criteria_visual_' . $preset], rubric_manager::preset_criteria($preset, true), $preset);
         }
     }
 
@@ -172,6 +179,16 @@ final class prompt_snapshot_test extends \advanced_testcase {
                 'wantsummary' => true,
                 'criteria' => rubric_manager::preset_criteria('esl_advanced', true),
             ],
+            'informative_levels' => ['criteria' => rubric_manager::preset_criteria('informative', false)],
+            'persuasive_levels_visual' => [
+                'ptype' => 'persuasive',
+                'visualblock' => 'VISUAL EVIDENCE: note',
+                'wantsummary' => true,
+                'criteria' => rubric_manager::preset_criteria('persuasive', true),
+            ],
+            'practice' => ['ptype' => 'practice', 'criteria' => rubric_manager::preset_criteria('practice', false),
+                'minseconds' => 20, 'maxseconds' => 90, 'durationseconds' => 60],
+            'entertain' => ['ptype' => 'entertain', 'criteria' => rubric_manager::preset_criteria('entertain', false)],
         ];
         $inputs = [];
         foreach ($variants as $name => $over) {

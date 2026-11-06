@@ -366,12 +366,14 @@ final class attempt_row_test extends \advanced_testcase {
             [
                 'name' => 'Content',
                 'scoretext' => get_string('feedback_criterion_score', 'mod_presenterai', (object) ['score' => 3, 'max' => 5]),
+                'level' => '',
                 'feedback' => 'Clear <thesis>.',
                 'notcounted' => false,
             ],
             [
                 'name' => 'Delivery',
                 'scoretext' => get_string('feedback_notassessed', 'mod_presenterai'),
+                'level' => '',
                 'feedback' => '',
                 'notcounted' => false,
             ],

@@ -483,3 +483,30 @@ function presenterai_reset_userdata($data) {
 function presenterai_reset_gradebook($courseid, $type = '') {
     \mod_presenterai\local\course_reset::reset_gradebook((int) $courseid);
 }
+
+/**
+ * The latest attempt's feedback card, for the learner's page to refresh while it's being scored (0.6.0).
+ *
+ * Called by core's get_fragment web service, which has already logged the
+ * user in to the course module of the context it was given. The capability
+ * check is the page's own, and the card is built for the current user only,
+ * from the same code that builds it on view.php, so it can't show anything
+ * the page wouldn't.
+ *
+ * @param array $args The fragment arguments; 'context' is the activity's module context.
+ * @return string The card's HTML.
+ */
+function mod_presenterai_output_fragment_latest($args) {
+    global $DB, $OUTPUT, $USER;
+
+    $context = $args['context'] ?? null;
+    if (!$context instanceof \context_module) {
+        throw new \coding_exception('The latest attempt card needs a module context.');
+    }
+    require_capability('mod/presenterai:view', $context);
+    [$course, $cm] = get_course_and_cm_from_cmid((int) $context->instanceid, 'presenterai');
+    $instance = $DB->get_record('presenterai', ['id' => $cm->instance], '*', MUST_EXIST);
+
+    $page = new \mod_presenterai\output\view_page($instance, $course, $context, (int) $USER->id);
+    return $OUTPUT->render_from_template('mod_presenterai/latest', $page->latest_card());
+}

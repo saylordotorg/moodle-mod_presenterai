@@ -17,7 +17,17 @@
 /**
  * Instance settings form for mod_presenterai.
  *
- * Recording, AI feedback, topics, retention, the grade and completion.
+ * Since 0.6.0 the form leads with one choice, the presentation type, right
+ * after the name. Picking a type fills in sensible defaults (length, slides,
+ * starter topics) through mod_presenterai/form, and the server sets the same
+ * defaults for a new activity, so the form works without the script. The
+ * rubric the activity will use is shown read only, criteria and levels, with
+ * a link to the rubric editor once the activity exists. Recording and topics
+ * stay open; everything a course designer rarely changes (attempts, review
+ * before release, body language and slide design feedback, retention) is
+ * under one collapsed "More settings" heading. A new activity starts with
+ * Saylor's defaults: no grade, review before release off, recordings kept 30
+ * days.
  *
  * The grade is core's modgrade element plus a grading method saying how
  * attempts combine. Outcomes are core's too: declaring FEATURE_GRADE_OUTCOMES
@@ -39,8 +49,10 @@ require_once($CFG->dirroot . '/course/moodleform_mod.php');
 use mod_presenterai\local\config;
 use mod_presenterai\local\grader;
 use mod_presenterai\local\instance_manager;
+use mod_presenterai\local\presentation_types;
 use mod_presenterai\local\rubric_manager;
 use mod_presenterai\local\topic_manager;
+use mod_presenterai\output\rubrics_page;
 
 /**
  * Instance settings form.
@@ -52,6 +64,9 @@ use mod_presenterai\local\topic_manager;
 class mod_presenterai_mod_form extends moodleform_mod {
     /** @var int Empty topic rows offered on a new activity. */
     private const NEW_TOPIC_REPEATS = 3;
+
+    /** @var int Days a new activity keeps recordings, for a teacher who may set retention. */
+    public const NEW_RETENTION_DAYS = 30;
 
     /**
      * Build the form.
@@ -69,14 +84,19 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $mform->addRule('name', get_string('maximumchars', '', 255), 'maxlength', 255, 'client');
         $mform->addHelpButton('name', 'presenterainame', 'mod_presenterai');
 
+        $this->add_presentationtype_element();
+
         $this->standard_intro_elements();
 
         $this->add_recording_elements();
-        $this->add_ai_elements();
+        $this->add_rubric_elements();
         $this->add_topic_elements();
-        $this->add_retention_elements();
+        $this->add_more_settings();
 
         $this->standard_grading_coursemodule_elements();
+        // Saylor's use is ungraded practice, so a new activity has no grade.
+        // An existing activity's own grade still wins over this default.
+        $mform->setDefault('grade', 0);
         $this->add_gradingmethod_element();
 
         $this->standard_coursemodule_elements();
@@ -108,12 +128,13 @@ class mod_presenterai_mod_form extends moodleform_mod {
             }
         }
 
-        // Null columns read as the form's "automatic" and "general" options.
+        // A null rubricid reads as the form's "automatic" option.
         if (array_key_exists('rubricid', $defaultvalues)) {
             $defaultvalues['rubricid'] = (int) $defaultvalues['rubricid'];
         }
-        if (array_key_exists('speakinglevel', $defaultvalues)) {
-            $defaultvalues['speakinglevel'] = (string) $defaultvalues['speakinglevel'];
+        // The one presentation type select stands for ptype, speakinglevel and preset.
+        if (!empty($this->_instance)) {
+            $defaultvalues['presentationtype'] = presentation_types::from_instance((object) $defaultvalues);
         }
 
         // The checkboxes beside the completion numbers aren't columns; they
@@ -124,6 +145,13 @@ class mod_presenterai_mod_form extends moodleform_mod {
         }
 
         if (empty($this->_instance)) {
+            // A new activity starts with the default type's starter topics,
+            // which the designer can edit or delete.
+            if (!isset($defaultvalues['topictitle'])) {
+                foreach (presentation_types::defaults(presentation_types::DEFAULT_TYPE)['topics'] as $index => $title) {
+                    $defaultvalues['topictitle'][$index] = $title;
+                }
+            }
             return;
         }
 
@@ -297,14 +325,48 @@ class mod_presenterai_mod_form extends moodleform_mod {
     }
 
     /**
-     * The recording section: mode, length, attempts and slides.
+     * The presentation type, right after the name (0.6.0).
+     *
+     * One select in place of the presentation type and speaking level selects
+     * before 0.6.0; instance_manager::normalise() stores it as the ptype,
+     * speakinglevel and preset columns. An activity made before 0.6.0 is
+     * offered its own general_* type as well, so saving it keeps its rubric.
+     * mod_presenterai/form fills in the type's defaults when it changes; the
+     * data it needs travels as a data attribute on the rubric preview.
+     *
+     * @return void
+     */
+    private function add_presentationtype_element(): void {
+        global $PAGE;
+        $mform = $this->_form;
+
+        $current = !empty($this->current->instance) ? presentation_types::from_instance($this->current) : '';
+        $mform->addElement(
+            'select',
+            'presentationtype',
+            get_string('presentationtype', 'mod_presenterai'),
+            presentation_types::options($current)
+        );
+        $mform->setDefault('presentationtype', presentation_types::DEFAULT_TYPE);
+        $mform->addHelpButton('presentationtype', 'presentationtype', 'mod_presenterai');
+
+        $PAGE->requires->js_call_amd('mod_presenterai/form', 'init', ['[data-region="presenterai-rubricpreview"]']);
+    }
+
+    /**
+     * The recording section: mode, length and slides.
+     *
+     * The defaults are the default presentation type's, so a new activity
+     * saved without the form's script gets the same values it would with it.
      *
      * @return void
      */
     private function add_recording_elements(): void {
         $mform = $this->_form;
+        $defaults = presentation_types::defaults(presentation_types::DEFAULT_TYPE);
 
         $mform->addElement('header', 'recordingheading', get_string('recordingheading', 'mod_presenterai'));
+        $mform->setExpanded('recordingheading');
 
         $mform->addElement('select', 'mode', get_string('mode', 'mod_presenterai'), [
             'video' => get_string('modevideo', 'mod_presenterai'),
@@ -315,30 +377,187 @@ class mod_presenterai_mod_form extends moodleform_mod {
 
         $durationoptions = ['units' => [MINSECS, 1], 'optional' => false];
         $mform->addElement('duration', 'minseconds', get_string('minseconds', 'mod_presenterai'), $durationoptions);
-        $mform->setDefault('minseconds', 300);
+        $mform->setDefault('minseconds', $defaults['minseconds']);
         $mform->addHelpButton('minseconds', 'minseconds', 'mod_presenterai');
 
         $mform->addElement('duration', 'maxseconds', get_string('maxseconds', 'mod_presenterai'), $durationoptions);
-        $mform->setDefault('maxseconds', 420);
+        $mform->setDefault('maxseconds', $defaults['maxseconds']);
         $mform->addHelpButton('maxseconds', 'maxseconds', 'mod_presenterai');
 
-        $mform->addElement('text', 'maxattempts', get_string('maxattempts', 'mod_presenterai'), ['size' => 4]);
-        $mform->setType('maxattempts', PARAM_INT);
-        $mform->setDefault('maxattempts', 0);
-        $mform->addHelpButton('maxattempts', 'maxattempts', 'mod_presenterai');
-
         $mform->addElement('advcheckbox', 'slidesenabled', get_string('slidesenabled', 'mod_presenterai'));
-        $mform->setDefault('slidesenabled', 0);
+        $mform->setDefault('slidesenabled', $defaults['slidesenabled']);
         $mform->addHelpButton('slidesenabled', 'slidesenabled', 'mod_presenterai');
     }
 
     /**
-     * The AI feedback section: presentation type, speaking level, rubric,
-     * slide vision and body language feedback.
+     * The rubric section: which rubric scores the activity, and that rubric shown read only.
      *
      * The rubric choice lists active rubrics visible from where the activity
      * is being created or edited, so a teacher can't pick one from another
      * course; instance_manager::normalise() checks the choice again.
+     *
+     * The preview is rendered for every choice the form can reach (each
+     * presentation type with "automatic", and each stored rubric), and
+     * mod_presenterai/form shows the one that matches the two selects.
+     * Without the script the one matching the saved values shows. There's no
+     * second editor here: once the activity exists, "Edit rubric" opens
+     * rubric.php in the same window and comes back to this form.
+     *
+     * @return void
+     */
+    private function add_rubric_elements(): void {
+        global $OUTPUT;
+        $mform = $this->_form;
+
+        $mform->addElement('header', 'rubricheading', get_string('rubricheading', 'mod_presenterai'));
+        $mform->setExpanded('rubricheading');
+
+        $rubrics = [0 => get_string('rubricid_auto', 'mod_presenterai')];
+        $stored = rubric_manager::list_active_for_context($this->context);
+        foreach ($stored as $rubric) {
+            // Unescaped: the select escapes its option text itself.
+            $rubrics[(int) $rubric->id] = format_string($rubric->title, true, ['context' => $this->context, 'escape' => false]);
+        }
+        $mform->addElement('select', 'rubricid', get_string('rubricid', 'mod_presenterai'), $rubrics);
+        $mform->setType('rubricid', PARAM_INT);
+        $mform->setDefault('rubricid', 0);
+        $mform->addHelpButton('rubricid', 'rubricid', 'mod_presenterai');
+
+        $html = $OUTPUT->render_from_template('mod_presenterai/rubric_preview', $this->rubric_previews($stored));
+        $mform->addElement('static', 'rubricpreview', get_string('rubricpreview', 'mod_presenterai'), $html);
+    }
+
+    /**
+     * Context for templates/rubric_preview.mustache.
+     *
+     * @param \stdClass[] $stored The active rubrics the rubric select offers.
+     * @return array
+     */
+    private function rubric_previews(array $stored): array {
+        $current = !empty($this->current->instance) ? clone $this->current : new \stdClass();
+        $currenttype = !empty($this->current->instance)
+            ? presentation_types::from_instance($current)
+            : presentation_types::DEFAULT_TYPE;
+        $currentrubric = (int) ($current->rubricid ?? 0);
+        $current->mode = (string) ($current->mode ?? 'video');
+        $current->videovision = (int) ($current->videovision ?? 0);
+
+        $previews = [];
+        foreach (array_keys(presentation_types::options($currenttype)) as $type) {
+            $instance = clone $current;
+            foreach (presentation_types::columns($type, $current->ptype ?? null) as $field => $value) {
+                $instance->$field = $value;
+            }
+            $instance->rubricid = 0;
+            $previews[] = $this->rubric_preview(
+                'type:' . $type,
+                rubric_manager::resolve($instance, $this->context),
+                $type,
+                $currentrubric === 0 && $type === $currenttype
+            );
+        }
+        foreach ($stored as $row) {
+            $instance = clone $current;
+            $instance->rubricid = (int) $row->id;
+            $previews[] = $this->rubric_preview(
+                'rubric:' . (int) $row->id,
+                rubric_manager::resolve($instance, $this->context),
+                $currenttype,
+                $currentrubric === (int) $row->id
+            );
+        }
+
+        return [
+            'defaults' => json_encode(presentation_types::all_defaults()),
+            // Only a new activity takes a type's defaults: on an existing one a
+            // type change must not reset its mode, lengths, slides or topics.
+            'isnew' => empty($this->current->instance),
+            'previews' => $previews,
+        ];
+    }
+
+    /**
+     * One rubric's read only view, with its edit link when there is one.
+     *
+     * The link edits a stored rubric the user may edit, or for an in-code
+     * preset starts a new rubric in this activity from it, which then wins
+     * over the preset. It needs the activity to exist, because the editor is
+     * reached through it.
+     *
+     * @param string $key What the preview stands for, 'type:<type>' or 'rubric:<id>'.
+     * @param array $resolved A rubric_manager::resolve() result.
+     * @param string $type The presentation type it was resolved for.
+     * @param bool $shown Whether it matches the saved values, so it shows without the script.
+     * @return array
+     */
+    private function rubric_preview(string $key, array $resolved, string $type, bool $shown): array {
+        global $USER;
+
+        $criteria = [];
+        foreach ($resolved['criteria'] as $criterion) {
+            $levels = [];
+            foreach ($criterion['levels'] ?? [] as $level) {
+                $levels[] = [
+                    'score' => (int) $level['score'],
+                    'label' => $level['label'],
+                    'description' => $level['description'],
+                ];
+            }
+            $criteria[] = [
+                'name' => $criterion['name'],
+                'description' => $criterion['description'],
+                'haslevels' => !empty($levels),
+                'levels' => $levels,
+                'maxtext' => get_string('rubricpreview_max', 'mod_presenterai', (int) $criterion['max_score']),
+                'feedbackonly' => empty($criterion['counts']),
+            ];
+        }
+
+        $editurl = '';
+        $cm = $this->get_coursemodule();
+        if ($cm && has_capability('mod/presenterai:managerubrics', $this->context)) {
+            $returnurl = (new moodle_url('/course/modedit.php', ['update' => (int) $cm->id]))->out(false);
+            if ((int) $resolved['rubricid'] > 0) {
+                $row = rubric_manager::list_for_context($this->context)[(int) $resolved['rubricid']] ?? null;
+                if ($row && rubrics_page::may_edit($row, $this->context, (int) $USER->id)) {
+                    $editurl = (new moodle_url('/mod/presenterai/rubric.php', [
+                        'id' => (int) $cm->id,
+                        'action' => 'edit',
+                        'rubricid' => (int) $row->id,
+                        'returnurl' => $returnurl,
+                    ]))->out(false);
+                }
+            } else {
+                $preset = presentation_types::columns($type)['preset'] ?? rubric_manager::LEVEL_GENERAL;
+                $audio = ($this->current->mode ?? 'video') === 'audio';
+                $editurl = (new moodle_url('/mod/presenterai/rubric.php', [
+                    'id' => (int) $cm->id,
+                    'action' => 'edit',
+                    'preset' => $preset,
+                    'type' => $audio ? rubric_manager::TYPE_SPEECH : rubric_manager::TYPE_VIDEO,
+                    'title' => get_string('presentationtype_' . $preset, 'mod_presenterai'),
+                    'returnurl' => $returnurl,
+                ]))->out(false);
+            }
+        }
+
+        return [
+            'key' => $key,
+            'shown' => $shown,
+            'title' => $resolved['rubricid'] > 0
+                ? format_string($resolved['title'], true, ['context' => $this->context])
+                : get_string('rubricpreview_preset', 'mod_presenterai'),
+            'criteria' => $criteria,
+            'editurl' => $editurl,
+            'editnote' => $cm ? '' : get_string('rubricpreview_savefirst', 'mod_presenterai'),
+        ];
+    }
+
+    /**
+     * Everything a course designer rarely changes, under one collapsed heading (0.6.0).
+     *
+     * Attempts, review before release (D28, off by default), slide design and
+     * body language feedback, and retention.
      *
      * Body language feedback is opt in per activity (D17) and forced off for
      * audio. Scoring it is a second, separate opt in (D23), and so is letting
@@ -348,38 +567,21 @@ class mod_presenterai_mod_form extends moodleform_mod {
      *
      * @return void
      */
-    private function add_ai_elements(): void {
+    private function add_more_settings(): void {
         $mform = $this->_form;
 
-        $mform->addElement('header', 'aiheading_inst', get_string('aiheading_inst', 'mod_presenterai'));
+        $mform->addElement('header', 'moresettings', get_string('moresettings', 'mod_presenterai'));
+        $mform->setExpanded('moresettings', false);
 
-        $mform->addElement('select', 'ptype', get_string('ptype', 'mod_presenterai'), [
-            'informative' => get_string('ptype_informative', 'mod_presenterai'),
-            'persuasive' => get_string('ptype_persuasive', 'mod_presenterai'),
-        ]);
-        $mform->setDefault('ptype', 'informative');
-        $mform->addHelpButton('ptype', 'ptype', 'mod_presenterai');
+        $mform->addElement('text', 'maxattempts', get_string('maxattempts', 'mod_presenterai'), ['size' => 4]);
+        $mform->setType('maxattempts', PARAM_INT);
+        $mform->setDefault('maxattempts', 0);
+        $mform->addHelpButton('maxattempts', 'maxattempts', 'mod_presenterai');
 
-        // The first option is the empty value, which means general.
-        $levels = ['' => get_string('level_general', 'mod_presenterai')];
-        foreach (rubric_manager::LEVELS as $level) {
-            if ($level !== rubric_manager::LEVEL_GENERAL) {
-                $levels[$level] = get_string('level_' . $level, 'mod_presenterai');
-            }
-        }
-        $mform->addElement('select', 'speakinglevel', get_string('speakinglevel', 'mod_presenterai'), $levels);
-        $mform->setDefault('speakinglevel', '');
-        $mform->addHelpButton('speakinglevel', 'speakinglevel', 'mod_presenterai');
-
-        $rubrics = [0 => get_string('rubricid_auto', 'mod_presenterai')];
-        foreach (rubric_manager::list_active_for_context($this->context) as $rubric) {
-            // Unescaped: the select escapes its option text itself.
-            $rubrics[(int) $rubric->id] = format_string($rubric->title, true, ['context' => $this->context, 'escape' => false]);
-        }
-        $mform->addElement('select', 'rubricid', get_string('rubricid', 'mod_presenterai'), $rubrics);
-        $mform->setType('rubricid', PARAM_INT);
-        $mform->setDefault('rubricid', 0);
-        $mform->addHelpButton('rubricid', 'rubricid', 'mod_presenterai');
+        // D28: hold AI scores and feedback until a teacher releases them.
+        $mform->addElement('advcheckbox', 'reviewbeforerelease', get_string('reviewbeforerelease', 'mod_presenterai'));
+        $mform->setDefault('reviewbeforerelease', 0);
+        $mform->addHelpButton('reviewbeforerelease', 'reviewbeforerelease', 'mod_presenterai');
 
         $mform->addElement('advcheckbox', 'slidevision', get_string('slidevision', 'mod_presenterai'));
         $mform->setDefault('slidevision', 0);
@@ -403,17 +605,15 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $mform->hideIf('allowvisualoptout', 'videovision', 'notchecked');
         $mform->hideIf('allowvisualoptout', 'mode', 'eq', 'audio');
 
-        // D28: hold AI scores and feedback until a teacher releases them.
-        $mform->addElement('advcheckbox', 'reviewbeforerelease', get_string('reviewbeforerelease', 'mod_presenterai'));
-        $mform->setDefault('reviewbeforerelease', 0);
-        $mform->addHelpButton('reviewbeforerelease', 'reviewbeforerelease', 'mod_presenterai');
+        $this->add_retention_elements();
     }
 
     /**
      * The topics section: one repeated group per topic.
      *
-     * A new activity gets three empty rows. An existing one gets a row per
-     * topic plus one empty row, so adding a topic never needs the add button.
+     * A new activity gets three rows, filled with the default type's starter
+     * topics (data_preprocessing()). An existing one gets a row per topic plus
+     * one empty row, so adding a topic never needs the add button.
      *
      * @return void
      */
@@ -422,6 +622,8 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $mform = $this->_form;
 
         $mform->addElement('header', 'topicsheading', get_string('topicsheading', 'mod_presenterai'));
+        $mform->setExpanded('topicsheading');
+        $mform->addElement('static', 'topicsintro', '', get_string('topicsintro', 'mod_presenterai'));
 
         $repeatno = self::NEW_TOPIC_REPEATS;
         if (!empty($this->_instance)) {
@@ -469,7 +671,11 @@ class mod_presenterai_mod_form extends moodleform_mod {
     }
 
     /**
-     * The retention section: how long recordings are kept, and how many.
+     * Retention, inside "More settings": how long recordings are kept, and how many.
+     *
+     * A new activity keeps recordings 30 days when the teacher may set
+     * retention, and follows the site otherwise, which is what normalise()
+     * stores for them anyway.
      *
      * Without mod/presenterai:setretention the choice is shown frozen with a
      * line saying why (design 7.3). The two warnings below it describe the
@@ -481,8 +687,6 @@ class mod_presenterai_mod_form extends moodleform_mod {
     private function add_retention_elements(): void {
         $mform = $this->_form;
 
-        $mform->addElement('header', 'retentionheading_inst', get_string('retentionheading_inst', 'mod_presenterai'));
-
         $sitedays = instance_manager::site_retention_days();
         $sitedesc = $sitedays > 0
             ? get_string('retentionsitedays', 'mod_presenterai', self::days_text($sitedays))
@@ -493,11 +697,12 @@ class mod_presenterai_mod_form extends moodleform_mod {
             'keep' => get_string('retentionmode_keep', 'mod_presenterai'),
             'days' => get_string('retentionmode_days', 'mod_presenterai'),
         ]);
-        $mform->setDefault('retentionmode', 'site');
+        $mform->setDefault('retentionmode', $this->can_set_retention() ? 'days' : 'site');
         $mform->addHelpButton('retentionmode', 'retentiondays_inst', 'mod_presenterai');
 
         $mform->addElement('text', 'retentiondaysvalue', get_string('retentiondaysvalue', 'mod_presenterai'), ['size' => 5]);
         $mform->setType('retentiondaysvalue', PARAM_INT);
+        $mform->setDefault('retentiondaysvalue', self::NEW_RETENTION_DAYS);
         $mform->hideIf('retentiondaysvalue', 'retentionmode', 'neq', 'days');
 
         $effective = instance_manager::effective_retention_days(

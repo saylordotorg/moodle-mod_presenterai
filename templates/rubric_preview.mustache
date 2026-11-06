@@ -1,0 +1,102 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_presenterai/rubric_preview
+
+    The activity settings form's read only view of the rubric the activity
+    will use: each criterion with its description and its five written levels
+    (or its maximum when it has none), and an Edit rubric link once the
+    activity exists. There's no editing here.
+
+    One block per choice the form can reach, keyed by data-previewfor
+    ('type:<presentation type>' for the automatic rubric of that type,
+    'rubric:<id>' for a stored rubric). mod_presenterai/form shows the one
+    that matches the presentation type and rubric selects and hides the rest;
+    without the script the one matching the saved values (shown) is visible.
+    defaults is the JSON the script fills the form from when the type changes.
+
+    Context variables required for this template:
+    * defaults - JSON: presentation type => mode, minseconds, maxseconds, slidesenabled, topics.
+    * isnew - Whether the activity is being created; only then does a type change fill in its defaults.
+    * previews - List of {key, shown, title (HTML), criteria, editurl, editnote}. Each criterion has name,
+      description, haslevels, levels (score, label, description), maxtext and feedbackonly.
+
+    Example context (json):
+    {
+        "defaults": "{}",
+        "isnew": true,
+        "previews": [
+            {
+                "key": "type:practice",
+                "shown": true,
+                "title": "Built-in rubric for this presentation type",
+                "criteria": [
+                    {
+                        "name": "Delivery",
+                        "description": "Speaking clearly at a comfortable pace.",
+                        "haslevels": true,
+                        "levels": [
+                            {"score": 5, "label": "Excellent", "description": "Clear and confident."},
+                            {"score": 1, "label": "Not yet", "description": "Not clear enough to follow yet."}
+                        ],
+                        "maxtext": "Scored out of 5",
+                        "feedbackonly": false
+                    }
+                ],
+                "editurl": "https://example.com/mod/presenterai/rubric.php?id=3&action=edit&preset=practice",
+                "editnote": ""
+            }
+        ]
+    }
+}}
+<div class="mod-presenterai-rubricpreview" data-region="presenterai-rubricpreview" data-defaults="{{defaults}}" data-isnew="{{#isnew}}1{{/isnew}}{{^isnew}}0{{/isnew}}">
+    {{#previews}}
+    <div class="mod-presenterai-rubricpreview-item" data-previewfor="{{key}}"{{^shown}} hidden{{/shown}}>
+        <p class="mb-2"><strong>{{{title}}}</strong></p>
+        {{#criteria}}
+        <div class="mod-presenterai-rubricpreview-criterion mb-3">
+            <h4 class="h6 mb-1">{{name}}{{#feedbackonly}} <span class="badge badge-info bg-info">{{#str}}feedback_criterion_notcounted, mod_presenterai{{/str}}</span>{{/feedbackonly}}</h4>
+            {{#description}}<p class="small mb-1">{{description}}</p>{{/description}}
+            {{#haslevels}}
+            <table class="table table-sm table-bordered small mb-0">
+                <caption class="accesshide">{{#str}}rubriclevels, mod_presenterai{{/str}}</caption>
+                <tbody>
+                    {{#levels}}
+                    <tr>
+                        <th scope="row" class="text-nowrap">{{score}} {{label}}</th>
+                        <td>{{description}}</td>
+                    </tr>
+                    {{/levels}}
+                </tbody>
+            </table>
+            {{/haslevels}}
+            {{^haslevels}}
+            <p class="small mb-0">{{maxtext}}</p>
+            {{/haslevels}}
+        </div>
+        {{/criteria}}
+        {{#editurl}}
+        <p class="mb-0"><a href="{{editurl}}">{{#str}}rubricpreview_edit, mod_presenterai{{/str}}</a></p>
+        {{/editurl}}
+        {{^editurl}}
+        {{#editnote}}
+        <p class="small mb-0">{{editnote}}</p>
+        {{/editnote}}
+        {{/editurl}}
+    </div>
+    {{/previews}}
+</div>

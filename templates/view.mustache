@@ -17,34 +17,42 @@
 {{!
     @template mod_presenterai/view
 
-    The learner's page for one activity, in reading order: topics, the policy
-    callout, the privacy paragraph, the recorder (or why it is not offered),
-    the attempt list, a container the player opens into, and a polite live
-    region that exists at page load so later announcements are spoken.
+    The learner's page for one activity (0.6.0): a numbered panel of three
+    steps, 1 choose a topic (only when there are topics), 2 record, 3 read
+    your feedback, then every attempt in a collapsed "All attempts (n)", a
+    container the player opens into, and a polite live region that exists at
+    page load so later announcements are spoken.
 
-    The callout and the attempt list sit outside the recorder branch on
-    purpose: a learner whose site has storage unconfigured, or who has used
-    every attempt, is still told the policy and still sees their attempts.
+    Step 2 carries one line about the recording's privacy and deletion, and
+    the pruning warning when it applies, before the recorder. They sit outside
+    the recorder branch on purpose: a learner whose site has storage
+    unconfigured, or who has used every attempt, is still told the policy and
+    still sees their attempts. Step 3 is the latest attempt's card
+    (mod_presenterai/latest), which mod_presenterai/view refreshes while it's
+    being scored.
 
     The recorder settings are data attributes on the root, read by
     mod_presenterai/view, rather than js_call_amd arguments.
 
     Context variables required for this template:
     * cmid - The course module id.
+    * contextid - The module context id, for the card's refresh.
     * topics - Context for mod_presenterai/topics.
-    * callout - Context for mod_presenterai/policy_callout.
-    * privacy - The privacy paragraph, HTML.
+    * retentionline - The privacy and deletion line, HTML.
+    * prunewarning - The pruning warning, or empty.
+    * latest - Context for mod_presenterai/latest.
     * canrecord - Whether the user may record at all.
     * showsubmissions - Whether to show the link to the submissions report.
     * submissionsurl - The submissions report URL.
     * blocked - Why recording is not offered right now, or empty.
     * recorder - Context for mod_presenterai/recorder, or null.
     * config - Recorder settings for the data attributes, or null.
-    * attempts - Context for mod_presenterai/attempts.
+    * attempts - Context for mod_presenterai/attempts, plus count.
 
     Example context (json):
     {
         "cmid": 12,
+        "contextid": 40,
         "topics": {
             "hastopics": true,
             "topicselect": true,
@@ -56,13 +64,9 @@
                     "files": [{"filename": "brief.pdf", "url": "https://example.com/brief.pdf"}], "hasfiles": true}
             ]
         },
-        "callout": {
-            "variant": "keep_dl",
-            "heading": "Your recording is kept until it is deleted.",
-            "body": "Nothing deletes this recording automatically.",
-            "prunewarning": ""
-        },
-        "privacy": "Your recording is uploaded to Example storage so it can be transcribed and scored.",
+        "retentionline": "Your recording is private to you and your instructors and is deleted after 30 days (your transcript and feedback are kept).",
+        "prunewarning": "",
+        "latest": {"hasattempt": false, "scoring": false},
         "canrecord": true,
         "showsubmissions": true,
         "submissionsurl": "https://example.com/mod/presenterai/report.php?id=12",
@@ -71,14 +75,15 @@
             "isaudio": false,
             "isvideo": true,
             "slides": true,
-            "limits": "Record for between 5:00 and 7:00.",
+            "timerlimits": "minimum 0:20, maximum 1:30",
             "visualdisclosure": true,
+            "visualnote": "The note the AI writes about what it saw in those frames is deleted after 30 days.",
             "visualoptout": false
         },
         "config": {
             "mode": "video",
-            "minseconds": 300,
-            "maxseconds": 420,
+            "minseconds": 20,
+            "maxseconds": 90,
             "width": 854,
             "height": 480,
             "videokbps": 500,
@@ -92,62 +97,57 @@
             "audiotrackkbps": 32
         },
         "attempts": {
-            "hasattempts": true,
+            "hasattempts": false,
+            "count": 0,
             "showdownloadoffnote": false,
-            "rows": [
-                {
-                    "recid": 7,
-                    "attempt": "1",
-                    "recorded": "6/10/26, 14:00",
-                    "length": "6:12",
-                    "status": "Submitted",
-                    "statekey": "attempt_kept",
-                    "state": "Kept until deleted",
-                    "mediaavailable": true,
-                    "canwatch": true,
-                    "watcharia": "Watch the recording you made on 6/10/26, 14:00",
-                    "candownload": true,
-                    "downloadurl": "https://example.com/mod/presenterai/download.php?id=7",
-                    "downloadaria": "Download the recording you made on 6/10/26, 14:00",
-                    "candelete": true,
-                    "deletearia": "Delete the recording you made on 6/10/26, 14:00",
-                    "gonenote": "",
-                    "hasscore": true,
-                    "score": "80.00%",
-                    "hasfeedback": true,
-                    "feedbackaria": "Feedback on the attempt you made on 6/10/26, 14:00",
-                    "feedback": {
-                        "criteria": [
-                            {"name": "Content", "scoretext": "4 out of 5", "feedback": "Clear thesis."}
-                        ],
-                        "overall": "A well organized talk."
-                    }
-                }
-            ]
+            "rows": []
         }
     }
 }}
-<div id="mod-presenterai-view" class="mod-presenterai-view" data-cmid="{{cmid}}" {{#config}}data-mode="{{mode}}" data-minseconds="{{minseconds}}" data-maxseconds="{{maxseconds}}" data-width="{{width}}" data-height="{{height}}" data-videokbps="{{videokbps}}" data-audiokbps="{{audiokbps}}" data-slides="{{slides}}" data-maxbytes="{{maxbytes}}" data-videovision="{{videovision}}" data-allowvisualoptout="{{allowvisualoptout}}" data-warmstt="{{warmstt}}" data-audiotrack="{{audiotrack}}" data-audiotrackkbps="{{audiotrackkbps}}"{{/config}} {{#topics}}data-topicid="{{singletopicid}}"{{/topics}}>
-    {{#topics}}
-    {{> mod_presenterai/topics }}
-    {{/topics}}
-    {{#callout}}
-    {{> mod_presenterai/policy_callout }}
-    {{/callout}}
-    <p class="mod-presenterai-privacy small">{{{privacy}}}</p>
-    {{#canrecord}}
-    {{#blocked}}
-    <div class="mod-presenterai-blocked alert alert-info">{{blocked}}</div>
-    {{/blocked}}
-    {{#recorder}}
-    {{> mod_presenterai/recorder }}
-    {{/recorder}}
-    {{/canrecord}}
+<div id="mod-presenterai-view" class="mod-presenterai-view" data-cmid="{{cmid}}" data-contextid="{{contextid}}" {{#config}}data-mode="{{mode}}" data-minseconds="{{minseconds}}" data-maxseconds="{{maxseconds}}" data-width="{{width}}" data-height="{{height}}" data-videokbps="{{videokbps}}" data-audiokbps="{{audiokbps}}" data-slides="{{slides}}" data-maxbytes="{{maxbytes}}" data-videovision="{{videovision}}" data-allowvisualoptout="{{allowvisualoptout}}" data-warmstt="{{warmstt}}" data-audiotrack="{{audiotrack}}" data-audiotrackkbps="{{audiotrackkbps}}"{{/config}} {{#topics}}data-topicid="{{singletopicid}}"{{/topics}}>
+    <ol class="mod-presenterai-steps pl-4 ps-4">
+        {{#topics.hastopics}}
+        <li class="mod-presenterai-step mb-3" data-step="topic">
+            <h3 class="h5">{{#str}}step_topic, mod_presenterai{{/str}}</h3>
+            {{#topics}}
+            {{> mod_presenterai/topics }}
+            {{/topics}}
+        </li>
+        {{/topics.hastopics}}
+        <li class="mod-presenterai-step mb-3" data-step="record">
+            <h3 class="h5">{{#str}}step_record, mod_presenterai{{/str}}</h3>
+            <p class="mod-presenterai-retention small" data-region="retention">{{{retentionline}}}</p>
+            {{#prunewarning}}
+            <p class="mod-presenterai-prune small">{{prunewarning}}</p>
+            {{/prunewarning}}
+            {{#canrecord}}
+            {{#blocked}}
+            <div class="mod-presenterai-blocked alert alert-info">{{blocked}}</div>
+            {{/blocked}}
+            {{#recorder}}
+            {{> mod_presenterai/recorder }}
+            {{/recorder}}
+            {{/canrecord}}
+        </li>
+        <li class="mod-presenterai-step mb-3" data-step="feedback">
+            <h3 class="h5">{{#str}}step_feedback, mod_presenterai{{/str}}</h3>
+            <div data-region="latest">
+                {{#latest}}
+                {{> mod_presenterai/latest }}
+                {{/latest}}
+            </div>
+        </li>
+    </ol>
     {{#showsubmissions}}
-    <p class="mod-presenterai-submissions-link mt-4"><a href="{{submissionsurl}}">{{#str}}viewsubmissions, mod_presenterai{{/str}}</a></p>
+    <p class="mod-presenterai-submissions-link"><a href="{{submissionsurl}}">{{#str}}viewsubmissions, mod_presenterai{{/str}}</a></p>
     {{/showsubmissions}}
     {{#attempts}}
-    {{> mod_presenterai/attempts }}
+    {{#hasattempts}}
+    <details class="mod-presenterai-allattempts mt-3" data-region="allattempts">
+        <summary class="h5">{{#str}}allattempts, mod_presenterai, {{count}}{{/str}}</summary>
+        {{> mod_presenterai/attempts }}
+    </details>
+    {{/hasattempts}}
     {{/attempts}}
     <div class="mod-presenterai-player mt-3" data-region="player" tabindex="-1"></div>
     <div class="accesshide" aria-live="polite" data-region="live"></div>

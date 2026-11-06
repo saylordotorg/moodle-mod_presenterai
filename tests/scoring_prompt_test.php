@@ -200,6 +200,61 @@ final class scoring_prompt_test extends \basic_testcase {
     }
 
     /**
+     * A criterion's written levels go into the prompt under it, with the instruction to pick one and name it;
+     * a rubric without levels gets neither.
+     *
+     * @return void
+     */
+    public function test_levels_reach_the_prompt(): void {
+        $levels = [];
+        foreach ([5 => 'Superb', 4 => 'Solid', 3 => 'Getting there', 2 => 'Early', 1 => 'Not yet'] as $score => $label) {
+            $levels[] = ['score' => $score, 'label' => $label, 'description' => "Level {$score} looks like this."];
+        }
+        $criteria = [
+            ['name' => 'Introduction', 'description' => 'Opening.', 'max_score' => 5, 'levels' => $levels],
+            ['name' => 'Evidence', 'description' => 'Support for claims.', 'max_score' => 8],
+        ];
+        $system = scoring_prompt::build($this->inputs(['criteria' => $criteria]))['system'];
+
+        $this->assertStringContainsString(
+            "- Introduction: Opening. (0-5)\n  5 Superb: Level 5 looks like this.\n  4 Solid: Level 4 looks like this.\n"
+                . "  3 Getting there: Level 3 looks like this.\n  2 Early: Level 2 looks like this.\n"
+                . "  1 Not yet: Level 1 looks like this.\n- Evidence: Support for claims. (0-8)",
+            $system
+        );
+        $instruction = get_string_manager()->get_string('prompt:scoring_levels', 'mod_presenterai', null, 'en');
+        $this->assertStringContainsString($instruction, $system);
+        $this->assertStringContainsString('name the level reached', $system);
+        $this->assertStringContainsString('what the next level up looks like', $system);
+        // The output schema doesn't change: a score per criterion, as before.
+        $built = scoring_prompt::build($this->inputs(['criteria' => $criteria]));
+        $this->assertSame(scoring_prompt::schema(false), $built['schema']['schema']);
+
+        // A preset's levels come through the same way.
+        $system = scoring_prompt::build($this->inputs([
+            'criteria' => rubric_manager::preset_criteria('persuasive', false),
+        ]))['system'];
+        $this->assertStringContainsString('  4 Proficient: ', $system);
+        $this->assertStringContainsString('- Persuasive appeals: ', $system);
+
+        $plain = scoring_prompt::build($this->inputs())['system'];
+        $this->assertStringNotContainsString($instruction, $plain);
+        $this->assertStringNotContainsString('  5 ', $plain);
+    }
+
+    /**
+     * The practice and entertain types have their own hints.
+     *
+     * @return void
+     */
+    public function test_new_ptype_hints(): void {
+        $this->assertStringContainsString('PRACTICE presentation', scoring_prompt::ptype_hint('practice'));
+        $this->assertStringContainsString('SPEECH TO ENTERTAIN', scoring_prompt::ptype_hint('entertain'));
+        $system = scoring_prompt::build($this->inputs(['ptype' => 'practice']))['system'];
+        $this->assertStringContainsString('PRACTICE presentation', $system);
+    }
+
+    /**
      * The schema: every property required, no extra properties, no bounds anywhere.
      *
      * @return void

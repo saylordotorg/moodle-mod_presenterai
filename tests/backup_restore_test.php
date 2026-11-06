@@ -797,6 +797,32 @@ final class backup_restore_test extends \advanced_testcase {
     }
 
     /**
+     * The preset (0.6.0) travels with a duplicate, and an activity without one stays without one.
+     *
+     * @return void
+     */
+    public function test_duplicate_keeps_preset(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/course/lib.php');
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $CFG->backup_file_logger_level = backup::LOG_NONE;
+
+        $course = $this->getDataGenerator()->create_course();
+        foreach (['practice' => 'practice', 'none' => null] as $label => $preset) {
+            $fields = ['course' => $course->id];
+            if ($preset !== null) {
+                $fields['presentationtype'] = $preset;
+            }
+            $instance = $this->getDataGenerator()->create_module('presenterai', $fields);
+            $cm = get_coursemodule_from_id('presenterai', $instance->cmid, 0, false, MUST_EXIST);
+            $newcm = duplicate_module($course, $cm);
+            $copy = $DB->get_record('presenterai', ['id' => $newcm->instance], '*', MUST_EXIST);
+            $this->assertSame($preset, $copy->preset, $label);
+        }
+    }
+
+    /**
      * Duplicating an activity that chose a course level rubric keeps that choice.
      *
      * The course rubric isn't in the activity's backup, so there is no
