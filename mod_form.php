@@ -469,6 +469,9 @@ class mod_presenterai_mod_form extends moodleform_mod {
 
         return [
             'defaults' => json_encode(presentation_types::all_defaults()),
+            // Only a new activity takes a type's defaults: on an existing one a
+            // type change must not reset its mode, lengths, slides or topics.
+            'isnew' => empty($this->current->instance),
             'previews' => $previews,
         ];
     }

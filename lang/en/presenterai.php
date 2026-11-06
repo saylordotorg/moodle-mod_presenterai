@@ -88,6 +88,7 @@ $string['card_status'] = 'Status:';
 $string['card_status_ready'] = 'Ready';
 $string['card_status_scoring'] = 'Scoring, usually about 2 minutes';
 $string['card_status_uploading'] = 'Uploading';
+$string['card_status_waiting'] = 'Waiting to be scored';
 $string['card_tips'] = 'Try next time';
 $string['claudeapikey'] = 'Claude API key';
 $string['claudeapikey_desc'] = 'Anthropic API key. Stored encrypted.';

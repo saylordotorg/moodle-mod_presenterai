@@ -16,8 +16,11 @@
 /**
  * The activity settings form's presentation type: defaults and the rubric preview.
  *
- * When the course designer picks a presentation type, the length range,
- * camera recording, slides and starter topics change to that type's defaults.
+ * When the course designer picks a presentation type for a new activity,
+ * the length range, camera recording, slides and starter topics change to
+ * that type's defaults. On an existing activity changing the type changes
+ * only the type and the rubric preview: its recording settings and topics
+ * are the designer's and are never touched (data-isnew on the preview).
  * A topic title is replaced only while it's empty or still the previous
  * type's starter, so nothing the designer typed is overwritten. Defaults are
  * filled in only on a change the designer makes, never on load, so opening an
@@ -121,9 +124,12 @@ export const init = (previewSelector) => {
         previous = type;
     };
 
+    const isnew = preview.dataset.isnew === '1';
     if (typeselect) {
         typeselect.addEventListener('change', () => {
-            applyDefaults();
+            if (isnew) {
+                applyDefaults();
+            }
             showPreview();
         });
     }

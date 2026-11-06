@@ -33,7 +33,8 @@
  * recording is being sent, and while the attempt is being scored the card
  * is fetched again every 20 seconds through core's fragment API, which runs
  * the same access checks as the page, until the score is there. A hidden
- * tab skips its turn, so a page left open doesn't poll for nothing.
+ * tab skips its turn, so a page left open doesn't poll for nothing, and the
+ * polling stops for good after 15 minutes or 3 failed fetches in a row.
  *
  * @module     mod_presenterai/view
  * @copyright  2026 Saylor Academy
@@ -81,6 +82,12 @@ const readConfig = (root) => {
 /** @var {number} How often the latest attempt's card is fetched again while it's being scored. */
 const CARD_REFRESH_MS = 20000;
 
+/** @var {number} How long the card is refreshed for at most. */
+const CARD_REFRESH_LIMIT_MS = 15 * 60 * 1000;
+
+/** @var {number} Failed fetches in a row after which the card stops refreshing. */
+const CARD_REFRESH_MAX_FAILURES = 3;
+
 /**
  * Fetch the latest attempt's card every 20 seconds while it says it's being scored.
  *
@@ -97,12 +104,19 @@ const watchCard = (root, announce) => {
     if (!container || !contextid || !scoring()) {
         return;
     }
+    const startedat = Date.now();
+    let failures = 0;
     const timerid = window.setInterval(async() => {
+        if (Date.now() - startedat > CARD_REFRESH_LIMIT_MS) {
+            window.clearInterval(timerid);
+            return;
+        }
         if (document.hidden) {
             return;
         }
         try {
             const html = await Fragment.loadFragment('mod_presenterai', 'latest', contextid, {});
+            failures = 0;
             container.innerHTML = html;
             if (!scoring()) {
                 window.clearInterval(timerid);
@@ -112,7 +126,11 @@ const watchCard = (root, announce) => {
                 }
             }
         } catch (e) {
-            // A failed refresh tries again next time; the page itself still works.
+            // A failed refresh tries again next time, up to a limit; the page itself still works.
+            failures++;
+            if (failures >= CARD_REFRESH_MAX_FAILURES) {
+                window.clearInterval(timerid);
+            }
         }
     }, CARD_REFRESH_MS);
 };

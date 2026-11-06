@@ -31,12 +31,14 @@
 
     Context variables required for this template:
     * defaults - JSON: presentation type => mode, minseconds, maxseconds, slidesenabled, topics.
+    * isnew - Whether the activity is being created; only then does a type change fill in its defaults.
     * previews - List of {key, shown, title (HTML), criteria, editurl, editnote}. Each criterion has name,
       description, haslevels, levels (score, label, description), maxtext and feedbackonly.
 
     Example context (json):
     {
         "defaults": "{}",
+        "isnew": true,
         "previews": [
             {
                 "key": "type:practice",
@@ -61,7 +63,7 @@
         ]
     }
 }}
-<div class="mod-presenterai-rubricpreview" data-region="presenterai-rubricpreview" data-defaults="{{defaults}}">
+<div class="mod-presenterai-rubricpreview" data-region="presenterai-rubricpreview" data-defaults="{{defaults}}" data-isnew="{{#isnew}}1{{/isnew}}{{^isnew}}0{{/isnew}}">
     {{#previews}}
     <div class="mod-presenterai-rubricpreview-item" data-previewfor="{{key}}"{{^shown}} hidden{{/shown}}>
         <p class="mb-2"><strong>{{{title}}}</strong></p>

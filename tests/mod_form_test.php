@@ -106,6 +106,7 @@ final class mod_form_test extends \advanced_testcase {
         $this->assertStringContainsString('Organization and transitions', $html);
         $this->assertStringContainsString('Proficient', $html);
         $this->assertStringContainsString(get_string('rubricpreview_savefirst', 'mod_presenterai'), $html);
+        $this->assertStringContainsString('data-isnew="1"', $html, 'A new activity takes the type defaults.');
         $this->assertStringNotContainsString('rubric.php', $html);
         $this->assertStringNotContainsString('<input', $html, 'The preview is not an editor.');
     }
@@ -162,6 +163,7 @@ final class mod_form_test extends \advanced_testcase {
         $this->assertStringContainsString('/mod/presenterai/rubric.php?id=' . $cm->id, $html);
         $this->assertStringContainsString('returnurl=', $html);
         $this->assertStringContainsString(get_string('rubricpreview_edit', 'mod_presenterai'), $html);
+        $this->assertStringContainsString('data-isnew="0"', $html, 'A type change would reset an existing activity.');
 
         // Saving it unchanged leaves the columns as they were.
         $saved = \mod_presenterai\local\instance_manager::normalise(

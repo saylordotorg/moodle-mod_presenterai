@@ -529,6 +529,62 @@ final class view_page_test extends \advanced_testcase {
     }
 
     /**
+     * Which pending attempts the card promises a score for: being scored, or freshly uploaded on a site that can
+     * score. An uploaded row that has waited 15 minutes, or sits on a site with AI off, promises nothing.
+     *
+     * @return void
+     */
+    public function test_pending_state_mapping(): void {
+        $now = 1000000;
+        $limit = view_page::SCORING_PROMISE_SECONDS;
+        $this->assertSame('scoring', view_page::pending_state('scoring', $now - 10 * $limit, $now, false));
+        $this->assertSame('scoring', view_page::pending_state('uploaded', $now - 60, $now, true));
+        $this->assertSame('waiting', view_page::pending_state('uploaded', $now - $limit, $now, true), 'Too old.');
+        $this->assertSame('waiting', view_page::pending_state('uploaded', $now - 60, $now, false), 'AI off.');
+        foreach (['scored', 'failed', 'abandoned', 'uploading'] as $status) {
+            $this->assertSame('', view_page::pending_state($status, $now, $now, true), $status);
+        }
+    }
+
+    /**
+     * An attempt left uploaded (AI off here) reads "Waiting to be scored" and isn't polled; an abandoned newest
+     * attempt doesn't hide the feedback of the one before it, and a failed one is still shown.
+     *
+     * @return void
+     */
+    public function test_card_waiting_and_latest_row(): void {
+        global $PAGE;
+
+        $this->require_other_slices();
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student] = $this->setup_activity();
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $now = time();
+        $uploaded = $generator->create_recording(['presenteraiid' => $instance->id, 'userid' => $student->id,
+            'storagekey' => 'a.webm', 'status' => 'uploaded', 'timecreated' => $now - 100, 'timemodified' => $now - 100]);
+
+        $card = $this->export($instance, $course, $context, $student)['latest'];
+        $this->assertSame((int) $uploaded->id, $card['recid']);
+        $this->assertFalse($card['scoring']);
+        $this->assertSame(get_string('card_status_waiting', 'mod_presenterai'), $card['status']);
+        $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/latest', $card);
+        $this->assertStringContainsString('data-scoring="0"', $html);
+
+        $generator->create_recording(['presenteraiid' => $instance->id, 'userid' => $student->id,
+            'status' => 'abandoned', 'timecreated' => $now, 'timemodified' => $now]);
+        $card = $this->export($instance, $course, $context, $student)['latest'];
+        $this->assertSame((int) $uploaded->id, $card['recid'], 'An abandoned attempt hid the one before it.');
+
+        $failed = $generator->create_recording(['presenteraiid' => $instance->id, 'userid' => $student->id,
+            'storagekey' => 'b.webm', 'status' => 'failed', 'timecreated' => $now + 1, 'timemodified' => $now + 1]);
+        $card = $this->export($instance, $course, $context, $student)['latest'];
+        $this->assertSame((int) $failed->id, $card['recid']);
+        $this->assertTrue($card['failed']);
+
+        $this->assertNull(view_page::latest_row([['statuscode' => 'abandoned']]));
+    }
+
+    /**
      * The recorder is one Start button that becomes Finish, with the limits beside the timer.
      *
      * @return void
