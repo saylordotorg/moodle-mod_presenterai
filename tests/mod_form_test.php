@@ -166,7 +166,7 @@ final class mod_form_test extends \advanced_testcase {
         // Saving it unchanged leaves the columns as they were.
         $saved = \mod_presenterai\local\instance_manager::normalise(
             (object) ['presentationtype' => 'general_persuasive'],
-            (object) ['ptype' => 'persuasive', 'speakinglevel' => null, 'preset' => null]
+            (object) ['ptype' => 'persuasive', 'speakinglevel' => null, 'preset' => null, 'retentiondays' => -1]
         );
         $this->assertSame(['persuasive', null, null], [$saved->ptype, $saved->speakinglevel, $saved->preset]);
     }

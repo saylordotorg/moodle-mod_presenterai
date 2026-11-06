@@ -138,7 +138,7 @@ final class presentation_types_test extends \advanced_testcase {
         $this->assertSame('persuasive', $data->preset);
         $this->assertFalse(property_exists($data, 'presentationtype'), 'The form field is not a column.');
 
-        $existing = (object) ['ptype' => 'persuasive', 'speakinglevel' => null, 'preset' => null];
+        $existing = (object) ['ptype' => 'persuasive', 'speakinglevel' => null, 'preset' => null, 'retentiondays' => -1];
         $data = instance_manager::normalise((object) ['presentationtype' => 'esl_beginner'], $existing);
         $this->assertSame(['persuasive', 'esl_beginner', 'esl_beginner'], [$data->ptype, $data->speakinglevel, $data->preset]);
 
