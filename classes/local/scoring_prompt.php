@@ -67,9 +67,9 @@ final class scoring_prompt {
      *
      * @param array $p Inputs:
      *                 - transcript string
-     *                 - criteria array[] of ['name', 'description', 'max_score'], already filtered
+     *                 - criteria array[] of ['name', 'description', 'max_score'], plus 'levels' where written, already filtered
      *                 - level string, one of rubric_manager::LEVELS
-     *                 - ptype string, 'informative' or 'persuasive'
+     *                 - ptype string, one of instance_manager::PTYPES
      *                 - topictitle string
      *                 - minseconds int, the shortest length the activity allows, 0 for none
      *                 - maxseconds int, the longest length the activity allows, 0 for none
@@ -122,11 +122,26 @@ final class scoring_prompt {
         $datarule = "\n\n" . prompt_text::get($slides !== '' ? 'prompt:scoring_dataruleslides' : 'prompt:scoring_datarule');
 
         $rubriclines = [];
+        $haslevels = false;
         foreach ($criteria as $criterion) {
             $name = (string) ($criterion['name'] ?? '');
             $description = (string) ($criterion['description'] ?? '');
             $max = max(1, (int) ($criterion['max_score'] ?? rubric_manager::DEFAULT_MAX_SCORE));
             $rubriclines[] = "- {$name}: {$description} (0-{$max})";
+            // Written levels go under their criterion, one line each, highest first.
+            $levels = rubric_manager::normalise_levels($criterion['levels'] ?? null);
+            if ($levels !== null) {
+                $haslevels = true;
+                foreach ($levels as $level) {
+                    $text = $level['description'] !== '' ? ': ' . $level['description'] : '';
+                    $rubriclines[] = "  {$level['score']} {$level['label']}{$text}";
+                }
+            }
+        }
+        // Only a rubric with levels gets the sentence about choosing one, so a
+        // rubric without them is sent exactly the prompt it was before 0.6.0.
+        if ($haslevels) {
+            $rubriclines[] = "\n" . prompt_text::get('prompt:scoring_levels');
         }
 
         $shape = '{"criteria":[{"name":"...","score":3,"feedback":"...","assessed":true}], '
@@ -213,7 +228,9 @@ final class scoring_prompt {
     /**
      * What a presentation type asks the coach to weight, from SOLA's score_speech::mode_hint().
      *
-     * @param string $ptype 'informative' or 'persuasive'.
+     * Practice and entertain are 0.6.0's, and have no counterpart in SOLA.
+     *
+     * @param string $ptype One of instance_manager::PTYPES.
      * @return string A sentence with a leading space, or '' for anything else.
      */
     public static function ptype_hint(string $ptype): string {
@@ -222,6 +239,10 @@ final class scoring_prompt {
                 return ' ' . prompt_text::get('prompt:ptype_persuasive');
             case 'informative':
                 return ' ' . prompt_text::get('prompt:ptype_informative');
+            case 'practice':
+                return ' ' . prompt_text::get('prompt:ptype_practice');
+            case 'entertain':
+                return ' ' . prompt_text::get('prompt:ptype_entertain');
             default:
                 return '';
         }

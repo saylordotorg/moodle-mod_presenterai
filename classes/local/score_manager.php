@@ -167,7 +167,8 @@ final class score_manager {
      *
      * @param \stdClass $score A presenterai_score row.
      * @return array[] A list of ['name' => string, 'score' => int, 'max_score' => int,
-     *                 'feedback' => string, 'assessed' => bool, 'visual' => bool, 'counts' => bool].
+     *                 'feedback' => string, 'assessed' => bool, 'visual' => bool, 'counts' => bool],
+     *                 plus 'level' => string (0.6.0) on an entry that stored the label of the level it reached.
      *                 An absent visual flag reads false and an absent counts flag reads true.
      */
     public static function decode_criteria(\stdClass $score): array {
@@ -181,7 +182,7 @@ final class score_manager {
             if (!is_array($entry)) {
                 continue;
             }
-            $criteria[] = [
+            $decoded = [
                 'name' => isset($entry['name']) && is_scalar($entry['name']) ? (string) $entry['name'] : '',
                 'score' => isset($entry['score']) && is_numeric($entry['score']) ? (int) $entry['score'] : 0,
                 'max_score' => isset($entry['max_score']) && is_numeric($entry['max_score'])
@@ -192,8 +193,26 @@ final class score_manager {
                 'visual' => !empty($entry['visual']),
                 'counts' => ($entry['counts'] ?? null) !== false,
             ];
+            $level = self::clean_level_label($entry['level'] ?? null);
+            if ($level !== '') {
+                $decoded['level'] = $level;
+            }
+            $criteria[] = $decoded;
         }
         return $criteria;
+    }
+
+    /**
+     * A stored level label, trimmed and bounded, or '' when there isn't a usable one.
+     *
+     * @param mixed $raw The 'level' value of a criterion.
+     * @return string
+     */
+    private static function clean_level_label($raw): string {
+        if (!is_scalar($raw)) {
+            return '';
+        }
+        return \core_text::substr(trim((string) $raw), 0, 100);
     }
 
     /**
@@ -502,12 +521,14 @@ final class score_manager {
      * Set each entry's visual and counts flags from the activity's resolved rubric.
      *
      * Matched by normalized name. An entry the rubric doesn't name (a score
-     * entered against an older rubric) is not visual and counts.
+     * entered against an older rubric) is not visual and counts. An assessed
+     * entry whose rubric criterion has written levels also gets the label of
+     * the level its score reached, as an AI score does.
      *
      * @param array[] $entries From validate_criteria().
      * @param \stdClass $instance The presenterai row.
      * @param \context_module $ctx The activity's module context.
-     * @return array[] The entries with 'visual' and 'counts'.
+     * @return array[] The entries with 'visual' and 'counts', and 'level' where there's one.
      */
     private static function apply_rubric_flags(array $entries, \stdClass $instance, \context_module $ctx): array {
         $byname = [];
@@ -519,6 +540,10 @@ final class score_manager {
             $visual = $known !== null && !empty($known['visual']);
             $entries[$i]['visual'] = $visual;
             $entries[$i]['counts'] = rubric_manager::counts($visual, $instance);
+            $label = $known !== null ? rubric_manager::level_label($known, (int) $entry['score'], !empty($entry['assessed'])) : '';
+            if ($label !== '') {
+                $entries[$i]['level'] = $label;
+            }
         }
         return $entries;
     }
@@ -527,7 +552,8 @@ final class score_manager {
      * Clean a criteria list from the scorer into the stored shape.
      *
      * @param array $criteria The list given to save_ai_score().
-     * @return array[] A list of ['name', 'score', 'max_score', 'feedback', 'assessed', 'visual', 'counts'].
+     * @return array[] A list of ['name', 'score', 'max_score', 'feedback', 'assessed', 'visual', 'counts'],
+     *     plus 'level' on an assessed entry that has one.
      */
     private static function clean_ai_criteria(array $criteria): array {
         $entries = [];
@@ -540,7 +566,7 @@ final class score_manager {
                 continue;
             }
             $max = max(1, (int) ($criterion['max_score'] ?? rubric_manager::DEFAULT_MAX_SCORE));
-            $entries[] = [
+            $entry = [
                 'name' => $name,
                 'score' => max(0, min($max, (int) ($criterion['score'] ?? 0))),
                 'max_score' => $max,
@@ -549,6 +575,11 @@ final class score_manager {
                 'visual' => !empty($criterion['visual']),
                 'counts' => ($criterion['counts'] ?? true) !== false,
             ];
+            $level = self::clean_level_label($criterion['level'] ?? null);
+            if ($level !== '' && $entry['assessed']) {
+                $entry['level'] = $level;
+            }
+            $entries[] = $entry;
         }
         if (empty($entries)) {
             throw new \invalid_parameter_exception('A score needs at least one criterion.');

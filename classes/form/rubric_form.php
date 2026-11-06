@@ -26,10 +26,16 @@ use mod_presenterai\local\rubric_manager;
  * Create or edit one rubric on rubric.php.
  *
  * A title, a type, whether it's active, and repeated rows of criteria: a name,
- * a description, a maximum from 1 to 10 and whether the criterion is visual.
- * "Start from a preset" is a no-submit button: rubric.php sees it pressed and
- * reloads the page with the preset's criteria filled in, which the teacher
- * then edits and saves like any other.
+ * a description, a maximum from 1 to 10, whether the criterion is visual, and
+ * five written levels (0.6.0), each a label and a description, prefilled with
+ * the default labels. "Start from a preset" is a no-submit button: rubric.php
+ * sees it pressed and reloads the page with the preset's criteria filled in,
+ * which the teacher then edits and saves like any other.
+ *
+ * A criterion has levels when at least one level description is written. It
+ * is then scored out of 5, and each level that has a description needs a
+ * label. A criterion whose level descriptions are all empty is stored without
+ * levels, exactly as before 0.6.0, whatever its labels say.
  *
  * The visual flag is what rubric_manager resolves and score rows carry, so it
  * has to survive a save and a reload exactly. SOLA's editor rebuilt each
@@ -39,7 +45,7 @@ use mod_presenterai\local\rubric_manager;
  *
  * Custom data: 'rows' (int, rows to show), 'fixedtype' (string, the type of an
  * existing rubric, which can't change), 'hidden' (array of name => value to
- * carry through the page).
+ * carry through the page; 'returnurl' is cleaned as a local URL).
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -59,7 +65,11 @@ class rubric_form extends \moodleform {
 
         foreach ((array) ($this->_customdata['hidden'] ?? []) as $name => $value) {
             $mform->addElement('hidden', $name, $value);
-            $mform->setType($name, is_int($value) ? PARAM_INT : PARAM_ALPHANUMEXT);
+            if ($name === 'returnurl') {
+                $mform->setType($name, PARAM_LOCALURL);
+            } else {
+                $mform->setType($name, is_int($value) ? PARAM_INT : PARAM_ALPHANUMEXT);
+            }
         }
 
         $mform->addElement('header', 'rubricheading', get_string('rubricdetails', 'mod_presenterai'));
@@ -89,9 +99,11 @@ class rubric_form extends \moodleform {
         $mform->addHelpButton('active', 'rubricactive', 'mod_presenterai');
 
         $presets = ['' => get_string('choosedots')];
-        foreach (rubric_manager::LEVELS as $level) {
-            $presets[$level] = get_string('level_' . $level, 'mod_presenterai');
+        foreach (rubric_manager::PRESETS as $preset) {
+            $presets[$preset] = get_string('presentationtype_' . $preset, 'mod_presenterai');
         }
+        // The general rubric every activity used before 0.6.0, last, for anyone matching an older activity.
+        $presets[rubric_manager::LEVEL_GENERAL] = get_string('presentationtype_general', 'mod_presenterai');
         $group = [
             $mform->createElement('select', 'preset', get_string('rubricpreset', 'mod_presenterai'), $presets),
             $mform->createElement('submit', 'applypreset', get_string('rubricpreset_apply', 'mod_presenterai')),
@@ -128,6 +140,25 @@ class rubric_form extends \moodleform {
                 'hideif' => ['type', 'eq', rubric_manager::TYPE_SPEECH],
             ],
         ];
+        // Five level rows per criterion, 5 first, each a label and a description.
+        $labels = rubric_manager::default_level_labels();
+        foreach (rubric_manager::LEVEL_SCORES as $score) {
+            $row[] = $mform->createElement(
+                'text',
+                'level' . $score . 'label',
+                get_string('rubriclevellabel', 'mod_presenterai', $score),
+                ['size' => 20]
+            );
+            $row[] = $mform->createElement(
+                'textarea',
+                'level' . $score . 'desc',
+                get_string('rubricleveldesc', 'mod_presenterai', $score),
+                ['rows' => 2, 'cols' => 60]
+            );
+            $options['level' . $score . 'label'] = ['type' => PARAM_TEXT, 'default' => $labels[$score]];
+            $options['level' . $score . 'desc'] = ['type' => PARAM_TEXT];
+        }
+        $options['level5label']['helpbutton'] = ['rubriclevels', 'mod_presenterai'];
         $this->repeat_elements(
             $row,
             max(1, (int) ($this->_customdata['rows'] ?? self::NEW_ROWS)),
@@ -143,7 +174,8 @@ class rubric_form extends \moodleform {
     }
 
     /**
-     * Check the rubric: a type, at least one named criterion, unique names, visual rows only on video.
+     * Check the rubric: a type, at least one named criterion, unique names, visual rows only on video,
+     * and, for a criterion with written levels, a label on every described level and a maximum of 5.
      *
      * @param array $data The submitted values.
      * @param array $files Unused.
@@ -183,6 +215,18 @@ class rubric_form extends \moodleform {
             if (!empty($visuals[$i]) && $type === rubric_manager::TYPE_SPEECH) {
                 $errors["criterionvisual[$i]"] = get_string('rubricerror_visualspeech', 'mod_presenterai');
             }
+            $levels = self::row_levels($data, $i);
+            if ($levels === null) {
+                continue;
+            }
+            foreach ($levels as $level) {
+                if ($level['description'] !== '' && $level['label'] === '') {
+                    $errors['level' . $level['score'] . "label[$i]"] = get_string('rubricerror_levellabel', 'mod_presenterai');
+                }
+            }
+            if ($max !== rubric_manager::LEVELS_MAX_SCORE && !isset($errors["criterionmax[$i]"])) {
+                $errors["criterionmax[$i]"] = get_string('rubricerror_levelsmax', 'mod_presenterai');
+            }
         }
         if (empty($seen)) {
             $errors['criterionname[0]'] = get_string('rubricerror_nocriteria', 'mod_presenterai');
@@ -194,8 +238,12 @@ class rubric_form extends \moodleform {
     /**
      * The criteria the submitted rows describe, blank rows left out.
      *
+     * A row with at least one level description gets 'levels' and a maximum
+     * of 5; an empty label there takes the default one, which validation only
+     * allows on a level with no description.
+     *
      * @param \stdClass $data The data get_data() returned.
-     * @return array[] A list of ['name', 'description', 'max_score', 'visual'].
+     * @return array[] A list of ['name', 'description', 'max_score', 'visual'], plus 'levels' where written.
      */
     public function to_criteria(\stdClass $data): array {
         $names = (array) ($data->criterionname ?? []);
@@ -210,14 +258,50 @@ class rubric_form extends \moodleform {
             if ($name === '') {
                 continue;
             }
-            $out[] = [
+            $criterion = [
                 'name' => $name,
                 'description' => trim((string) ($descs[$i] ?? '')),
                 'max_score' => max(1, min(rubric_manager::MAX_CRITERION_SCORE, (int) ($maxes[$i] ?? 0))),
                 'visual' => $type === rubric_manager::TYPE_VIDEO && !empty($visuals[$i]),
             ];
+            $levels = self::row_levels((array) $data, $i);
+            if ($levels !== null) {
+                $defaults = rubric_manager::default_level_labels();
+                foreach ($levels as $n => $level) {
+                    if ($level['label'] === '') {
+                        $levels[$n]['label'] = $defaults[$level['score']];
+                    }
+                }
+                $criterion['max_score'] = rubric_manager::LEVELS_MAX_SCORE;
+                $criterion['levels'] = $levels;
+            }
+            $out[] = $criterion;
         }
         return $out;
+    }
+
+    /**
+     * The written levels of one submitted row, or null when none of its level descriptions is filled in.
+     *
+     * @param array $data The submitted values, or get_data() cast to an array.
+     * @param int|string $i The row's index.
+     * @return array[]|null A list of ['score', 'label', 'description'], 5 first, labels trimmed and possibly empty.
+     */
+    private static function row_levels(array $data, $i): ?array {
+        $levels = [];
+        $written = false;
+        foreach (rubric_manager::LEVEL_SCORES as $score) {
+            $labels = (array) ($data['level' . $score . 'label'] ?? []);
+            $descs = (array) ($data['level' . $score . 'desc'] ?? []);
+            $description = trim((string) ($descs[$i] ?? ''));
+            $written = $written || $description !== '';
+            $levels[] = [
+                'score' => $score,
+                'label' => trim((string) ($labels[$i] ?? '')),
+                'description' => $description,
+            ];
+        }
+        return $written ? $levels : null;
     }
 
     /**
@@ -236,7 +320,7 @@ class rubric_form extends \moodleform {
      * @param string $title The title.
      * @param string $type The type, or '' to leave it unchosen.
      * @param bool $active Whether the rubric is active.
-     * @param array $criteria A list of ['name', 'description', 'max_score', 'visual'].
+     * @param array $criteria A list of ['name', 'description', 'max_score', 'visual'], plus 'levels' where written.
      * @return void
      */
     public function set_rubric(string $title, string $type, bool $active, array $criteria): void {
@@ -252,6 +336,17 @@ class rubric_form extends \moodleform {
             $defaults["criteriondesc[$i]"] = $criterion['description'];
             $defaults["criterionmax[$i]"] = min(rubric_manager::MAX_CRITERION_SCORE, $criterion['max_score']);
             $defaults["criterionvisual[$i]"] = $criterion['visual'] ? 1 : 0;
+            // A criterion without levels shows the default labels and empty
+            // descriptions, which save back as no levels.
+            $labels = rubric_manager::default_level_labels();
+            $written = [];
+            foreach ($criterion['levels'] ?? [] as $level) {
+                $written[(int) $level['score']] = $level;
+            }
+            foreach (rubric_manager::LEVEL_SCORES as $score) {
+                $defaults['level' . $score . "label[$i]"] = $written[$score]['label'] ?? $labels[$score];
+                $defaults['level' . $score . "desc[$i]"] = $written[$score]['description'] ?? '';
+            }
         }
         $this->set_data($defaults);
     }

@@ -28,6 +28,11 @@
  * sesskey. "Start from a preset" is a no-submit button: the page reloads with
  * the preset's criteria filled in, and nothing is saved until Save.
  *
+ * The activity settings form links here with returnurl (0.6.0), so a teacher
+ * who edits the rubric from there goes back to the form after saving or
+ * cancelling. It's a local URL, cleaned as one, and nothing else is read from
+ * it.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -44,6 +49,7 @@ $action = optional_param('action', '', PARAM_ALPHA);
 $rubricid = optional_param('rubricid', 0, PARAM_INT);
 $level = optional_param('level', rubrics_page::LEVEL_MODULE, PARAM_ALPHA);
 $level = $level === rubrics_page::LEVEL_COURSE ? rubrics_page::LEVEL_COURSE : rubrics_page::LEVEL_MODULE;
+$returnurl = optional_param('returnurl', '', PARAM_LOCALURL);
 
 [$course, $cm] = get_course_and_cm_from_cmid($id, 'presenterai');
 require_login($course, false, $cm);
@@ -103,8 +109,7 @@ if ($action === 'edit') {
         rubrics_page::target_context($context, $level, (int) $USER->id);
     }
 
-    $preset = optional_param('preset', '', PARAM_ALPHANUMEXT);
-    $preset = in_array($preset, rubric_manager::LEVELS, true) ? $preset : '';
+    $preset = rubric_manager::clean_preset(optional_param('preset', '', PARAM_ALPHANUMEXT));
     $type = $row ? (string) $row->type : optional_param('type', '', PARAM_ALPHA);
     $type = in_array($type, [rubric_manager::TYPE_SPEECH, rubric_manager::TYPE_VIDEO], true) ? $type : '';
 
@@ -116,7 +121,12 @@ if ($action === 'edit') {
     }
 
     $hidden = ['id' => (int) $cm->id, 'action' => 'edit', 'rubricid' => $row ? (int) $row->id : 0, 'level' => $level];
+    if ($returnurl !== '') {
+        $hidden['returnurl'] = $returnurl;
+    }
     $editurl = new moodle_url($baseurl, ['action' => 'edit']);
+    // Where Save and Cancel go: back to the activity settings when the teacher came from there.
+    $doneurl = $returnurl !== '' ? new moodle_url($returnurl) : $baseurl;
     $form = new rubric_form($editurl, [
         'rows' => rubric_form::rows_for($criteria),
         'fixedtype' => $row ? (string) $row->type : '',
@@ -124,7 +134,7 @@ if ($action === 'edit') {
     ]);
 
     if ($form->is_cancelled()) {
-        redirect($baseurl);
+        redirect($doneurl);
     }
     if ($form->no_submit_button_pressed() && optional_param('applypreset', '', PARAM_TEXT) !== '') {
         require_sesskey();
@@ -136,7 +146,7 @@ if ($action === 'edit') {
             'type' => $row ? (string) $row->type : optional_param('type', '', PARAM_ALPHA),
             'title' => optional_param('title', '', PARAM_TEXT),
             'active' => optional_param('active', 1, PARAM_INT),
-        ]));
+        ] + ($returnurl !== '' ? ['returnurl' => $returnurl] : [])));
     }
     if ($data = $form->get_data()) {
         $criteria = $form->to_criteria($data);
@@ -149,7 +159,7 @@ if ($action === 'edit') {
                 rubric_manager::update($newid, (string) $data->title, $criteria, false);
             }
         }
-        redirect($baseurl, get_string('rubricsaved', 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
+        redirect($doneurl, get_string('rubricsaved', 'mod_presenterai'), null, \core\output\notification::NOTIFY_SUCCESS);
     }
 
     if ($row && $preset === '') {

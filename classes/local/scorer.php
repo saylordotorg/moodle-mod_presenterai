@@ -395,9 +395,12 @@ final class scorer {
     /**
      * Re-apply the allowlist and the rubric's maxima and flags to the pipeline's output.
      *
+     * A criterion with written levels also gets 'level', the label of the
+     * level its score reached, when it was assessed with a score of 1 to 5.
+     *
      * @param array $criteria The criteria visual_pipeline::finalise() returned.
      * @param array $prompted normalized name => resolved rubric criterion.
-     * @return array[] The stored shape.
+     * @return array[] The stored shape, with 'level' where there's one to name.
      */
     private static function reapply_rubric(array $criteria, array $prompted): array {
         $out = [];
@@ -411,15 +414,23 @@ final class scorer {
             }
             $def = $prompted[$key];
             $max = max(1, (int) $def['max_score']);
+            $score = max(0, min($max, (int) ($entry['score'] ?? 0)));
+            $assessed = ($entry['assessed'] ?? false) === true;
             $out[$key] = [
                 'name' => (string) $def['name'],
-                'score' => max(0, min($max, (int) ($entry['score'] ?? 0))),
+                'score' => $score,
                 'max_score' => $max,
                 'feedback' => is_scalar($entry['feedback'] ?? null) ? (string) $entry['feedback'] : '',
-                'assessed' => ($entry['assessed'] ?? false) === true,
+                'assessed' => $assessed,
                 'visual' => !empty($def['visual']),
                 'counts' => !empty($def['counts']),
             ];
+            // The label of the level reached, from the rubric and never from the
+            // model, so the score row still names it if the rubric changes later.
+            $label = rubric_manager::level_label($def, $score, $assessed);
+            if ($label !== '') {
+                $out[$key]['level'] = $label;
+            }
         }
         return array_values($out);
     }

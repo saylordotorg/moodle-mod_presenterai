@@ -38,6 +38,17 @@ namespace mod_presenterai\local;
  * activity sets visualscored, so counts is derived here from the instance and
  * never taken from a request or a model's output.
  *
+ * Since 0.6.0 a criterion may also carry 'levels': exactly five written
+ * levels, scores 5 down to 1, each with a label and a description, stored in
+ * the same criteria JSON (no schema change). A criterion with levels is scored
+ * out of 5, and 0 still means not attempted. A criterion without levels is
+ * read exactly as before, and nothing here invents levels for it.
+ *
+ * Which in-code preset an activity falls back to is its preset column when
+ * that names one (activities made with 0.6.0 or later), else its speaking
+ * level, which is how every activity made before 0.6.0, every restored older
+ * backup and every imported activity keeps the rubric it had.
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -75,6 +86,35 @@ final class rubric_manager {
         self::LEVEL_ESL_ADVANCED,
     ];
 
+    /** @var string The short, encouraging rubric for an introduction or practice talk. */
+    public const PRESET_PRACTICE = 'practice';
+
+    /** @var string The COMM101 informative speech rubric. */
+    public const PRESET_INFORMATIVE = 'informative';
+
+    /** @var string The COMM101 persuasive speech rubric. */
+    public const PRESET_PERSUASIVE = 'persuasive';
+
+    /** @var string The speech to entertain rubric, derived from the informative one. */
+    public const PRESET_ENTERTAIN = 'entertain';
+
+    /** @var string[] The presets a new activity or a new rubric can start from, in the order the forms offer them. */
+    public const PRESETS = [
+        self::PRESET_PRACTICE,
+        self::PRESET_INFORMATIVE,
+        self::PRESET_PERSUASIVE,
+        self::PRESET_ENTERTAIN,
+        self::LEVEL_ESL_BEGINNER,
+        self::LEVEL_ESL_INTERMEDIATE,
+        self::LEVEL_ESL_ADVANCED,
+    ];
+
+    /** @var int[] The scores of a criterion's written levels, highest first. */
+    public const LEVEL_SCORES = [5, 4, 3, 2, 1];
+
+    /** @var int The maximum of a criterion that has written levels. */
+    public const LEVELS_MAX_SCORE = 5;
+
     /**
      * The rubric used when nothing is stored, ported from SOLA's
      * DEFAULT_SPEECH_CRITERIA (classes/rubric_manager.php:57-63).
@@ -82,6 +122,10 @@ final class rubric_manager {
      * The names and descriptions are read in English whatever the site language
      * (prompt_text): they're copied verbatim into score JSON, and a translated
      * name there would make one score read differently depending on who looked.
+     *
+     * Since 0.6.0 this is the fallback of activities made before then (the
+     * "general" speaking level). It has no written levels, so those activities
+     * keep exactly the rubric and the prompt they had.
      *
      * @return array[] A list of ['name', 'description', 'max_score', 'visual'].
      */
@@ -105,7 +149,10 @@ final class rubric_manager {
      * textured hair, headwear and religious dress. "Playing with an object"
      * stays, because an object isn't a person.
      *
-     * @return array[] A list of ['name', 'description', 'max_score', 'visual'].
+     * Since 0.6.0 both carry five written levels. They're still feedback only
+     * unless the activity scores body language (D23).
+     *
+     * @return array[] A list of ['name', 'description', 'max_score', 'visual', 'levels'].
      */
     public static function visual_criteria(): array {
         return [
@@ -114,56 +161,154 @@ final class rubric_manager {
                 'description' => prompt_text::get('rubric:visual_body_desc'),
                 'max_score' => self::DEFAULT_MAX_SCORE,
                 'visual' => true,
+                'levels' => self::preset_levels('visual_body'),
             ],
             [
                 'name' => prompt_text::get('rubric:visual_eye_name'),
                 'description' => prompt_text::get('rubric:visual_eye_desc'),
                 'max_score' => self::DEFAULT_MAX_SCORE,
                 'visual' => true,
+                'levels' => self::preset_levels('visual_eye'),
             ],
         ];
     }
 
     /**
-     * The speaking level presets, ported from SOLA's speech_presets()
-     * (classes/rubric_manager.php:638-688).
+     * The in-code presets, keyed by preset: the speaking levels ported from
+     * SOLA's speech_presets() (classes/rubric_manager.php:638-688) and the
+     * presentation type presets added in 0.6.0.
      *
      * The hint is English prompt data that steers the scoring model's register,
      * not something a person reads, so it's read in English (prompt_text). The
-     * label is read in the user's language and lives in lang/en as level_<key>.
+     * presentation type presets use the general hint, because the presentation
+     * type has its own hint (scoring_prompt::ptype_hint()).
      *
-     * @return array level => ['hint' => string, 'criteria' => array[]]
+     * Every preset criterion except the general preset's has five written
+     * levels (rubric:<key>_l5 to _l1) with the default labels. The COMM101
+     * presets group the questions on Tamara Gillis's COMM101 informative and
+     * persuasive evaluation forms into criteria. Their Delivery criterion
+     * judges what a transcript can show (fluency, pace, fillers, notes read
+     * aloud); gestures and eye contact belong to the two visual criteria, which
+     * stay feedback only (D23), so a spoken criterion never asks the model to
+     * guess at a body from words.
+     *
+     * @return array preset => ['hint' => string, 'criteria' => array[]]
      */
     public static function speech_presets(): array {
-        $criteria = static function (string $level, array $keys): array {
+        $criteria = static function (array $keys): array {
             $list = [];
             foreach ($keys as $key) {
                 $list[] = self::speech(
-                    prompt_text::get("rubric:{$level}_{$key}_name"),
-                    prompt_text::get("rubric:{$level}_{$key}_desc")
+                    prompt_text::get("rubric:{$key}_name"),
+                    prompt_text::get("rubric:{$key}_desc"),
+                    self::preset_levels($key)
                 );
             }
             return $list;
         };
+        $general = prompt_text::get('rubric:hint_general');
 
         return [
             self::LEVEL_GENERAL => [
-                'hint' => prompt_text::get('rubric:hint_general'),
+                'hint' => $general,
                 'criteria' => self::default_criteria(),
             ],
             self::LEVEL_ESL_BEGINNER => [
                 'hint' => prompt_text::get('rubric:hint_beginner'),
-                'criteria' => $criteria('beginner', ['pron', 'fluency', 'grammar', 'vocab', 'task']),
+                'criteria' => $criteria(['beginner_pron', 'beginner_fluency', 'beginner_grammar', 'beginner_vocab',
+                    'beginner_task']),
             ],
             self::LEVEL_ESL_INTERMEDIATE => [
                 'hint' => prompt_text::get('rubric:hint_intermediate'),
-                'criteria' => $criteria('intermediate', ['pron', 'fluency', 'grammar', 'vocab', 'org']),
+                'criteria' => $criteria(['intermediate_pron', 'intermediate_fluency', 'intermediate_grammar',
+                    'intermediate_vocab', 'intermediate_org']),
             ],
             self::LEVEL_ESL_ADVANCED => [
                 'hint' => prompt_text::get('rubric:hint_advanced'),
-                'criteria' => $criteria('advanced', ['fluency', 'pron', 'grammar', 'vocab', 'coherence']),
+                'criteria' => $criteria(['advanced_fluency', 'advanced_pron', 'advanced_grammar', 'advanced_vocab',
+                    'advanced_coherence']),
+            ],
+            self::PRESET_PRACTICE => [
+                'hint' => $general,
+                'criteria' => $criteria(['practice_intro', 'practice_org', 'practice_delivery']),
+            ],
+            self::PRESET_INFORMATIVE => [
+                'hint' => $general,
+                'criteria' => $criteria(['speech_intro', 'speech_org', 'speech_support', 'speech_language',
+                    'speech_delivery', 'speech_conclusion']),
+            ],
+            self::PRESET_PERSUASIVE => [
+                'hint' => $general,
+                'criteria' => $criteria(['persuasive_intro', 'persuasive_org', 'persuasive_support',
+                    'persuasive_language', 'speech_delivery', 'persuasive_conclusion', 'persuasive_appeals']),
+            ],
+            self::PRESET_ENTERTAIN => [
+                'hint' => $general,
+                'criteria' => $criteria(['speech_intro', 'speech_org', 'entertain_humor', 'speech_language',
+                    'speech_delivery', 'speech_conclusion']),
             ],
         ];
+    }
+
+    /**
+     * The default labels of the five levels, which each rubric can change.
+     *
+     * English prompt data like the criteria they belong to (prompt_text):
+     * 5 Excellent, 4 Proficient, 3 Developing, 2 Beginning, 1 Not yet.
+     *
+     * @return string[] score => label, 5 first.
+     */
+    public static function default_level_labels(): array {
+        $labels = [];
+        foreach (self::LEVEL_SCORES as $score) {
+            $labels[$score] = prompt_text::get('rubric:levellabel_' . $score);
+        }
+        return $labels;
+    }
+
+    /**
+     * A preset criterion's five levels, from rubric:<key>_l5 to rubric:<key>_l1.
+     *
+     * @param string $key The criterion's string key, such as speech_intro.
+     * @return array[] A list of ['score', 'label', 'description'], 5 first.
+     */
+    private static function preset_levels(string $key): array {
+        $levels = [];
+        foreach (self::default_level_labels() as $score => $label) {
+            $levels[] = [
+                'score' => $score,
+                'label' => $label,
+                'description' => prompt_text::get("rubric:{$key}_l{$score}"),
+            ];
+        }
+        return $levels;
+    }
+
+    /**
+     * A known preset key, or '' when the value names none.
+     *
+     * @param string|null $preset The stored or requested preset.
+     * @return string One of PRESETS, general, or ''.
+     */
+    public static function clean_preset(?string $preset): string {
+        $preset = trim((string) $preset);
+        return in_array($preset, self::PRESETS, true) || $preset === self::LEVEL_GENERAL ? $preset : '';
+    }
+
+    /**
+     * The in-code preset an activity falls back to when no stored rubric applies.
+     *
+     * Its preset column when that names a preset, which the form writes for
+     * every activity made with 0.6.0 or later. Otherwise its speaking level,
+     * general or an English as a second language level, which is what an
+     * activity made before 0.6.0, an older backup and the importer leave.
+     *
+     * @param \stdClass $instance The presenterai row.
+     * @return string A key of speech_presets().
+     */
+    public static function preset_for(\stdClass $instance): string {
+        $preset = self::clean_preset(isset($instance->preset) ? (string) $instance->preset : '');
+        return $preset !== '' ? $preset : self::clean_level((string) ($instance->speakinglevel ?? ''));
     }
 
     /**
@@ -190,12 +335,14 @@ final class rubric_manager {
     /**
      * A preset's criteria, as the rubric editor starts a new rubric from them.
      *
-     * @param string $level One of LEVELS; anything else reads as general.
+     * @param string $preset A key of speech_presets() (one of LEVELS or PRESETS); anything else reads as general.
      * @param bool $withvisual Whether to append visual_criteria(), which the editor does for a video rubric.
-     * @return array[] A list of ['name', 'description', 'max_score', 'visual'].
+     * @return array[] A list of ['name', 'description', 'max_score', 'visual'], plus 'levels' where the preset has them.
      */
-    public static function preset_criteria(string $level, bool $withvisual): array {
-        $criteria = self::speech_presets()[self::clean_level($level)]['criteria'];
+    public static function preset_criteria(string $preset, bool $withvisual): array {
+        $presets = self::speech_presets();
+        $key = trim($preset);
+        $criteria = isset($presets[$key]) ? $presets[$key]['criteria'] : $presets[self::LEVEL_GENERAL]['criteria'];
         if ($withvisual) {
             $criteria = array_merge($criteria, self::visual_criteria());
         }
@@ -238,7 +385,7 @@ final class rubric_manager {
      * otherwise the nearest active rubric over the activity's context and its
      * parents, preferring 'video' to 'speech' at each level for a video
      * activity and taking 'speech' only for an audio one; otherwise the in-code
-     * preset for the activity's speaking level with rubricid 0, plus the two
+     * preset (preset_for()) with rubricid 0, plus the two
      * visual criteria when the activity records video with videovision on. A
      * stored rubric whose criteria are all malformed is skipped, because a
      * rubric with nothing to score can't be used.
@@ -247,11 +394,15 @@ final class rubric_manager {
      * rubric wins, because an audio recording has no body to judge (D17).
      * Every criterion carries 'visual' and 'counts' (see counts()).
      *
+     * The context is the activity's own, or its course's when the settings
+     * form previews an activity that doesn't exist yet; only that context and
+     * its parents are searched.
+     *
      * @param \stdClass $instance The presenterai row.
-     * @param \context_module $ctx The activity's module context.
+     * @param \context $ctx The activity's module context, or its course context before it exists.
      * @return array ['rubricid' => int, 'title' => string, 'criteria' => array[]]
      */
-    public static function resolve(\stdClass $instance, \context_module $ctx): array {
+    public static function resolve(\stdClass $instance, \context $ctx): array {
         global $DB;
 
         $audio = (($instance->mode ?? 'video') === 'audio');
@@ -299,7 +450,7 @@ final class rubric_manager {
         }
 
         $withvisual = !$audio && !empty($instance->videovision);
-        $criteria = self::preset_criteria((string) ($instance->speakinglevel ?? ''), $withvisual);
+        $criteria = self::preset_criteria(self::preset_for($instance), $withvisual);
 
         return [
             'rubricid' => 0,
@@ -316,8 +467,13 @@ final class rubric_manager {
      * max_score of at least 1 (5 when missing or unusable) and a boolean
      * visual flag. Unknown keys are dropped too.
      *
+     * 'levels' is kept only when it's usable (normalise_levels()), and then
+     * the maximum is 5 whatever was stored. An entry without usable levels
+     * gets no 'levels' key at all, so a rubric stored before 0.6.0 reads
+     * exactly as it did and no levels are invented for it.
+     *
      * @param mixed $raw A JSON string, or the already decoded list.
-     * @return array[] A list of ['name', 'description', 'max_score', 'visual'].
+     * @return array[] A list of ['name', 'description', 'max_score', 'visual'], plus 'levels' where usable.
      */
     public static function normalise_criteria($raw): array {
         if (is_string($raw)) {
@@ -343,15 +499,88 @@ final class rubric_manager {
                 ? (string) $entry['description']
                 : '';
             $max = isset($entry['max_score']) && is_numeric($entry['max_score']) ? (int) $entry['max_score'] : 0;
-            $criteria[] = [
+            $clean = [
                 'name' => $name,
                 'description' => $description,
                 'max_score' => $max >= 1 ? $max : self::DEFAULT_MAX_SCORE,
                 'visual' => !empty($entry['visual']),
             ];
+            $levels = self::normalise_levels($entry['levels'] ?? null);
+            if ($levels !== null) {
+                $clean['max_score'] = self::LEVELS_MAX_SCORE;
+                $clean['levels'] = $levels;
+            }
+            $criteria[] = $clean;
         }
 
         return $criteria;
+    }
+
+    /**
+     * Clean a criterion's written levels, or null when they can't be used.
+     *
+     * Usable means exactly one entry for each score from 5 down to 1, each with
+     * a label that isn't empty once trimmed. A description may be empty. The
+     * result is ordered 5 first, whatever order was stored. Anything less is
+     * dropped as a whole rather than patched, because a level nobody wrote
+     * would put words in the prompt that nobody chose.
+     *
+     * @param mixed $raw The stored 'levels' value.
+     * @return array[]|null A list of ['score', 'label', 'description'], 5 first, or null.
+     */
+    public static function normalise_levels($raw): ?array {
+        if (!is_array($raw) || count($raw) !== count(self::LEVEL_SCORES)) {
+            return null;
+        }
+        $byscore = [];
+        foreach ($raw as $level) {
+            if (is_object($level)) {
+                $level = (array) $level;
+            }
+            if (!is_array($level) || !isset($level['score']) || !is_numeric($level['score'])) {
+                return null;
+            }
+            $score = (int) $level['score'];
+            $label = isset($level['label']) && is_scalar($level['label']) ? trim((string) $level['label']) : '';
+            if (!in_array($score, self::LEVEL_SCORES, true) || isset($byscore[$score]) || $label === '') {
+                return null;
+            }
+            $byscore[$score] = [
+                'score' => $score,
+                'label' => $label,
+                'description' => isset($level['description']) && is_scalar($level['description'])
+                    ? trim((string) $level['description'])
+                    : '',
+            ];
+        }
+        $levels = [];
+        foreach (self::LEVEL_SCORES as $score) {
+            $levels[] = $byscore[$score];
+        }
+        return $levels;
+    }
+
+    /**
+     * The label of the level a score reached, or '' when there's none to name.
+     *
+     * '' for a criterion without levels, for a score outside 1 to 5 (0 means
+     * not attempted, which has no level) and for a criterion not assessed.
+     *
+     * @param array $criterion A resolved or cleaned criterion.
+     * @param int $score The score given.
+     * @param bool $assessed Whether the criterion was assessed.
+     * @return string
+     */
+    public static function level_label(array $criterion, int $score, bool $assessed = true): string {
+        if (!$assessed || empty($criterion['levels']) || !is_array($criterion['levels'])) {
+            return '';
+        }
+        foreach ($criterion['levels'] as $level) {
+            if (is_array($level) && (int) ($level['score'] ?? -1) === $score) {
+                return trim((string) ($level['label'] ?? ''));
+            }
+        }
+        return '';
     }
 
     /**
@@ -530,10 +759,15 @@ final class rubric_manager {
      *
      * @param string $name The criterion's name.
      * @param string $description What it judges.
+     * @param array|null $levels Its five written levels, or null for none.
      * @return array
      */
-    private static function speech(string $name, string $description): array {
-        return ['name' => $name, 'description' => $description, 'max_score' => self::DEFAULT_MAX_SCORE, 'visual' => false];
+    private static function speech(string $name, string $description, ?array $levels = null): array {
+        $criterion = ['name' => $name, 'description' => $description, 'max_score' => self::DEFAULT_MAX_SCORE, 'visual' => false];
+        if ($levels !== null) {
+            $criterion['levels'] = $levels;
+        }
+        return $criterion;
     }
 
     /**

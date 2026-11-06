@@ -961,6 +961,46 @@ final class scorer_test extends \advanced_testcase {
     }
 
     /**
+     * A rubric with written levels puts them in the prompt, and each assessed score row names the level it reached,
+     * taken from the rubric rather than from the model.
+     *
+     * @return void
+     */
+    public function test_levels_reach_the_prompt_and_the_score_row(): void {
+        global $DB;
+
+        $criteria = rubric_manager::preset_criteria('informative', false);
+        $rubric = $this->gen->create_rubric([
+            'contextid' => $this->ctx->id,
+            'type' => 'video',
+            'title' => 'Informative',
+            'criteria' => json_encode($criteria),
+        ]);
+        $DB->set_field('presenterai', 'rubricid', $rubric->id, ['id' => $this->instance->id]);
+        $scores = [];
+        foreach ($criteria as $i => $criterion) {
+            $scores[$criterion['name']] = $i === 5 ? [0, false] : [$i === 0 ? 4 : 2, true];
+        }
+        $client = self::fake_client([self::answer($scores)]);
+        route_resolver::set_test_stt(self::fake_stt([]));
+        route_resolver::set_test_client(route_resolver::PURPOSE_SCORE, $client);
+        $rec = $this->recording_with_media(['transcript' => self::TRANSCRIPT]);
+
+        $this->score((int) $rec->id);
+
+        $system = $client->calls[0][0];
+        $this->assertStringContainsString("- Introduction: ", $system);
+        $this->assertStringContainsString("\n  5 Excellent: ", $system);
+        $this->assertStringContainsString('name the level reached', $system);
+
+        $stored = score_manager::decode_criteria(score_manager::current_score((int) $rec->id));
+        $this->assertSame('Proficient', $stored[0]['level']);
+        $this->assertSame('Beginning', $stored[1]['level']);
+        $this->assertArrayNotHasKey('level', $stored[5], 'A criterion not assessed has no level.');
+        $this->assertSame(5, $stored[0]['max_score']);
+    }
+
+    /**
      * On the core route a video attempt with body language and slide design
      * on is scored from the transcript alone: no vision, slide vision or
      * judge call, nothing withheld, and no body language section at all,

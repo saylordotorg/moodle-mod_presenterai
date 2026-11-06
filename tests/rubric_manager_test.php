@@ -228,21 +228,34 @@ final class rubric_manager_test extends \advanced_testcase {
     }
 
     /**
-     * Four presets, each five spoken criteria at 5, with an English hint; unknown levels read as general.
+     * The speaking level presets and the presentation type presets, all spoken criteria at 5 with an English hint;
+     * unknown levels read as general.
      *
      * @return void
      */
     public function test_presets(): void {
         $presets = rubric_manager::speech_presets();
-        $this->assertSame(rubric_manager::LEVELS, array_keys($presets));
+        $this->assertSame(array_merge(rubric_manager::LEVELS, [
+            rubric_manager::PRESET_PRACTICE,
+            rubric_manager::PRESET_INFORMATIVE,
+            rubric_manager::PRESET_PERSUASIVE,
+            rubric_manager::PRESET_ENTERTAIN,
+        ]), array_keys($presets));
+        $counts = ['practice' => 3, 'informative' => 6, 'persuasive' => 7, 'entertain' => 6];
         foreach ($presets as $level => $preset) {
-            $this->assertCount(5, $preset['criteria'], $level);
+            $this->assertCount($counts[$level] ?? 5, $preset['criteria'], $level);
             $this->assertNotSame('', $preset['hint']);
             foreach (rubric_manager::preset_criteria($level, false) as $criterion) {
                 $this->assertSame(5, $criterion['max_score']);
                 $this->assertFalse($criterion['visual']);
             }
+        }
+        foreach (rubric_manager::LEVELS as $level) {
             $this->assertNotEmpty(get_string('level_' . $level, 'mod_presenterai'));
+        }
+        foreach (rubric_manager::PRESETS as $preset) {
+            $this->assertArrayHasKey($preset, $presets);
+            $this->assertNotEmpty(get_string('presentationtype_' . $preset, 'mod_presenterai'));
         }
         $this->assertSame(rubric_manager::default_criteria(), $presets['general']['criteria']);
         $this->assertStringContainsString('beginner-level', rubric_manager::preset_hint('esl_beginner'));
@@ -399,6 +412,167 @@ final class rubric_manager_test extends \advanced_testcase {
                 $this->assertInstanceOf(\invalid_parameter_exception::class, $e);
             }
         }
+    }
+
+    /**
+     * Every criterion of every preset a new activity can use, and both visual criteria, has five written levels,
+     * scores 5 to 1, each with a label and a description; the general preset every older activity uses has none.
+     *
+     * @return void
+     */
+    public function test_preset_levels_are_complete(): void {
+        $checked = 0;
+        $criteria = rubric_manager::visual_criteria();
+        foreach (rubric_manager::PRESETS as $preset) {
+            $criteria = array_merge($criteria, rubric_manager::speech_presets()[$preset]['criteria']);
+        }
+        foreach ($criteria as $criterion) {
+            $name = $criterion['name'];
+            $this->assertArrayHasKey('levels', $criterion, $name);
+            $this->assertSame(rubric_manager::LEVEL_SCORES, array_column($criterion['levels'], 'score'), $name);
+            foreach ($criterion['levels'] as $level) {
+                $this->assertNotSame('', trim($level['label']), $name);
+                $this->assertNotSame('', trim($level['description']), $name . ' level ' . $level['score']);
+            }
+            // Clean already: storing and reading back changes nothing.
+            $this->assertSame($criterion['levels'], rubric_manager::normalise_levels($criterion['levels']), $name);
+            $checked++;
+        }
+        $this->assertSame(2 + 3 + 6 + 7 + 6 + 5 + 5 + 5, $checked);
+
+        $this->assertSame(
+            ['Excellent', 'Proficient', 'Developing', 'Beginning', 'Not yet'],
+            array_values(rubric_manager::default_level_labels())
+        );
+        $this->assertSame(
+            array_values(rubric_manager::default_level_labels()),
+            array_column(rubric_manager::preset_criteria('informative', false)[0]['levels'], 'label')
+        );
+        foreach (rubric_manager::default_criteria() as $criterion) {
+            $this->assertArrayNotHasKey('levels', $criterion, 'The general preset was given levels.');
+        }
+
+        // The persuasive preset has the appeals criterion the informative one doesn't, and entertain swaps support
+        // and sources for humor and storytelling.
+        $names = fn(string $preset) => array_column(rubric_manager::preset_criteria($preset, false), 'name');
+        $this->assertSame(['Introduction', 'Organization and transitions', 'Support and sources', 'Language', 'Delivery',
+            'Conclusion'], $names('informative'));
+        $this->assertContains('Persuasive appeals', $names('persuasive'));
+        $this->assertNotContains('Persuasive appeals', $names('informative'));
+        $this->assertContains('Humor and storytelling', $names('entertain'));
+        $this->assertNotContains('Support and sources', $names('entertain'));
+        $this->assertSame(['Clear introduction of yourself', 'Organization', 'Delivery'], $names('practice'));
+    }
+
+    /**
+     * Levels survive a save and a read back; a criterion stored without them, as every rubric before 0.6.0 was,
+     * reads exactly as before and gets none.
+     *
+     * @return void
+     */
+    public function test_levels_round_trip_and_back_compat(): void {
+        global $DB;
+
+        $levels = [];
+        foreach ([1, 3, 5, 2, 4] as $score) {
+            $levels[] = ['score' => (string) $score, 'label' => " L{$score} ", 'description' => " D{$score} "];
+        }
+        $criteria = [
+            ['name' => 'Leveled', 'description' => 'd', 'max_score' => 8, 'visual' => false, 'levels' => $levels],
+            ['name' => 'Plain', 'description' => 'p', 'max_score' => 4, 'visual' => false],
+        ];
+        $id = rubric_manager::create((int) $this->ctx->id, 'speech', 'Levels', $criteria);
+        $stored = rubric_manager::normalise_criteria((string) $DB->get_field('presenterai_rubric', 'criteria', ['id' => $id]));
+
+        $this->assertSame(5, $stored[0]['max_score'], 'A criterion with levels is scored out of 5.');
+        $this->assertSame([5, 4, 3, 2, 1], array_column($stored[0]['levels'], 'score'));
+        $this->assertSame(['L5', 'L4', 'L3', 'L2', 'L1'], array_column($stored[0]['levels'], 'label'));
+        $this->assertSame('D3', $stored[0]['levels'][2]['description']);
+        $this->assertSame(['name' => 'Plain', 'description' => 'p', 'max_score' => 4, 'visual' => false], $stored[1]);
+        $this->assertSame($stored, rubric_manager::normalise_criteria(json_encode($stored)), 'Stable on a second read.');
+
+        // The resolved rubric carries them to the scorer.
+        $this->instance->rubricid = $id;
+        $resolved = rubric_manager::resolve($this->instance, $this->ctx);
+        $this->assertSame($stored[0]['levels'], $resolved['criteria'][0]['levels']);
+        $this->assertArrayNotHasKey('levels', $resolved['criteria'][1]);
+
+        // A row written before 0.6.0, read now: same shape, no levels.
+        $old = $this->rubric((int) $this->ctx->id, 'video', 'Old');
+        $this->assertSame(
+            [['name' => 'Old', 'description' => 'd', 'max_score' => 4, 'visual' => false]],
+            rubric_manager::normalise_criteria((string) $old->criteria)
+        );
+    }
+
+    /**
+     * Unusable levels are dropped as a whole, and the criterion keeps its own maximum.
+     *
+     * @return void
+     */
+    public function test_unusable_levels_are_dropped(): void {
+        $good = [];
+        foreach (rubric_manager::LEVEL_SCORES as $score) {
+            $good[] = ['score' => $score, 'label' => 'L' . $score, 'description' => ''];
+        }
+        $this->assertNotNull(rubric_manager::normalise_levels($good), 'Empty descriptions are allowed.');
+
+        $four = array_slice($good, 0, 4);
+        $duplicate = $good;
+        $duplicate[4]['score'] = 5;
+        $nolabel = $good;
+        $nolabel[2]['label'] = '  ';
+        $outofrange = $good;
+        $outofrange[4]['score'] = 0;
+        foreach (
+            ['four' => $four, 'duplicate' => $duplicate, 'nolabel' => $nolabel, 'outofrange' => $outofrange,
+                'string' => 'levels', 'null' => null] as $case => $levels
+        ) {
+            $this->assertNull(rubric_manager::normalise_levels($levels), $case);
+            $clean = rubric_manager::normalise_criteria([['name' => 'C', 'max_score' => 7, 'levels' => $levels]]);
+            $this->assertSame([['name' => 'C', 'description' => '', 'max_score' => 7, 'visual' => false]], $clean, $case);
+        }
+    }
+
+    /**
+     * The label of the level a score reached, and none for 0, for an unassessed criterion or one without levels.
+     *
+     * @return void
+     */
+    public function test_level_label(): void {
+        $criterion = rubric_manager::preset_criteria('informative', false)[0];
+        $this->assertSame('Proficient', rubric_manager::level_label($criterion, 4));
+        $this->assertSame('Not yet', rubric_manager::level_label($criterion, 1));
+        $this->assertSame('', rubric_manager::level_label($criterion, 0));
+        $this->assertSame('', rubric_manager::level_label($criterion, 4, false));
+        $this->assertSame('', rubric_manager::level_label(rubric_manager::default_criteria()[0], 4));
+    }
+
+    /**
+     * The fallback preset: the preset column when it names one, else the speaking level, which is what keeps an
+     * activity made before 0.6.0 on the general rubric.
+     *
+     * @return void
+     */
+    public function test_preset_for(): void {
+        $this->assertSame('general', rubric_manager::preset_for((object) []));
+        $this->assertSame('general', rubric_manager::preset_for((object) ['ptype' => 'persuasive', 'speakinglevel' => null]));
+        $this->assertSame('esl_beginner', rubric_manager::preset_for((object) ['speakinglevel' => 'esl_beginner']));
+        $this->assertSame('persuasive', rubric_manager::preset_for((object) ['preset' => 'persuasive']));
+        $this->assertSame('esl_advanced', rubric_manager::preset_for((object) ['preset' => 'nonsense',
+            'speakinglevel' => 'esl_advanced']));
+        $this->assertSame('', rubric_manager::clean_preset('esl'));
+
+        // An activity on a preset resolves to it when nothing is stored.
+        $this->instance->preset = 'practice';
+        $resolved = rubric_manager::resolve($this->instance, $this->ctx);
+        $this->assertSame(0, $resolved['rubricid']);
+        $this->assertSame('Clear introduction of yourself', $resolved['criteria'][0]['name']);
+        $this->assertCount(5, $resolved['criteria'][0]['levels']);
+
+        // The course context works too, for the settings form's preview of an activity that doesn't exist yet.
+        $resolved = rubric_manager::resolve($this->instance, \context_course::instance($this->course->id));
+        $this->assertSame('Clear introduction of yourself', $resolved['criteria'][0]['name']);
     }
 
     /**

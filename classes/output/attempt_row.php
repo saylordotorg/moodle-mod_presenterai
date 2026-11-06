@@ -282,7 +282,7 @@ final class attempt_row {
      * hole.
      *
      * @param \stdClass $score A presenterai_score row.
-     * @return array ['criteria' => list of ['name', 'scoretext', 'feedback', 'notcounted'], 'overall' => HTML,
+     * @return array ['criteria' => list of ['name', 'scoretext', 'level', 'feedback', 'notcounted'], 'overall' => HTML,
      *     'hastips', 'tips', 'hasvisual', 'visualstatus', 'visualheading', 'visualnote', 'visualtext']
      */
     private static function feedback(\stdClass $score): array {
@@ -291,14 +291,20 @@ final class attempt_row {
         foreach (score_manager::decode_criteria($score) as $i => $criterion) {
             $assessed = !empty($criterion['assessed']) && $criterion['score'] !== null;
             $counts = array_key_exists('counts', $criterion) ? $criterion['counts'] : ($flags[$i]['counts'] ?? true);
+            $level = $assessed ? (string) ($criterion['level'] ?? '') : '';
+            $scorea = (object) [
+                'score' => (int) $criterion['score'],
+                'max' => (int) $criterion['max_score'],
+                'level' => $level,
+            ];
+            // Reads "4 of 5, Proficient" when the score row names the level it reached (0.6.0).
+            $scorekey = $level !== '' ? 'feedback_criterion_level' : 'feedback_criterion_score';
             $criteria[] = [
                 'name' => format_string((string) $criterion['name']),
                 'scoretext' => $assessed
-                    ? get_string('feedback_criterion_score', 'mod_presenterai', (object) [
-                        'score' => (int) $criterion['score'],
-                        'max' => (int) $criterion['max_score'],
-                    ])
+                    ? get_string($scorekey, 'mod_presenterai', $scorea)
                     : get_string('feedback_notassessed', 'mod_presenterai'),
+                'level' => $level,
                 'feedback' => trim((string) ($criterion['feedback'] ?? '')),
                 'notcounted' => $counts === false,
             ];
