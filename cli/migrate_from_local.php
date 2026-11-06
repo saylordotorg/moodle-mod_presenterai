@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Import SOLA Soapbox assignments, topics, attempts and scores into PresenterAI activities.
+ * Import SOLA's old speech tool assignments, topics, attempts and scores into PresenterAI activities.
  *
  * A dry run unless --apply is given. Run with --help for the options, and read docs/MIGRATION-RUNBOOK.md first.
  * The logic is \mod_presenterai\local\migration\command; this file only starts it and exits with its code

@@ -63,8 +63,8 @@ use mod_presenterai\local\storage\store_factory;
  * itself is an open question for the site; on the File API the bytes are
  * exported.
  *
- * The Soapbox importer's two tables. presenterai_migration_map links a
- * Soapbox row to the PresenterAI row made from it: ids, states and, for an
+ * The old SOLA speech tool importer's two tables. presenterai_migration_map links a
+ * old SOLA speech tool row to the PresenterAI row made from it: ids, states and, for an
  * assignment, its course page link's original address and visibility. It
  * names no user and holds no learner text; the attempts it points at are the
  * learner's and are exported and deleted with the activity as above.
@@ -74,7 +74,7 @@ use mod_presenterai\local\storage\store_factory;
  * found in the system context (the import is a site operation, and a report
  * outlives its course), exported, and on deletion set to 0 rather than the
  * row deleted, because the report is the site's evidence that a course's
- * Soapbox data was carried over, which SOLA reads before it may drop it.
+ * old SOLA speech tool data was carried over, which SOLA reads before it may drop it.
  *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
@@ -179,7 +179,7 @@ class provider implements
 
     /**
      * The module contexts where this user owns a recording, graded one, or owns a spend row, and the system
-     * context when they ran a Soapbox import verification.
+     * context when they ran an old SOLA speech tool import verification.
      *
      * @param int $userid The user.
      * @return contextlist
@@ -471,7 +471,7 @@ class provider implements
         $out = [];
         $scores = $DB->get_records('presenterai_score', ['recordingid' => $rec->id], 'timecreated ASC, id ASC');
         foreach ($scores as $score) {
-            // Only a score migrated from Soapbox has these. legacymeta is that
+            // Only a score migrated from SOLA's old speech tool has these. legacymeta is that
             // session's own record, decoded when it's JSON and kept as text when not.
             $legacy = $score->legacymeta !== null || (int) $score->legacymeanscore > 0;
             $legacymeta = null;
@@ -638,7 +638,7 @@ class provider implements
     }
 
     /**
-     * The Soapbox import verifications this user ran: the course, the result and the counts, no learner's data.
+     * The old SOLA speech tool import verifications this user ran: the course, the result and the counts, no learner's data.
      *
      * @param \context_system $context The system context.
      * @param int $userid The operator.

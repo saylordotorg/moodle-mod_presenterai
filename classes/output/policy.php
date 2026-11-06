@@ -96,7 +96,7 @@ final class policy {
      * Order: stem, deletion, frames, visual note, kept after, download, joined
      * by single spaces. The frames and visual note clauses render only when
      * still frames are actually taken, which needs both the instance's
-     * videovision switch and a mode that records a camera. Soapbox told every
+     * videovision switch and a mode that records a camera. SOLA's old speech tool told every
      * audio only learner about frames that were never taken.
      *
      * The returned string is HTML, because the stem carries the site name

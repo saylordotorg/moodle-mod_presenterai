@@ -735,7 +735,7 @@ final class fs_store implements store_interface {
             // without a row there is no way left to name the file. It would sit
             // in the file area in no listing, not in the trash, unreachable by
             // pluginfile, removed by nothing short of deleting the whole
-            // context. Reporting success there would be the Soapbox failure this
+            // context. Reporting success there would be the old SOLA speech tool failure this
             // namespace exists to prevent, arriving from the other direction,
             // and store_interface's consolation does not apply: an orphan here
             // is visible nowhere, where an S3 orphan at least shows in a bucket

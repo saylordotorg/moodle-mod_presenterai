@@ -17,7 +17,7 @@
 namespace mod_presenterai\local\migration;
 
 /**
- * The identities the Soapbox importer and SOLA's interlock agree on.
+ * The identities the old SOLA speech tool importer and SOLA's interlock agree on.
  *
  * A row of presenterai_migration_map says "this source row, on this site, became
  * that target row". SOLA's soapbox_cleanup task asks the same table whether a

@@ -28,7 +28,7 @@ use mod_presenterai\local\storage\store_factory;
  * settings change. Nothing in this class reads a row. It answers "what would a
  * recording made now be promised", and the row remembers the answer it got.
  *
- * Soapbox clamped the window to 1..28 days (soapbox_config::clamp_retention_days)
+ * SOLA's old speech tool clamped the window to 1..28 days (soapbox_config::clamp_retention_days)
  * and wrote now + days at finalize unconditionally, so "keep forever" could not
  * be expressed at all. Here anything at or below zero means no automatic
  * deletion and there is no upper clamp.

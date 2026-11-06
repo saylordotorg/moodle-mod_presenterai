@@ -16,7 +16,7 @@
 /**
  * Slide viewer, and the timeline of slide advances made while recording.
  *
- * Ported from Soapbox's soapbox_slides.js. One page image at a time, moved by
+ * Ported from the old speech tool's soapbox_slides.js. One page image at a time, moved by
  * buttons, Arrow and Page keys, or a swipe. While a recording runs, every
  * advance is written to a timeline of {t, i} pairs, which the player replays
  * later. The timeline is a pure factory so it can be tested without a DOM.

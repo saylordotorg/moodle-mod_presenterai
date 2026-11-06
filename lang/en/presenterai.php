@@ -80,7 +80,7 @@ $string['backendfs'] = 'Moodle file storage';
 $string['backends3'] = 'S3 compatible bucket';
 $string['cachedef_ratelimit'] = 'Per user counts of AI calls, for rate limiting';
 $string['claudeapikey'] = 'Claude API key';
-$string['claudeapikey_desc'] = 'An Anthropic API key. Stored encrypted.';
+$string['claudeapikey_desc'] = 'Anthropic API key. Stored encrypted.';
 $string['claudejudgemodel'] = 'Claude model for checking feedback';
 $string['claudejudgemodel_desc'] = 'A small, fast model that checks body language feedback before a learner sees it.';
 $string['claudemodel'] = 'Claude model';
@@ -297,29 +297,29 @@ $string['messageprovider:recordingscored'] = 'A score is ready for one of your r
 $string['migration:cli_applied'] = 'Course {$a->course}: import applied, run {$a->runid}.';
 $string['migration:cli_applyrefused'] = 'Course {$a}: apply refused. Nothing was changed.';
 $string['migration:cli_assignment'] = 'Assignment {$a->id}: {$a->decision}{$a->code}. Section {$a->section}. Topics {$a->topics}, recordings {$a->recordings}, scores {$a->scores}, unreconstructed {$a->unreconstructed}, learners {$a->learners}.';
-$string['migration:cli_backend'] = 'The import doesn\'t take a storage backend option. It moves no bytes, so it works only with S3, using the same bucket, region and prefix as Soapbox.';
+$string['migration:cli_backend'] = 'The import doesn\'t take a storage backend option. It moves no bytes, so it works only with S3, using the same bucket, region and prefix as SOLA\'s old speech tool.';
 $string['migration:cli_counts'] = 'Assignments: {$a->assignments}. Topics: {$a->topics}. Recordings: {$a->recordings} ({$a->bystatus}). Scores: {$a->scores}. Distinct learners: {$a->learners}.';
 $string['migration:cli_course'] = 'Give --course=<course id> or --course=all. Run with --help to see the options.';
 $string['migration:cli_coursefailed'] = 'Course {$a->course}: failed with {$a->error}. The other courses go on.';
-$string['migration:cli_drift'] = '  Added to Soapbox after the import: {$a->added}. Scored in Soapbox after the import: {$a->scored}.';
+$string['migration:cli_drift'] = '  Added to SOLA\'s old speech tool after the import: {$a->added}. Scored in SOLA\'s old speech tool after the import: {$a->scored}.';
 $string['migration:cli_dryrun'] = 'Course {$a}: dry run. Nothing was changed.';
 $string['migration:cli_fallback'] = 'Assignments going into the course\'s last section, because no course page link points at them: {$a}.';
 $string['migration:cli_fallback_none'] = 'Assignments going into the course\'s last section: none.';
-$string['migration:cli_help'] = 'Import SOLA Soapbox assignments, topics, attempts and scores into PresenterAI activities.
+$string['migration:cli_help'] = 'Import SOLA\'s old speech tool assignments, topics, attempts and scores into PresenterAI activities.
 
 Read docs/MIGRATION-RUNBOOK.md before the first run. Without --apply it\'s a dry run that changes nothing.
 
 Options:
---course=<id>|all  The course to work on, or every course with Soapbox data. Required.
+--course=<id>|all  The course to work on, or every course with old SOLA speech tool data. Required.
 --apply            Import. Without it, print what an import would do and change nothing.
 --rollback         Remove what the import made in the course and restore its course page links.
---verify           Compare the import with Soapbox and store a verification report.
+--verify           Compare the import with SOLA\'s old speech tool and store a verification report.
 --report           Print the stored verification reports and change nothing.
 --json             Print the result as one JSON document.
 -h, --help         Print this help.
 
 Use only one of --apply, --rollback, --verify and --report. There\'s no storage backend option: the import works
-only with S3, using the same bucket, region and prefix as Soapbox.
+only with S3, using the same bucket, region and prefix as SOLA\'s old speech tool.
 
 Exit codes: 0 done or a clean dry run, 1 an error or a refusal, 2 a precondition isn\'t met.
 
@@ -329,11 +329,11 @@ $string['migration:cli_message'] = '  {$a}';
 $string['migration:cli_mismatch'] = '  Mismatch: {$a}';
 $string['migration:cli_mismatches'] = 'Mismatches: {$a}.';
 $string['migration:cli_modes'] = 'Use only one of --apply, --rollback, --verify and --report.';
-$string['migration:cli_nocourses'] = 'No course on this site has Soapbox data.';
+$string['migration:cli_nocourses'] = 'No course on this site has old SOLA speech tool data.';
 $string['migration:cli_nomaprows'] = 'This site has no import records, so there\'s nothing to roll back or verify.';
 $string['migration:cli_none'] = 'none';
 $string['migration:cli_note'] = 'Note ({$a->code}): {$a->message}';
-$string['migration:cli_orphans'] = 'Unowned speech scores (includes freeform practice): {$a}. They\'re counted and left in Soapbox, and they never stop the import.';
+$string['migration:cli_orphans'] = 'Unowned speech scores (includes freeform practice): {$a}. They\'re counted and left in SOLA\'s old speech tool, and they never stop the import.';
 $string['migration:cli_outcome'] = '  Outcome: {$a->outcome}. Import state: {$a->state}. Activity cmid: {$a->cmid}.';
 $string['migration:cli_precondition'] = 'Precondition not met ({$a->code}): {$a->message}';
 $string['migration:cli_refusal'] = 'Course refused ({$a->code}): {$a->message}';
@@ -347,47 +347,47 @@ $string['migration:cli_rollback'] = 'Course {$a->course}: rollback. Activities r
 $string['migration:cli_rollback_entry'] = 'Assignment {$a->id}: {$a->outcome}{$a->code}. Course page link: {$a->standin}.';
 $string['migration:cli_standin'] = '  Course page link ({$a->decision}, cmid {$a->cmid}): {$a->message}';
 $string['migration:cli_unknownoption'] = 'Unknown option or argument. Run with --help to see the options.';
-$string['migration:cli_unreconstructed'] = 'Scores that can\'t be reconstructed: {$a}. Their rubric is gone and no preset matches, so they keep each criterion\'s Soapbox score out of 5 and get no percentage, as Soapbox showed them.';
-$string['migration:cli_verify_counts'] = 'Counts, Soapbox / PresenterAI: {$a}.';
+$string['migration:cli_unreconstructed'] = 'Scores that can\'t be reconstructed: {$a}. Their rubric is gone and no preset matches, so they keep each criterion\'s old SOLA speech tool score out of 5 and get no percentage, as SOLA\'s old speech tool showed them.';
+$string['migration:cli_verify_counts'] = 'Counts, SOLA\'s old speech tool / PresenterAI: {$a}.';
 $string['migration:cli_verify_failed'] = 'Course {$a->course}: verification FAILED. Report {$a->report}, run {$a->runid}.';
 $string['migration:cli_verify_passed'] = 'Course {$a->course}: verification passed. Report {$a->report}, run {$a->runid}.';
 $string['migration:cli_verify_storage'] = 'Storage objects checked: {$a->sampled}. Storage failures: {$a->failures}.';
-$string['migration:failed_error'] = 'Importing Soapbox assignment {$a->id} failed: {$a->error}. Whatever it had finished is kept, and running the import again resumes it.';
+$string['migration:failed_error'] = 'Importing old SOLA speech tool assignment {$a->id} failed: {$a->error}. Whatever it had finished is kept, and running the import again resumes it.';
 $string['migration:note_orphans'] = '{$a} unowned speech scores (includes freeform practice). They\'re counted and left where they are.';
-$string['migration:note_unmappablelevel'] = 'The course\'s Soapbox speaking level "{$a}" has no PresenterAI equivalent, so its activities get the general level.';
-$string['migration:precondition_backend'] = 'PresenterAI stores media in "{$a}", not S3. The import moves no bytes, so it works only when PresenterAI uses the same S3 bucket as Soapbox. Importing into Moodle file storage isn\'t supported.';
+$string['migration:note_unmappablelevel'] = 'The course\'s old SOLA speech tool speaking level "{$a}" has no PresenterAI equivalent, so its activities get the general level.';
+$string['migration:precondition_backend'] = 'PresenterAI stores media in "{$a}", not S3. The import moves no bytes, so it works only when PresenterAI uses the same S3 bucket as SOLA\'s old speech tool. Importing into Moodle file storage isn\'t supported.';
 $string['migration:precondition_interlock'] = 'This site\'s SOLA doesn\'t have the cleanup interlock yet, or it looks for recordings under a different site id, so its cleanup could delete media PresenterAI takes over. Install SOLA 7.12.1 or later first.';
-$string['migration:precondition_scoringqueued'] = '{$a} Soapbox scoring task(s) are queued or running. Wait until they finish, then run the import again.';
-$string['migration:precondition_sourcetables'] = 'No Soapbox tables on this site, so there\'s nothing to import.';
-$string['migration:precondition_storage'] = 'PresenterAI\'s S3 settings don\'t match Soapbox\'s. Soapbox: {$a->sola}. PresenterAI: {$a->presenterai}. They must be identical, because the import points the new attempts at the objects Soapbox stored and copies nothing.';
+$string['migration:precondition_scoringqueued'] = '{$a} old SOLA speech tool scoring task(s) are queued or running. Wait until they finish, then run the import again.';
+$string['migration:precondition_sourcetables'] = 'No old SOLA speech tool tables on this site, so there\'s nothing to import.';
+$string['migration:precondition_storage'] = 'PresenterAI\'s S3 settings don\'t match those of SOLA\'s old speech tool. Old speech tool: {$a->sola}. PresenterAI: {$a->presenterai}. They must be identical, because the import points the new attempts at the objects SOLA\'s old speech tool stored and copies nothing.';
 $string['migration:precondition_transaction'] = 'The import was started inside a database transaction. It has to run on its own, so each assignment commits as soon as it\'s done.';
-$string['migration:refuse_badstatus'] = 'Soapbox assignment {$a} has a recording whose status the import doesn\'t know, so it isn\'t imported.';
+$string['migration:refuse_badstatus'] = 'Old SOLA speech tool assignment {$a} has a recording whose status the import doesn\'t know, so it isn\'t imported.';
 $string['migration:refuse_capability'] = 'The user running the import can\'t add activities to course {$a}.';
-$string['migration:refuse_duplicatestandins'] = 'More than one course page link points at Soapbox assignment {$a}. Remove all but one, then run the import again.';
-$string['migration:refuse_failed'] = 'Soapbox assignment {$a} was marked failed by an earlier run, so it isn\'t tried again.';
+$string['migration:refuse_duplicatestandins'] = 'More than one course page link points at old SOLA speech tool assignment {$a}. Remove all but one, then run the import again.';
+$string['migration:refuse_failed'] = 'Old SOLA speech tool assignment {$a} was marked failed by an earlier run, so it isn\'t tried again.';
 $string['migration:refuse_locked'] = 'Another import is already running for course {$a}.';
-$string['migration:refuse_nocourse'] = 'Course {$a} no longer exists, so its Soapbox rows can\'t be imported.';
-$string['migration:refuse_scoremissing'] = 'A recording of Soapbox assignment {$a} points at a score that can\'t be read, so it isn\'t imported.';
-$string['migration:refuse_sharedscore'] = '{$a} Soapbox score(s) belong to more than one recording. Importing them would copy one score into two attempts, so this course isn\'t imported.';
-$string['migration:refuse_stale'] = 'Soapbox assignment {$a} or one of its topics changed after it was first imported, so the activity made from it is out of date. It isn\'t resumed.';
-$string['migration:refuse_targetgone'] = 'The activity made from Soapbox assignment {$a} no longer exists. It was probably deleted on purpose, so it isn\'t made again.';
-$string['migration:refuse_targetused'] = 'The activity made from Soapbox assignment {$a} has been used or changed since (a learner has an attempt in it, grading was turned on, or it was made visible), so the import doesn\'t resume into it.';
-$string['migration:rollback_failed'] = 'Rolling back Soapbox assignment {$a->id} failed: {$a->error}. Nothing was changed for it.';
-$string['migration:rollback_keysreleased'] = 'The activity made from Soapbox assignment {$a} is already being deleted, so it was left to that deletion. Its imported attempts were first unlinked from the Soapbox media, so the deletion can\'t remove any of it, then its course page link was restored and its import records removed.';
+$string['migration:refuse_nocourse'] = 'Course {$a} no longer exists, so its old SOLA speech tool rows can\'t be imported.';
+$string['migration:refuse_scoremissing'] = 'A recording of old SOLA speech tool assignment {$a} points at a score that can\'t be read, so it isn\'t imported.';
+$string['migration:refuse_sharedscore'] = '{$a} old SOLA speech tool score(s) belong to more than one recording. Importing them would copy one score into two attempts, so this course isn\'t imported.';
+$string['migration:refuse_stale'] = 'Old SOLA speech tool assignment {$a} or one of its topics changed after it was first imported, so the activity made from it is out of date. It isn\'t resumed.';
+$string['migration:refuse_targetgone'] = 'The activity made from old SOLA speech tool assignment {$a} no longer exists. It was probably deleted on purpose, so it isn\'t made again.';
+$string['migration:refuse_targetused'] = 'The activity made from old SOLA speech tool assignment {$a} has been used or changed since (a learner has an attempt in it, grading was turned on, or it was made visible), so the import doesn\'t resume into it.';
+$string['migration:rollback_failed'] = 'Rolling back old SOLA speech tool assignment {$a->id} failed: {$a->error}. Nothing was changed for it.';
+$string['migration:rollback_keysreleased'] = 'The activity made from old SOLA speech tool assignment {$a} is already being deleted, so it was left to that deletion. Its imported attempts were first unlinked from the old SOLA speech tool media, so the deletion can\'t remove any of it, then its course page link was restored and its import records removed.';
 $string['migration:rollback_noop'] = 'Nothing to roll back in course {$a}: no import of this site has left anything there.';
-$string['migration:rollback_refuse_graded'] = 'The activity made from Soapbox assignment {$a} has grading turned on, so it\'s kept: rolling it back could remove gradebook entries.';
-$string['migration:rollback_refuse_learnerattempts'] = 'The activity made from Soapbox assignment {$a} has attempts learners made after the import, so it\'s kept: rolling it back would delete their work.';
+$string['migration:rollback_refuse_graded'] = 'The activity made from old SOLA speech tool assignment {$a} has grading turned on, so it\'s kept: rolling it back could remove gradebook entries.';
+$string['migration:rollback_refuse_learnerattempts'] = 'The activity made from old SOLA speech tool assignment {$a} has attempts learners made after the import, so it\'s kept: rolling it back would delete their work.';
 $string['migration:rollback_refuse_locked'] = 'Another import or rollback is already running for course {$a}.';
-$string['migration:rollback_refuse_teacherscores'] = 'The activity made from Soapbox assignment {$a} has scores the import didn\'t make (a teacher\'s score, a rescore, or a score on an attempt Soapbox never scored), so it\'s kept: rolling it back would delete them.';
+$string['migration:rollback_refuse_teacherscores'] = 'The activity made from old SOLA speech tool assignment {$a} has scores the import didn\'t make (a teacher\'s score, a rescore, or a score on an attempt SOLA\'s old speech tool never scored), so it\'s kept: rolling it back would delete them.';
 $string['migration:rollback_refuse_transaction'] = 'The rollback of course {$a} was started inside a database transaction. It has to run on its own, so each assignment commits as soon as it\'s done.';
-$string['migration:rollback_targetgone'] = 'The activity made from Soapbox assignment {$a} was already gone, so only its course page link was restored and its import records removed.';
+$string['migration:rollback_targetgone'] = 'The activity made from old SOLA speech tool assignment {$a} was already gone, so only its course page link was restored and its import records removed.';
 $string['migration:standin_leave_unavailable_fallback_last_section'] = 'The course page link pointing at this assignment isn\'t on the course page (it may be being deleted), so it\'s left alone and the new activity goes into the course\'s last section.';
 $string['migration:standin_leave_visible_no_stealth'] = 'The course page link is pointed at the new activity but stays visible on the course page, because this site or course doesn\'t allow activities that are available but not shown. The course page lists both until the link is removed.';
 $string['migration:standin_none_fallback_last_section'] = 'No course page link points at this assignment, so the new activity goes into the course\'s last section.';
 $string['migration:standin_refuse_duplicate_standins'] = 'More than one course page link points at this assignment.';
 $string['migration:standin_rewrite'] = 'The course page link is pointed at the new activity and hidden from the course page, where the new activity takes its place. Old bookmarks still work.';
 $string['migration:storagevalues'] = 'bucket "{$a->bucket}", region "{$a->region}", prefix "{$a->prefix}"';
-$string['migration:verified_drift'] = 'Soapbox recordings added after this assignment was imported (not imported): {$a->added}. Soapbox recordings scored after the import (scores not imported): {$a->scored}.';
+$string['migration:verified_drift'] = 'Old SOLA speech tool recordings added after this assignment was imported (not imported): {$a->added}. Old SOLA speech tool recordings scored after the import (scores not imported): {$a->scored}.';
 $string['minseconds'] = 'Minimum length';
 $string['minseconds_help'] = 'The shortest a presentation should be. Learners are shown this alongside the maximum before they start recording.';
 $string['minsecondsovermax'] = 'The minimum length cannot be longer than the maximum length.';
@@ -460,17 +460,17 @@ $string['privacy:metadata:presenterai_gatelog:recordingid'] = 'The attempt the f
 $string['privacy:metadata:presenterai_gatelog:rejectedtext'] = 'The withheld text.';
 $string['privacy:metadata:presenterai_gatelog:target'] = 'Whether it was the summary or the comment on one criterion.';
 $string['privacy:metadata:presenterai_gatelog:timecreated'] = 'When it was withheld.';
-$string['privacy:metadata:presenterai_migration_map'] = 'One row for each Soapbox assignment, topic and recording the import carried over, linking it to the PresenterAI row made from it. It holds ids and the import\'s progress, never a user id or learner text.';
+$string['privacy:metadata:presenterai_migration_map'] = 'One row for each old SOLA speech tool assignment, topic and recording the import carried over, linking it to the PresenterAI row made from it. It holds ids and the import\'s progress, never a user id or learner text.';
 $string['privacy:metadata:presenterai_migration_map:payload'] = 'For an assignment, the original address and visibility of the course page link the import pointed at the new activity, so a rollback can restore it.';
-$string['privacy:metadata:presenterai_migration_map:sourceid'] = 'The id of the Soapbox row.';
-$string['privacy:metadata:presenterai_migration_map:sourcesiteid'] = 'Which site the Soapbox row was read on.';
-$string['privacy:metadata:presenterai_migration_map:sourcetable'] = 'Which Soapbox table the row came from.';
+$string['privacy:metadata:presenterai_migration_map:sourceid'] = 'The id of the old SOLA speech tool row.';
+$string['privacy:metadata:presenterai_migration_map:sourcesiteid'] = 'Which site the old SOLA speech tool row was read on.';
+$string['privacy:metadata:presenterai_migration_map:sourcetable'] = 'Which old SOLA speech tool table the row came from.';
 $string['privacy:metadata:presenterai_migration_map:state'] = 'How far the import of the row got.';
 $string['privacy:metadata:presenterai_migration_map:targetcmid'] = 'The activity the row was imported into.';
 $string['privacy:metadata:presenterai_migration_map:targetid'] = 'The id of the PresenterAI row made from it.';
 $string['privacy:metadata:presenterai_migration_map:timecreated'] = 'When the row was imported.';
-$string['privacy:metadata:presenterai_migreport'] = 'One row for each verification of a course\'s Soapbox import: counts and mismatch codes with ids, and the administrator who ran it. It holds no learner text.';
-$string['privacy:metadata:presenterai_migreport:counts'] = 'How many assignments, topics, recordings, scores and learners Soapbox and PresenterAI each hold for the course.';
+$string['privacy:metadata:presenterai_migreport'] = 'One row for each verification of a course\'s old SOLA speech tool import: counts and mismatch codes with ids, and the administrator who ran it. It holds no learner text.';
+$string['privacy:metadata:presenterai_migreport:counts'] = 'How many assignments, topics, recordings, scores and learners SOLA\'s old speech tool and PresenterAI each hold for the course.';
 $string['privacy:metadata:presenterai_migreport:courseid'] = 'The course that was verified.';
 $string['privacy:metadata:presenterai_migreport:mismatchcount'] = 'How many differences were found.';
 $string['privacy:metadata:presenterai_migreport:mismatches'] = 'Each difference found, as a code and the ids of the rows involved.';
@@ -500,8 +500,8 @@ $string['privacy:metadata:presenterai_recording:visualoptout'] = 'Whether the le
 $string['privacy:metadata:presenterai_score'] = 'One scored judgement of one attempt, by AI or by a teacher, with the per-criterion marks and written feedback.';
 $string['privacy:metadata:presenterai_score:feedback'] = 'The overall written feedback on the attempt.';
 $string['privacy:metadata:presenterai_score:graderid'] = 'The teacher who entered the score by hand, if one did.';
-$string['privacy:metadata:presenterai_score:legacymeanscore'] = 'For a score carried over from Soapbox, the overall score Soapbox gave the attempt.';
-$string['privacy:metadata:presenterai_score:legacymeta'] = 'For a score carried over from Soapbox, the data Soapbox kept about the recording session.';
+$string['privacy:metadata:presenterai_score:legacymeanscore'] = 'For a score carried over from SOLA\'s old speech tool, the overall score SOLA\'s old speech tool gave the attempt.';
+$string['privacy:metadata:presenterai_score:legacymeta'] = 'For a score carried over from SOLA\'s old speech tool, the data SOLA\'s old speech tool kept about the recording session.';
 $string['privacy:metadata:presenterai_score:origin'] = 'Whether the score came from AI or was entered by a teacher.';
 $string['privacy:metadata:presenterai_score:overallpct'] = 'The overall score as a percentage.';
 $string['privacy:metadata:presenterai_score:rawmax'] = 'The most points the assessed criteria allow.';
@@ -520,7 +520,7 @@ $string['privacy:metadata:s3:frames'] = 'Still frames sampled from the recording
 $string['privacy:metadata:s3:media'] = 'The recorded video or audio.';
 $string['privacy:path:aiusage'] = 'AI usage';
 $string['privacy:path:attempts'] = 'Attempts';
-$string['privacy:path:migrationreports'] = 'Soapbox import verifications';
+$string['privacy:path:migrationreports'] = 'Old SOLA speech tool import verifications';
 $string['privacy:path:scoresgiven'] = 'Scores given';
 $string['privacy_delete'] = 'It is deleted automatically {$a} days after you record it.';
 $string['privacy_download_off'] = 'Downloading is switched off for this activity, so you cannot save a copy to your own device.';
@@ -899,7 +899,7 @@ It matters because a rule shorter than the retention setting below deletes recor
 $string['s3pathstyle'] = 'Use path style addressing';
 $string['s3pathstyle_desc'] = 'Address an object as endpoint/bucket/key instead of bucket.endpoint/key. Amazon S3 does not need this. Most self hosted S3 compatible services, including MinIO, do.';
 $string['s3prefix'] = 'Key prefix';
-$string['s3prefix_desc'] = 'Every object this plugin writes goes under this prefix, and the plugin will only read and delete objects under it. A site moving from the Soapbox activity in the AI Course Assistant plugin sets this to the prefix its existing objects are already under, so the migration stays metadata only and no bytes are copied.';
+$string['s3prefix_desc'] = 'Every object this plugin writes goes under this prefix, and the plugin will only read and delete objects under it. A site moving from the old SOLA speech tool activity in the AI Course Assistant plugin sets this to the prefix its existing objects are already under, so the migration stays metadata only and no bytes are copied.';
 $string['s3region'] = 'Region';
 $string['s3region_desc'] = 'The region the bucket is in, for example us-east-1. It forms part of the request signature, so a wrong region fails every upload rather than being slow.';
 $string['s3secret'] = 'Secret access key';

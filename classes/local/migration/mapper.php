@@ -25,7 +25,7 @@ use mod_presenterai\local\storage\store_factory;
 use mod_presenterai\local\vision\visual_pipeline;
 
 /**
- * Turns SOLA's Soapbox rows into this plugin's, as plain arrays, with no database and no globals.
+ * Turns SOLA's old speech tool rows into this plugin's, as plain arrays, with no database and no globals.
  *
  * Pure on purpose: every method is static and takes arrays, so the whole of the
  * mapping, which is where the migration can quietly go wrong, is tested without
@@ -67,7 +67,7 @@ final class mapper {
     /** @var string The reason written for media SOLA deleted. SOLA doesn't record which of its two paths did it. */
     private const GONE_REASON = 'retention';
 
-    /** @var string[] Soapbox statuses and the statuses they become when the attempt has no score. */
+    /** @var string[] SOLA's old speech tool statuses and the statuses they become when the attempt has no score. */
     private const STATUS_WITHOUT_SCORE = [
         'uploading' => recording_manager::STATUS_ABANDONED,
         'deleted' => recording_manager::STATUS_ABANDONED,
@@ -91,7 +91,7 @@ final class mapper {
     }
 
     /**
-     * The moduleinfo for create_module() that stands in for one Soapbox assignment.
+     * The moduleinfo for create_module() that stands in for one old SOLA speech tool assignment.
      *
      * Carries no section (the runner finds it) and a placeholder draft item for the intro (the runner swaps in a
      * real draft id if create_module needs one). SOLA's rubricid and speaking_level columns aren't carried: no
@@ -132,7 +132,7 @@ final class mapper {
     }
 
     /**
-     * The presenterai_topic row for one Soapbox topic.
+     * The presenterai_topic row for one old SOLA speech tool topic.
      *
      * @param array $topic A sbx_topic row.
      * @param int $instanceid The new activity.
@@ -168,7 +168,7 @@ final class mapper {
     public static function recording_status(array $rec, bool $hasscore): string {
         $status = (string) ($rec['status'] ?? '');
         if (!isset(self::STATUS_WITHOUT_SCORE[$status])) {
-            throw new \InvalidArgumentException('Unknown Soapbox recording status: ' . $status);
+            throw new \InvalidArgumentException('Unknown old SOLA speech tool recording status: ' . $status);
         }
 
         return $hasscore ? score_manager::RECORDING_STATUS_SCORED : self::STATUS_WITHOUT_SCORE[$status];
@@ -224,7 +224,7 @@ final class mapper {
     }
 
     /**
-     * The presenterai_recording row for one Soapbox recording.
+     * The presenterai_recording row for one old SOLA speech tool recording.
      *
      * The three keys are carried over unchanged, so the object in the bucket is found where SOLA put it, and no
      * byte moves (D10). Where SOLA deleted the media (status deleted, no key) the keys stay null and the deletion

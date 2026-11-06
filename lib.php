@@ -139,7 +139,7 @@ function presenterai_update_instance($data, $mform = null) {
  * an orphaned child is unreachable from either side. Media objects are deleted
  * through the storage layer first, while the rows that reference them still
  * exist, rather than leaving the bytes behind, which is the defect this project
- * inherited from Soapbox and is not going to repeat.
+ * inherited from SOLA's old speech tool and is not going to repeat.
  *
  * @param int $id The instance id.
  * @return bool Always true.

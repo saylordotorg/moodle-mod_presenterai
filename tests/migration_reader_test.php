@@ -26,7 +26,7 @@ use mod_presenterai\tests\fixtures\sola_rows;
 /**
  * The SOLA reader, against real rows in SOLA's own tables.
  *
- * The tests that need SOLA's Soapbox tables are skipped on a site that doesn't have them (CI installs only this
+ * The tests that need SOLA's old speech tool tables are skipped on a site that doesn't have them (CI installs only this
  * plugin), and say so. The rest need only core tables and settings, so they run everywhere. Rows are inserted
  * with plain inserts, as SOLA's own tests do: there is no SOLA generator.
  *
@@ -56,11 +56,11 @@ final class migration_reader_test extends \advanced_testcase {
     }
 
     /**
-     * Skip the test when SOLA's Soapbox tables aren't installed, and make it reset what it writes.
+     * Skip the test when SOLA's old speech tool tables aren't installed, and make it reset what it writes.
      */
     private function require_sola_tables(): void {
         if (!sola_rows::available()) {
-            $this->markTestSkipped('SOLA\'s Soapbox tables are not installed on this site.');
+            $this->markTestSkipped('SOLA\'s old speech tool tables are not installed on this site.');
         }
         $this->resetAfterTest();
     }
@@ -111,7 +111,7 @@ final class migration_reader_test extends \advanced_testcase {
     }
 
     /**
-     * Test the tables count as present on a site that has SOLA's Soapbox tables.
+     * Test the tables count as present on a site that has SOLA's old speech tool tables.
      */
     public function test_tables_are_present_on_a_site_with_sola(): void {
         $this->require_sola_tables();

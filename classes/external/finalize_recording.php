@@ -26,7 +26,7 @@ use mod_presenterai\local\recording_manager;
 /**
  * Confirm the recording arrived and make the attempt count.
  *
- * A port of Soapbox's soapbox_finalize_recording, which inserted the row; here
+ * A port of the old speech tool's soapbox_finalize_recording, which inserted the row; here
  * the row already exists and is updated (D16). No key is accepted: the store
  * is asked about the key the row holds, and the store's answer, not the
  * browser's, is the size recorded.

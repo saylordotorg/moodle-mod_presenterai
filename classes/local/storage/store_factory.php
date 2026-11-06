@@ -25,7 +25,7 @@ namespace mod_presenterai\local\storage;
  * The first: an existing recording's store comes from the backend named on its
  * row, never from the site setting. Section 4.7 of the plan allows an admin to
  * switch backends without migrating anything, so a site can hold rows on both
- * at once indefinitely. Soapbox builds one storage object before its cleanup
+ * at once indefinitely. SOLA's old speech tool builds one storage object before its cleanup
  * loop (classes/task/soapbox_cleanup.php:50) and returns early when storage is
  * unconfigured (:47-49), which on a switched site would skip every surviving
  * row on the other backend forever. for_recording() is the method callers

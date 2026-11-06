@@ -21,7 +21,7 @@ use mod_presenterai\output\view_page;
 /**
  * The learner's page: what renders for whom, and what survives a blocked recorder.
  *
- * The property most worth holding is the one Soapbox lost: the policy callout
+ * The property most worth holding is the one SOLA's old speech tool lost: the policy callout
  * and the attempt list render whether or not the recorder does. A learner at
  * the attempt cap, or on a site whose storage is unconfigured, is still told
  * the policy and still sees their attempts.

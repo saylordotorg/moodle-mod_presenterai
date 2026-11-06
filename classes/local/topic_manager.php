@@ -22,7 +22,7 @@ namespace mod_presenterai\local;
  * A topic's file lives in its own file area with itemid = topic id (plan
  * section 3.2), which is what lets backup, restore and course copy carry it
  * with the topic rather than leaving it behind. This is a new feature, not a
- * port: Soapbox had a pdf_itemid column and nothing that ever wrote a file to
+ * port: SOLA's old speech tool had a pdf_itemid column and nothing that ever wrote a file to
  * it.
  *
  * Topic instructions are plain editor text with no embedded files (editor

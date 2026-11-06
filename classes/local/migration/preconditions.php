@@ -20,7 +20,7 @@ use mod_presenterai\local\storage\s3_store;
 use mod_presenterai\local\storage\store_factory;
 
 /**
- * The site-wide preconditions of a Soapbox import (IMPLEMENTATION-PLAN 7.1), checked into a plan. Reads only.
+ * The site-wide preconditions of an old SOLA speech tool import (IMPLEMENTATION-PLAN 7.1), checked into a plan. Reads only.
  *
  * Split out of runner so the runner keeps the order of operations and this keeps the checks.
  *
@@ -30,7 +30,7 @@ use mod_presenterai\local\storage\store_factory;
  */
 final class preconditions {
     /**
-     * Check every site-wide precondition into a plan. With no Soapbox tables nothing else is asked of the reader.
+     * Check every site-wide precondition into a plan. With no old SOLA speech tool tables nothing else is asked of the reader.
      *
      * Codes, in order: sourcetables, backend, storage, interlock, scoringqueued. A met check carries no message.
      *

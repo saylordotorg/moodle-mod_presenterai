@@ -22,7 +22,7 @@ namespace mod_presenterai\local\storage;
  * Two implementations: s3_store for an S3-compatible bucket, fs_store for
  * Moodle's own file storage. Nothing outside this namespace opens a file, signs
  * a URL or deletes an object. That rule is the whole point, and it is the rule
- * Soapbox did not have: three separate places there deleted recording rows and
+ * SOLA's old speech tool did not have: three separate places there deleted recording rows and
  * only one of them also deleted the bytes, so deleting a course left every
  * learner's video in the bucket permanently.
  *
@@ -150,7 +150,7 @@ interface store_interface {
     /**
      * Whether this key really belongs to this learner in this course.
      *
-     * Called before anything is read or deleted on behalf of a request. Soapbox
+     * Called before anything is read or deleted on behalf of a request. SOLA's old speech tool
      * learned this the hard way: an earlier design accepted the visual evidence
      * as a web service parameter, which would have let any learner holding the
      * capability award themselves a score on someone else's frames.

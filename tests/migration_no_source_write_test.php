@@ -502,11 +502,11 @@ PHP;
     }
 
     /**
-     * Skip the test when SOLA's Soapbox tables aren't installed, and make it reset what it writes.
+     * Skip the test when SOLA's old speech tool tables aren't installed, and make it reset what it writes.
      */
     private function require_sola_tables(): void {
         if (!sola_rows::available()) {
-            $this->markTestSkipped('SOLA\'s Soapbox tables are not installed on this site.');
+            $this->markTestSkipped('SOLA\'s old speech tool tables are not installed on this site.');
         }
         $this->resetAfterTest();
     }

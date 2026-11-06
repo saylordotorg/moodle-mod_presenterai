@@ -224,7 +224,7 @@ final class cleanup_task_test extends \advanced_testcase {
         $this->assertNotNull($this->reload((int) $newer->id)->storagekey, 'The newest recording was pruned.');
         $this->assertNotNull(
             $this->reload((int) $bobs->id)->storagekey,
-            'Another learner\'s only recording was pruned, the shape of Soapbox\'s keyed-by-assignment bug.'
+            'Another learner\'s only recording was pruned, the shape of the old speech tool\'s keyed-by-assignment bug.'
         );
     }
 

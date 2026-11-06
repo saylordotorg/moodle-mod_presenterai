@@ -20,7 +20,7 @@ namespace mod_presenterai\local\migration;
  * Checks one course's import against SOLA and records the result (IMPLEMENTATION-PLAN 7.6, tiers 1 to 3).
  *
  * Every call writes one presenterai_migreport row, passing or not; that row is the evidence SOLA 8.x reads before it
- * may drop a course's Soapbox tables. passed is true only when there's no mismatch and no storage failure. SOLA is
+ * may drop a course's old SOLA speech tool tables. passed is true only when there's no mismatch and no storage failure. SOLA is
  * read only through the source reader; the destination is this site's own tables. Tier 4 (a person opens three
  * learners' views) is a runbook step.
  *

@@ -372,7 +372,7 @@ The settings page sentence:
 
 ### 5.6 The migration does nothing here
 
-D11 already says `visual_observation` is not imported and `visual_assessed` is. Migrated rows arrive with `visualevidence` null and `visualsummary` null and the feedback panel renders neither. Given `IMPLEMENTATION-PLAN.md` section 9.15 there is no production Soapbox data to migrate anyway.
+D11 already says `visual_observation` is not imported and `visual_assessed` is. Migrated rows arrive with `visualevidence` null and `visualsummary` null and the feedback panel renders neither. Given `IMPLEMENTATION-PLAN.md` section 9.15 there is no production old SOLA speech tool data to migrate anyway.
 
 ---
 
@@ -677,7 +677,7 @@ Six changes from SOLA's `soapbox:present_privacy` (`lang/en/local_ai_course_assi
 3. **The frames clause is already false today and now sits behind a gate.** The string states "together with the still frames used for body-language feedback" unconditionally, but the frames exist only when the sampler ran. `soapbox_present.php:154-157` passes no gesture flag, while the sampler is gated at `:217` by `soapbox_gesture_vision::is_enabled($assign)`, which returns false for `mode === 'audio'` (`classes/soapbox_gesture_vision.php:104-106`) and false when the site toggle is off (`:101-103`). So on every audio only assignment today, and on every assignment on a site with the toggle off, the privacy notice tells the learner about still frames that were never taken. The clause renders only when `videovision` is on for the instance and `mode !== 'audio'`.
 4. `privacy_visualnote` is new with D22 and no current string covers it. It is the learner facing consequence of D5: on a keep forever site the recording survives and the AI's note about their body does not.
 5. `[[uniname]]` goes, replaced by `{$a}`.
-6. "site administrators" is wrong for an activity. Soapbox has no module context (D2), so administrators genuinely were the only other readers. PresenterAI has `mod/presenterai:viewallattempts`, which a teacher role holds, so the stem says "people with permission to view submissions in this course".
+6. "site administrators" is wrong for an activity. SOLA's old speech tool has no module context (D2), so administrators genuinely were the only other readers. PresenterAI has `mod/presenterai:viewallattempts`, which a teacher role holds, so the stem says "people with permission to view submissions in this course".
 
 ### 9.5 The attempt list
 
@@ -880,7 +880,7 @@ Output: "Your hands stayed low and mostly out of the picture, so your gestures d
 
 The gate is working perfectly. Five layers, all satisfied, and the result is a disabled learner being told to move differently and marked down when they do not. The same walk holds for a tremor, which the shipped rubric penalises by name as "fidgeting" (`classes/rubric_manager.php:86-87`), for an autistic learner who does not look at lenses, and for facial paralysis against "facial expression that matches what you are saying" (`:96`).
 
-**This is not a phrasing problem and nothing in this document fixes it.** D21 asks how to phrase what the camera saw. The harm is in `classes/rubric_manager.php:80-100` making "open hands that mark structure", "a steady stance", "weight that stays settled" and "looking at the camera lens" into scored criteria, and in plan section 6 turning that score into a grade Soapbox never had. PresenterAI does not make this feature safer than Soapbox. It makes it graded.
+**This is not a phrasing problem and nothing in this document fixes it.** D21 asks how to phrase what the camera saw. The harm is in `classes/rubric_manager.php:80-100` making "open hands that mark structure", "a steady stance", "weight that stays settled" and "looking at the camera lens" into scored criteria, and in plan section 6 turning that score into a grade SOLA's old speech tool never had. PresenterAI does not make this feature safer than SOLA's old speech tool. It makes it graded.
 
 It is recorded as **open question 9.17** in DECISIONS.md Part 4, with the recommendation that body language ships unscored in v1. It is not resolved here because it is not a design choice inside D21; it is a product decision about what the activity marks, and inventing an answer would be the thing this document is supposed to stop.
 

@@ -394,7 +394,7 @@ final class recording_manager_test extends \advanced_testcase {
         $this->assertArrayNotHasKey(
             'key',
             $target,
-            'The key reached the browser, which is what let Soapbox finalize foreign keys.'
+            'The key reached the browser, which is what let the old speech tool finalize foreign keys.'
         );
         $this->assertStringEndsWith('.webm', (string) $row->storagekey);
         $this->assertSame($target['uploadid'], $row->uploadid);
@@ -721,7 +721,11 @@ final class recording_manager_test extends \advanced_testcase {
         $this->assertNull($row->storagekey);
         $this->assertSame('retention', $row->mediagonereason);
         $this->assertGreaterThan(0, (int) $row->mediadeletedat);
-        $this->assertSame('uploaded', $row->status, 'Status changed on a media delete, which is how Soapbox lost grades (D8).');
+        $this->assertSame(
+            'uploaded',
+            $row->status,
+            'Status changed on a media delete, which is how the old SOLA speech tool lost grades (D8).'
+        );
         $this->assertFalse(
             get_file_storage()->get_file($this->context->id, 'mod_presenterai', 'recording', $rec->id, '/', $key),
             'The row says the media is gone and the file is still stored.'
