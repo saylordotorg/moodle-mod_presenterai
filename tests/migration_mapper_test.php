@@ -22,7 +22,7 @@ use mod_presenterai\local\migration\source_reader;
 use mod_presenterai\local\recording_manager;
 
 /**
- * The Soapbox migration contract, the reader interface and the pure mapper.
+ * The old SOLA speech tool migration contract, the reader interface and the pure mapper.
  *
  * Every test here runs over arrays shaped like SOLA's rows (tests/fixtures/migration),
  * so it needs neither SOLA's tables nor a database row of either plugin.
@@ -79,7 +79,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * A minimal Soapbox recording row, for numbering and status tests.
+     * A minimal old SOLA speech tool recording row, for numbering and status tests.
      *
      * @param int $id The row id.
      * @param int $userid The learner.
@@ -332,7 +332,7 @@ final class migration_mapper_test extends \advanced_testcase {
     }
 
     /**
-     * Every Soapbox status crossed with whether a score row exists.
+     * Every old SOLA speech tool status crossed with whether a score row exists.
      *
      * @return array [sola status, has score, expected status]
      */

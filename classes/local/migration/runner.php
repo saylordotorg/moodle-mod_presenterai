@@ -19,7 +19,7 @@ namespace mod_presenterai\local\migration;
 use mod_presenterai\local\rubric_manager;
 
 /**
- * Imports one course's Soapbox assignments into PresenterAI activities (IMPLEMENTATION-PLAN 7.1, 7.3 and 7.5).
+ * Imports one course's old SOLA speech tool assignments into PresenterAI activities (IMPLEMENTATION-PLAN 7.1, 7.3 and 7.5).
  *
  * plan_course() is the dry run: it reads SOLA through the source reader and this site's tables, and writes nothing,
  * takes no lock and fires no event. apply_course() checks the same things, takes a per-course lock, plans again

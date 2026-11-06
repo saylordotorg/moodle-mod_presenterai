@@ -28,7 +28,7 @@ use mod_presenterai\local\storage\store_interface;
  * begun (row, status uploading, no keys), then each piece of media is started
  * (a key is minted here and written to the row, never accepted from the
  * browser), then the attempt is finalized (the bytes are confirmed by the
- * store, the attempt number and deletion date are fixed). Soapbox did it the
+ * store, the attempt number and deletion date are fixed). SOLA's old speech tool did it the
  * other way round, minting a key for the browser and trusting the key the
  * browser sent back at finalize, which is why its finalize needed a prefix
  * check to stop one learner registering another learner's object.
@@ -1244,7 +1244,7 @@ final class recording_manager {
      * the File API core would remove the files with the context anyway; on S3
      * nothing would, and the rows are the only record of which objects exist,
      * so deleting rows first strands every object in the bucket for good. That
-     * is the Soapbox defect this plugin was not going to repeat.
+     * is the old SOLA speech tool defect this plugin was not going to repeat.
      *
      * Best effort and it never throws, because a teacher deleting an activity
      * must not be stopped by a bucket credential somebody cleared. An S3 object

@@ -28,7 +28,7 @@ use mod_presenterai\local\storage\store_factory;
 /**
  * Render the learner's uploaded deck to page images for the recorder.
  *
- * A port of Soapbox's soapbox_render_deck, with the deck named by the row
+ * A port of the old speech tool's soapbox_render_deck, with the deck named by the row
  * rather than by a key the browser sends, so there is no key to validate.
  * Pages are returned as data URIs and not stored; phase 5 caches them.
  *

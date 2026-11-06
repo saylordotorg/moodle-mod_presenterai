@@ -19,7 +19,7 @@ namespace mod_presenterai\local\migration;
 use mod_presenterai\local\recording_manager;
 
 /**
- * Undoes one course's Soapbox import (IMPLEMENTATION-PLAN 7.5 rule 5): removes the activities the import made, puts
+ * Undoes one course's old SOLA speech tool import (IMPLEMENTATION-PLAN 7.5 rule 5): removes the activities the import made, puts
  * each course page stand-in back as it was, and deletes every map row the import wrote. Writes nothing to SOLA (D13)
  * and deletes no media.
  *

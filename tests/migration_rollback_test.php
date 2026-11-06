@@ -23,7 +23,7 @@ use mod_presenterai\tests\fixtures\fake_source;
 use mod_presenterai\tests\fixtures\sola_rows;
 
 /**
- * The Soapbox migration rollback: it removes only what the import made, restores each stand-in, keeps SOLA's media.
+ * The old SOLA speech tool migration rollback: it removes only what the import made, restores each stand-in, keeps SOLA's media.
  *
  * Each test imports through the real runner (SOLA is the fake_source double) and then rolls back. S3 is configured
  * with credentials and an endpoint nothing listens on, and a sentinel curl response is queued: a rollback that sends
@@ -161,7 +161,7 @@ final class migration_rollback_test extends \advanced_testcase {
     }
 
     /**
-     * A mod_url stand-in pointing at one Soapbox assignment, and the reader row for it.
+     * A mod_url stand-in pointing at one old SOLA speech tool assignment, and the reader row for it.
      *
      * @param int $assignid The assignment.
      * @param int|null $courseid The course, the test course when null.

@@ -303,7 +303,7 @@ final class migration_cli_test extends \advanced_testcase {
     }
 
     /**
-     * A mod_url stand-in pointing at one Soapbox assignment.
+     * A mod_url stand-in pointing at one old SOLA speech tool assignment.
      *
      * @param int $assignid The assignment.
      * @param int $section Its section.

@@ -32,7 +32,7 @@ use mod_presenterai\local\vision\visual_pipeline;
  * before the record button because a learner who learns their recording will
  * be deleted, or cannot be downloaded, after speaking for seven minutes has
  * been misled by omission (design 9.3). The callout is a sibling of the attempt
- * table and never a child of the recorder: Soapbox nested its retention
+ * table and never a child of the recorder: SOLA's old speech tool nested its retention
  * statement inside the storage-ready branch, so on a site with storage
  * unconfigured the table showed and the policy did not.
  *

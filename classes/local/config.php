@@ -20,10 +20,10 @@ namespace mod_presenterai\local;
  * Site level recording configuration: the quality preset and the length ceiling.
  *
  * Ported from SOLA's soapbox_config (classes/soapbox_config.php:31-69), keeping
- * the numbers and dropping everything that was a Soapbox assignment concern.
+ * the numbers and dropping everything that was an old SOLA speech tool assignment concern.
  * The per activity clamp that lived beside these in SOLA (clamp_assignment) is
  * instance_manager::normalise() here, because an activity has a form and a row
- * where a Soapbox assignment had neither.
+ * where an old SOLA speech tool assignment had neither.
  *
  * The preset bitrates are what the recorder hands to MediaRecorder, and they are
  * also the only honest input to "how big will this recording be", which is the
@@ -39,7 +39,7 @@ final class config {
      * Video quality presets, bitrates in kbps.
      *
      * The numbers are SOLA's (classes/soapbox_config.php:56-69) so that a site
-     * moving from Soapbox records at the size it already budgeted for. The
+     * moving from SOLA's old speech tool records at the size it already budgeted for. The
      * labels are not carried here: they are language strings named
      * quality_<key>, so the settings page can translate them.
      *

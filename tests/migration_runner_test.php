@@ -24,7 +24,7 @@ use mod_presenterai\tests\fixtures\fake_source;
 use mod_presenterai\tests\fixtures\sola_rows;
 
 /**
- * The Soapbox migration runner: dry run, apply, resume and refusals.
+ * The old SOLA speech tool migration runner: dry run, apply, resume and refusals.
  *
  * SOLA is a test double that returns arrays (fake_source), so these run on a site without SOLA's tables. The
  * PresenterAI side is real: real tables, a real course with sections, a real mod_url stand-in. Every test that
@@ -140,7 +140,7 @@ final class migration_runner_test extends \advanced_testcase {
     }
 
     /**
-     * A mod_url stand-in in the course pointing at one Soapbox assignment, and the reader row for it.
+     * A mod_url stand-in in the course pointing at one old SOLA speech tool assignment, and the reader row for it.
      *
      * @param int $assignid The assignment it points at.
      * @param int $section The section it sits in.
@@ -709,7 +709,7 @@ final class migration_runner_test extends \advanced_testcase {
     }
 
     /**
-     * Test a site without SOLA's tables gets "no Soapbox tables" and the reader is asked nothing else.
+     * Test a site without SOLA's tables gets "no old SOLA speech tool tables" and the reader is asked nothing else.
      */
     public function test_no_source_tables_does_nothing(): void {
         $this->seed();
@@ -721,7 +721,7 @@ final class migration_runner_test extends \advanced_testcase {
         $this->assertSame(['tables_present'], array_values(array_unique($this->source->calls)));
         $this->assertSame(['sourcetables'], array_column($this->runner()->preconditions(), 'code'));
         $this->assertSame([], $plan->assignments);
-        $this->assertStringContainsString('No Soapbox tables', $plan->unmet()[0]['message']);
+        $this->assertStringContainsString('No old SOLA speech tool tables', $plan->unmet()[0]['message']);
     }
 
     /**
@@ -1208,11 +1208,11 @@ final class migration_runner_test extends \advanced_testcase {
             $this->assertSame(1, $entry['new_source_rows']);
             $this->assertSame(1, $entry['newly_scored_rows']);
             $this->assertStringContainsString(
-                'Soapbox recordings added after this assignment was imported (not imported): 1.',
+                'Old SOLA speech tool recordings added after this assignment was imported (not imported): 1.',
                 $entry['message']
             );
             $this->assertStringContainsString(
-                'Soapbox recordings scored after the import (scores not imported): 1.',
+                'Old SOLA speech tool recordings scored after the import (scores not imported): 1.',
                 $entry['message']
             );
             $this->assertSame(1, $result->counts()['new_source_rows']);

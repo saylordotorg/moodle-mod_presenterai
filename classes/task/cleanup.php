@@ -28,22 +28,22 @@ use mod_presenterai\local\storage\store_factory;
  * defects that file carried fixed, because each one deletes the wrong thing or
  * fails to delete the right one.
  *
- * The store is resolved per row from the row's own backend column. Soapbox
+ * The store is resolved per row from the row's own backend column. SOLA's old speech tool
  * built one storage object before the loop and returned early when it was
  * unconfigured (soapbox_cleanup.php:47-50), so a site that had switched
  * backends skipped every row on the other one forever. Here one row on an
  * unconfigured backend is reported and skipped and the rest carry on.
  *
- * Retention never changes status. Soapbox overwrote a scored row with
+ * Retention never changes status. SOLA's old speech tool overwrote a scored row with
  * 'deleted', which is how a learner's grade went to null a week after it
  * landed (plan section 3.3). Here the key goes null and mediagonereason says
  * why (D8).
  *
- * Pruning walks a recordset ordered by user. Soapbox keyed get_records_sql on a
+ * Pruning walks a recordset ordered by user. SOLA's old speech tool keyed get_records_sql on a
  * column two learners share (soapbox_cleanup.php:73-82), so later rows
  * overwrote earlier ones and pruning ran for one learner per assignment. And
  * pruning only happens when an activity asks for it: storedattempts 0, the
- * default, keeps every attempt (D22), where Soapbox forced a minimum of one.
+ * default, keeps every attempt (D22), where SOLA's old speech tool forced a minimum of one.
  *
  * Nothing printed here names a key or a URL. mtrace output ends up in task
  * logs that more people can read than can read the bucket.

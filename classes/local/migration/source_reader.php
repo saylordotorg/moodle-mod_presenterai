@@ -43,9 +43,9 @@ interface source_reader {
     public function site_id(): string;
 
     /**
-     * Whether SOLA's Soapbox tables are on this site, which every other method assumes.
+     * Whether SOLA's old speech tool tables are on this site, which every other method assumes.
      *
-     * Check this first. A site without SOLA's Soapbox has none of the tables the other methods read, and they
+     * Check this first. A site without SOLA's old speech tool has none of the tables the other methods read, and they
      * fail with a database error there.
      *
      * @return bool True only when SOLA's three sbx_* tables, practice_scores and rubrics all exist.
@@ -53,14 +53,14 @@ interface source_reader {
     public function tables_present(): bool;
 
     /**
-     * The courses that hold any Soapbox assignment.
+     * The courses that hold any old SOLA speech tool assignment.
      *
      * @return int[] Course ids, ascending.
      */
     public function course_ids_with_data(): array;
 
     /**
-     * The Soapbox assignments of one course.
+     * The old SOLA speech tool assignments of one course.
      *
      * max_attempts must be the EFFECTIVE cap, not the stored column. In SOLA a stored 0 means "as many as the
      * admin maximum allows" (soapbox_config::effective_recording_cap(): 0 gives the admin cap, otherwise the
@@ -181,7 +181,7 @@ interface source_reader {
     public function queued_scoring_task_count(): int;
 
     /**
-     * The course page stand-ins that point at a Soapbox assignment, all of them.
+     * The course page stand-ins that point at an old SOLA speech tool assignment, all of them.
      *
      * Every mod_url activity that matches, so that two for one assignment can be refused rather than collapsed.
      *

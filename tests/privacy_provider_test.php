@@ -260,7 +260,7 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
     public function test_export_for_a_learner(): void {
         global $DB;
 
-        // A score migrated from Soapbox carries the old session's data and mean.
+        // A score migrated from SOLA's old speech tool carries the old session's data and mean.
         $DB->set_field('presenterai_score', 'legacymeanscore', 72, ['recordingid' => $this->alicefs->id, 'origin' => 'ai']);
         $DB->set_field(
             'presenterai_score',

@@ -17,7 +17,7 @@
 namespace mod_presenterai\local\migration;
 
 /**
- * Reads SOLA's Soapbox rows, and nothing else, for the importer.
+ * Reads SOLA's old speech tool rows, and nothing else, for the importer.
  *
  * Every query here is a SELECT. This class and ids are the only files of the importer that name a SOLA table, and
  * a test fails the build if this one holds a write call of any kind (D13), so SOLA's rows are read-only to the
@@ -26,7 +26,7 @@ namespace mod_presenterai\local\migration;
  * SOLA's own classes are asked only for what has no other home (the level presets and the names of the two visual
  * criteria), only behind class_exists() and defined(), and only for plain data. This plugin keeps no runtime
  * dependency on SOLA (D3): nothing here loads SOLA's code unless it is installed. But the tables are another
- * matter: tables_present() must be checked first, and every other method assumes SOLA's Soapbox tables exist,
+ * matter: tables_present() must be checked first, and every other method assumes SOLA's old speech tool tables exist,
  * so on a site without them each of those fails with a database error.
  *
  * Where SOLA computes something from its settings (the attempt cap, the storage location) the same rule is
@@ -36,7 +36,7 @@ namespace mod_presenterai\local\migration;
  * What is selected, and why:
  *
  * - Scores only through sbx_rec.scoreid. practice_scores also holds conversation and pronunciation practice, and
- *   freeform speech practice, so no other selector picks out Soapbox scores (IMPLEMENTATION-PLAN 7.2).
+ *   freeform speech practice, so no other selector picks out old SOLA speech tool scores (IMPLEMENTATION-PLAN 7.2).
  * - A recording whose score row has gone comes back with scoreid null, so "has a score" means the same to the
  *   mapper and the runner, and so two recordings pointing at a vanished score aren't counted as sharing one.
  * - A shared score is reported to every course that points at it, not only the course holding both recordings,
@@ -77,7 +77,7 @@ final class local_aica_reader implements source_reader {
     /** @var string SOLA's soapbox_storage::DEFAULT_PREFIX. */
     private const DEFAULT_PREFIX = 'soapbox/';
 
-    /** @var string SOLA's practice score table, which holds Soapbox scores among others. */
+    /** @var string SOLA's practice score table, which holds old SOLA speech tool scores among others. */
     private const SCORES_TABLE = 'local_ai_course_assistant_practice_scores';
 
     /** @var string SOLA's rubric table, which the criteria of an old score are looked up in. */
@@ -181,7 +181,7 @@ final class local_aica_reader implements source_reader {
     }
 
     /**
-     * The courses that hold any Soapbox assignment.
+     * The courses that hold any old SOLA speech tool assignment.
      *
      * A course that has since been deleted is still listed while its assignments remain, because this reports
      * what SOLA holds and the runner decides what can be done about it.
@@ -197,7 +197,7 @@ final class local_aica_reader implements source_reader {
     }
 
     /**
-     * The Soapbox assignments of one course, each with the cap SOLA would really apply.
+     * The old SOLA speech tool assignments of one course, each with the cap SOLA would really apply.
      *
      * @param int $courseid The course.
      * @return array[] Rows keyed by SOLA's column names, in id order, max_attempts being the effective cap.
@@ -277,7 +277,7 @@ final class local_aica_reader implements source_reader {
     /**
      * How many speech scores of the course belong to no recording.
      *
-     * This counts every such row, which includes a learner's freeform Soapbox practice as well as a score a crash
+     * This counts every such row, which includes a learner's freeform old SOLA speech tool practice as well as a score a crash
      * left behind: nothing in the row tells them apart.
      *
      * @param int $courseid The course.
@@ -442,7 +442,7 @@ final class local_aica_reader implements source_reader {
     }
 
     /**
-     * The course page stand-ins that point at a Soapbox assignment, all of them, in course module order.
+     * The course page stand-ins that point at an old SOLA speech tool assignment, all of them, in course module order.
      *
      * The same match as SOLA's soapbox_course_link::assign_id_from_url(): the learner page's path followed by
      * ?id=<digits>, found anywhere in the URL, so the root-relative form and an absolute one both match. Two
@@ -478,7 +478,7 @@ final class local_aica_reader implements source_reader {
     }
 
     /**
-     * The assignment id in a url activity's address, null when it isn't a link to a Soapbox assignment.
+     * The assignment id in a url activity's address, null when it isn't a link to an old SOLA speech tool assignment.
      *
      * @param string $externalurl The activity's externalurl.
      * @return int|null

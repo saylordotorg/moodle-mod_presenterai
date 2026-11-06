@@ -16,7 +16,7 @@
 /**
  * The in-browser recorder, and the submit flow that follows Stop.
  *
- * Ported from Soapbox's soapbox_recorder.js: getUserMedia and MediaRecorder at
+ * Ported from the old speech tool's soapbox_recorder.js: getUserMedia and MediaRecorder at
  * a capped bitrate, MP4 where the browser can record it (it plays on more
  * devices) and WebM otherwise, and a min/max timer.
  *

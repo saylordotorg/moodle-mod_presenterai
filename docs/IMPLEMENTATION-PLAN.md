@@ -16,25 +16,25 @@ Four parallel investigations fed this plan: what carries from the prior design (
 
 A learner opens the activity, records a video or audio presentation in the browser, optionally uploads a PDF slide deck and advances it while speaking, and the plugin transcribes the recording, scores it against a rubric, and gives back per criterion written feedback. On video attempts it also samples still frames from the recording and gives feedback on body language and camera presence.
 
-That is what Soapbox does today inside SOLA (`local_ai_course_assistant`). PresenterAI is the same product as a standalone Moodle activity module, and it is different from Soapbox in three ways that shape almost every decision below.
+That is what SOLA's old speech tool does today inside SOLA (`local_ai_course_assistant`). PresenterAI is the same product as a standalone Moodle activity module, and it is different from SOLA's old speech tool in three ways that shape almost every decision below.
 
 ### 1.1 It is an activity, not a feature inside a chat plugin
 
-Soapbox is a set of pages hanging off a `local` plugin, reachable from a course only through a `mod_url` stand in whose `externalurl` is pattern matched back to an assignment id (`classes/soapbox_course_link.php:76-82`). It has no course module, no module context, no gradebook entry, no backup of learner work, and no place in the activity chooser.
+SOLA's old speech tool is a set of pages hanging off a `local` plugin, reachable from a course only through a `mod_url` stand in whose `externalurl` is pattern matched back to an assignment id (`classes/soapbox_course_link.php:76-82`). It has no course module, no module context, no gradebook entry, no backup of learner work, and no place in the activity chooser.
 
-That has a specific and serious consequence: a learner's transcript, score and written feedback exist in `local_ai_course_assistant_sbx_rec` and `local_ai_course_assistant_practice_scores` and nowhere else in Moodle. I verified this rather than taking the prior plan's word for it. A grep across the plugin's `classes/` and `lib.php` for `grade_update`, `grade_item` and `gradebook` returns two hits, both unrelated to Soapbox: `classes/analytics.php:1216` joins `{grade_items}` for reporting, and `classes/external/generate_quiz.php:594` fetches grade items to build quiz context. There is no `grade_update()` call anywhere in the Soapbox path.
+That has a specific and serious consequence: a learner's transcript, score and written feedback exist in `local_ai_course_assistant_sbx_rec` and `local_ai_course_assistant_practice_scores` and nowhere else in Moodle. I verified this rather than taking the prior plan's word for it. A grep across the plugin's `classes/` and `lib.php` for `grade_update`, `grade_item` and `gradebook` returns two hits, both unrelated to SOLA's old speech tool: `classes/analytics.php:1216` joins `{grade_items}` for reporting, and `classes/external/generate_quiz.php:594` fetches grade items to build quiz context. There is no `grade_update()` call anywhere in the old SOLA speech tool path.
 
 As an activity, PresenterAI gets a module context, capabilities, backup and restore, the privacy API, completion, events, and a real gradebook item. Section 6 covers the grade; it is the single largest functional gain.
 
 ### 1.2 Storage is pluggable and retention is optional
 
-Soapbox assumes an S3 bucket (`classes/soapbox_storage.php:38,41`: default bucket `archive-course`, default prefix `soapbox/`) and hard wires a retention clock (`classes/soapbox_config.php:38,41`: `DEFAULT_RETENTION_DAYS = 7`, `RETENTION_MAX_DAYS = 28`, with `clamp_retention_days()` at `:103-118` forcing any value into the range 1 to 28).
+SOLA's old speech tool assumes an S3 bucket (`classes/soapbox_storage.php:38,41`: default bucket `archive-course`, default prefix `soapbox/`) and hard wires a retention clock (`classes/soapbox_config.php:38,41`: `DEFAULT_RETENTION_DAYS = 7`, `RETENTION_MAX_DAYS = 28`, with `clamp_retention_days()` at `:103-118` forcing any value into the range 1 to 28).
 
 PresenterAI supports either an S3 compatible bucket or Moodle's own file storage, chosen per site, and automatic deletion is an option rather than a requirement. Section 4 is the abstraction; section 3 shows why that costs almost nothing in the schema and rather more everywhere else.
 
 ### 1.3 The AI backend is chooseable
 
-Soapbox calls one OpenAI compatible chat endpoint and one Whisper compatible transcription endpoint. PresenterAI lets a site choose Moodle core's AI subsystem, or Claude, OpenAI or Gemini configured directly.
+SOLA's old speech tool calls one OpenAI compatible chat endpoint and one Whisper compatible transcription endpoint. PresenterAI lets a site choose Moodle core's AI subsystem, or Claude, OpenAI or Gemini configured directly.
 
 Section 5 is that abstraction, and it is honest about the part that is easy to get wrong: **Moodle core's AI subsystem cannot transcribe audio and cannot accept an image**, on any branch from 4.5 through 5.3beta. Core AI is a back end for the scoring step only. Everything else always runs through the plugin's own client.
 
@@ -64,7 +64,7 @@ Section 5 is that abstraction, and it is honest about the part that is easy to g
 - A context scoped rubric editor for both the speech rubric and the video rubric.
 - Backup, restore, course reset, and a full privacy provider.
 - Storage backend choice, retention choice, AI route choice, a storage self test, and a spend table.
-- The migrator from Soapbox, with a dry run, a per course verification report, and a rollback.
+- The migrator from SOLA's old speech tool, with a dry run, a per course verification report, and a rollback.
 
 ### 2.2 What does not ship in v1.0, and why
 
@@ -75,7 +75,7 @@ Section 5 is that abstraction, and it is honest about the part that is easy to g
 | Moodle mobile app support (`db/mobile.php`) | The app cannot send a session cookie to `pluginfile.php`, so the filesystem backend would need token URLs, which are bearer URLs and undo part of the revocation advantage in 4.5. Needs a decision first (section 9.10). |
 | Migration into the Moodle file storage backend | The S3 to S3 migration moves no bytes. A migration into file storage is a byte copy of every surviving object into moodledata, a different operation with different failure modes. v1 refuses `--backend=fs` with a clear message. Both investigation A and investigation D reached this independently. |
 | S3 multipart upload with resume | The current single presigned PUT with client retry works (`amd/src/soapbox_uploader.js:51-73`). Resume is built for the filesystem backend because it has no alternative; adding it to S3 is a later improvement, not a correctness fix. |
-| Joining PresenterAI spend into SOLA's `token_analytics.php` | SOLA v8.0.0 removes the Soapbox code, so that bucket disappears regardless. PresenterAI ships its own spend table and CSV export. |
+| Joining PresenterAI spend into SOLA's `token_analytics.php` | SOLA v8.0.0 removes the old SOLA speech tool code, so that bucket disappears regardless. PresenterAI ships its own spend table and CSV export. |
 | A per learner consent gate for visual analysis | Recorded decision, see DECISIONS.md. Disclosure text ships; a blocking gate does not. Note that in core AI mode, core imposes its own policy acceptance, so "no consent gate" is only achievable on the direct route (section 5.6). |
 | Global search over transcripts | Nice, not load bearing, and it widens the privacy surface. Deferred. |
 
@@ -167,7 +167,7 @@ Reasoning:
 Reasoning:
 
 - `legacytopicid` is new relative to the prior plan and it is required. Without it a re-run of the migrator cannot remap a recording's `topicid`, and topic titles are not unique enough to match on.
-- The case study PDF becomes a real file in a `mod_presenterai/topicfile` area, itemid = topic id, which is what makes backup, restore and course copy carry it. **It is a new feature, not a migration.** `sbx_topic.pdf_itemid` (`db/install.xml:745`) is written by `classes/soapbox_assignment_manager.php:304,316` and read by nothing: a repo wide grep returns exactly three hits, those two writes and the column creation at `db/upgrade.php:1236`. There is no `get_file_storage()` call anywhere in the Soapbox code, no file manager element in `soapbox_assign_edit.php`, and `lib.php:46-49` serves only the `customavatars` area. Building the file area is fine. Writing migration code for it would migrate zero files. Subject to one production query (section 9.13).
+- The case study PDF becomes a real file in a `mod_presenterai/topicfile` area, itemid = topic id, which is what makes backup, restore and course copy carry it. **It is a new feature, not a migration.** `sbx_topic.pdf_itemid` (`db/install.xml:745`) is written by `classes/soapbox_assignment_manager.php:304,316` and read by nothing: a repo wide grep returns exactly three hits, those two writes and the column creation at `db/upgrade.php:1236`. There is no `get_file_storage()` call anywhere in the old SOLA speech tool code, no file manager element in `soapbox_assign_edit.php`, and `lib.php:46-49` serves only the `customavatars` area. Building the file area is fine. Writing migration code for it would migrate zero files. Subject to one production query (section 9.13).
 
 ### 3.3 `presenterai_recording`, one attempt
 
@@ -510,7 +510,7 @@ The `backend` column per row is what makes this survivable, and it has to be res
 - Changing the site setting affects new recordings only. No bytes move, no downtime.
 - S3 settings must stay valid and visible while any `backend = 's3'` row survives, and the health check shows a count of rows on the other backend. Clearing the credentials would orphan them silently, because `is_configured()` goes false and the cleanup task's early return (`:47-49`) would skip them forever.
 - Backup and restore: a recording restores as media-less (null keys, `mediadeletedat` set, status `scored` or `abandoned`) unless the backup came from the same site with the same backend and, for S3, the same bucket. A filesystem backup carries the bytes inside the mbz; an S3 backup carries only keys.
-- `cli/migrate_storage.php --to=fs|s3 [--dry-run] [--limit=N]` exists for a site that decides to leave S3: fetch, put, verify size, update `backend` and `storagekey` in one transaction, then delete the source. Idempotent, resumable, never deletes before the target verifies. It is not part of the Soapbox migration and it is not for Saylor.
+- `cli/migrate_storage.php --to=fs|s3 [--dry-run] [--limit=N]` exists for a site that decides to leave S3: fetch, put, verify size, update `backend` and `storagekey` in one transaction, then delete the source. Idempotent, resumable, never deletes before the target verifies. It is not part of the old SOLA speech tool migration and it is not for Saylor.
 
 ### 4.8 The default for a fresh install is `fs`
 
@@ -595,7 +595,7 @@ Port all of it, including the allowlist, which the prior plan's manifest is miss
 
 ## 6. Gradebook integration
 
-This is the reason Soapbox's data is fragile, and it is the largest functional gain in PresenterAI.
+This is the reason the old speech tool's data is fragile, and it is the largest functional gain in PresenterAI.
 
 **Features.** `FEATURE_GRADE_HAS_GRADE` and `FEATURE_GRADE_OUTCOMES` true. `FEATURE_ADVANCED_GRADING` deliberately false in v1, for the reason in section 2.2.
 
@@ -619,9 +619,9 @@ This is the reason Soapbox's data is fragile, and it is the largest functional g
 
 ---
 
-## 7. The migration from Soapbox
+## 7. The migration from SOLA's old speech tool
 
-This is what gates SOLA 8.0. The public commitment is explicit: v8.0.0 will not remove Soapbox until PresenterAI can import existing recordings and scores (`.wiki/Migration-to-PresenterAI.md`). Everything in phases 0 to 3 is optional from SOLA's point of view; this is not.
+This is what gates SOLA 8.0. The public commitment is explicit: v8.0.0 will not remove SOLA's old speech tool until PresenterAI can import existing recordings and scores (`.wiki/Migration-to-PresenterAI.md`). Everything in phases 0 to 3 is optional from SOLA's point of view; this is not.
 
 The migration is non destructive, idempotent, opt in, dry run by default, and it moves no byte of media.
 
@@ -639,7 +639,7 @@ Full field mappings live in the migrator's docblock; the four that matter are he
 
 **`overall_score` is not a percentage.** `practice_scores.overall_score` is the mean of the per criterion scores on the 0 to 5 scale (`classes/rubric_manager.php:369`). The percentage is `pct`, it is not in a column at all, it lives in `session_meta['pct']`, and only on rows written since v7.5.1 (`classes/external/score_speech.php:366`). Mapping `overall_score` onto `overallpct` turns a learner who scored 4 out of 5 into 4 percent. This is a computed migration, not a column copy.
 
-**`rawmax` cannot be reconstructed for every historical row.** `max_score` and `assessed` were added to the stored per criterion JSON in commit `cf7506ef` (2026-09-18, `classes/external/score_speech.php:313,327`). Before that the stored shape was `name`, `score`, `feedback` only. The Soapbox feature shipped 2026-06-15, so three months of rows carry no maximum and no assessed flag. The backfill rule, in order:
+**`rawmax` cannot be reconstructed for every historical row.** `max_score` and `assessed` were added to the stored per criterion JSON in commit `cf7506ef` (2026-09-18, `classes/external/score_speech.php:313,327`). Before that the stored shape was `name`, `score`, `feedback` only. The old SOLA speech tool feature shipped 2026-06-15, so three months of rows carry no maximum and no assessed flag. The backfill rule, in order:
 
 1. Use the entry's `max_score` if present. (`scoreprovenance = 'exact'`)
 2. Otherwise normalise the criterion name the way `score_speech::normalise_name()` does and look it up in the rubric `practice_scores.rubricid` points at. (`rubric_backfill`)
@@ -650,7 +650,7 @@ Rule 4 is not a failure, it is the honest answer for a row scored against a rubr
 
 `assessed` is absent on every pre v7.5.1 row, and absent must be treated as assessed, matching `classes/rubric_manager.php:320-327`. Treating absent as not assessed would render every historical score as "not assessed".
 
-**`session_type` cannot select Soapbox rows.** `TYPE_SPEECH = 'speech'` is written by `score_speech::execute()` at `:375` for both callers: the standalone practice page `soapbox.php:62` and the assignment scorer `classes/soapbox_scorer.php:180`. A `speech` row is as likely to be someone's freeform practice. The only correct selector is the pointer from the recording, `sbx_rec.scoreid`, which is indexed by the foreign key at `db/install.xml:783`:
+**`session_type` cannot select old SOLA speech tool rows.** `TYPE_SPEECH = 'speech'` is written by `score_speech::execute()` at `:375` for both callers: the standalone practice page `soapbox.php:62` and the assignment scorer `classes/soapbox_scorer.php:180`. A `speech` row is as likely to be someone's freeform practice. The only correct selector is the pointer from the recording, `sbx_rec.scoreid`, which is indexed by the foreign key at `db/install.xml:783`:
 
 ```sql
 SELECT ps.*, r.id AS recid
@@ -727,7 +727,7 @@ Per course, recorded as a `presenterai_migreport` row, not observed once and rem
 
 **Tier 4, the human check.** Three learners per course, opened as that learner with the log entry recorded: one with a surviving video and slides, one whose video was deleted but whose score survived, one whose newest attempt is `failed`. The second is the one that matters, because it is the case the old page never rendered at all.
 
-**The gate.** SOLA 8.0's upgrade step that drops `sbx_*` refuses to run for any course without a passing `presenterai_migreport` row. That is a real gate rather than a note in a runbook, and it is not optional: there is no gradebook entry anywhere in Soapbox, so `sbx_rec` plus `practice_scores` is the only copy of a learner's work. A global drop after a global run is a single point of total loss for anyone the run skipped.
+**The gate.** SOLA 8.0's upgrade step that drops `sbx_*` refuses to run for any course without a passing `presenterai_migreport` row. That is a real gate rather than a note in a runbook, and it is not optional: there is no gradebook entry anywhere in SOLA's old speech tool, so `sbx_rec` plus `practice_scores` is the only copy of a learner's work. A global drop after a global run is a single point of total loss for anyone the run skipped.
 
 ### 7.7 Rollout, and what cannot be done safely
 
@@ -760,13 +760,13 @@ Building both stores here is a change from the prior plan, which had S3 in phase
 **Phase 3. AI: transcription, scoring and body language.** `client_interface`, `core_ai_client` (with the 4.5 and 5.x branch), `claude_client`, `openai_client`, `gemini_client`, `stt_client`, `json_parser`, `usage`, the `auto` route resolver, `rate_limiter`, `security` (SSRF plus TLS pinning on admin entered endpoints), `scorer`, the `score_recording` adhoc task with the `get_fail_delay() < 960` transient rule, stored attempt pruning, `rubrics` with the speech criteria and level presets, `rubric.php`, `warm_stt`, and the body language port: `amd/src/frames.js` and `video_vision`, the assessed-criteria-only denominator, the criterion allowlist, the `visual_not_assessed` message, and the `visualevidence` decision from section 9.1.
 
 The prior plan had body language as its own phase because it was new work. It is a port with named source files and shipped tests, so it folds in here, which also means both features in the original brief are delivered before migration work starts, a better place to be if migration slips.
-*Ships:* everything today's Soapbox does, as an activity, with grades.
+*Ships:* everything today's SOLA's old speech tool does, as an activity, with grades.
 
 **Phase 4. Migration. BUILT in 0.5.0 (2026-10-19): see `docs/superpowers/specs/2026-10-19-soapbox-importer-design.md` and `docs/MIGRATION-RUNBOOK.md`; where they differ from this section, they win. No longer on SOLA 8.0's critical path, see 9.15.** `migration/from_local_aica`, `presenterai_migration_map`, `presenterai_migreport`, `cli/migrate_from_local.php`, `migrate.php`, the verification tiers, `--rollback`, the SOLA side interlock in `soapbox_cleanup::execute()`, `migration_test`, and the written runbook. Rollout dev, degrees, learn.
-*Ships:* Saylor can cut over, and SOLA 8.0 is unblocked for any site that has Soapbox data.
+*Ships:* Saylor can cut over, and SOLA 8.0 is unblocked for any site that has old SOLA speech tool data.
 
 This phase was written when migration was believed to gate SOLA 8.0. The measured answer to
-9.15 is that both Saylor sites have Soapbox switched off with zero recordings, so for Saylor
+9.15 is that both Saylor sites have SOLA's old speech tool switched off with zero recordings, so for Saylor
 there is nothing to migrate and 8.0 is already unblocked. The phase stays, because the plugin
 is public and another site may have data, and because the SOLA-side interlock in
 `soapbox_cleanup::execute()` is worth having either way. It no longer has to come before
@@ -810,7 +810,7 @@ Today `host()` hard codes `{bucket}.s3.{region}.amazonaws.com` (`classes/soapbox
 *Recommendation:* (b). MinIO in CI is what proves the abstraction is real rather than aspirational, and R2 support then costs one setting and a manual test rather than a redesign.
 
 **9.7 Does the standalone practice page `soapbox.php` survive SOLA 8.0?**
-The prior plan recommends leaving it in SOLA indefinitely. `.wiki/Migration-to-PresenterAI.md` says v8.0.0 removes "the Soapbox pages, settings and tasks", and `soapbox.php` is a Soapbox page. Either the wiki means the assignment pages only, or learners lose their cross course practice history.
+The prior plan recommends leaving it in SOLA indefinitely. `.wiki/Migration-to-PresenterAI.md` says v8.0.0 removes "the old SOLA speech tool pages, settings and tasks", and `soapbox.php` is an old SOLA speech tool page. Either the wiki means the assignment pages only, or learners lose their cross course practice history.
 *Options:* (a) the wiki means assignment pages; `soapbox.php` stays, and the wiki is corrected to say so; (b) it goes in 8.0 and the practice history goes with it; (c) it goes in 8.0 and PresenterAI grows a site level practice mode.
 *Recommendation:* (a). It costs nothing to keep and a learner losing their practice history is worse than a little duplication. This needs an explicit answer before the wiki is read as a commitment.
 
@@ -833,7 +833,7 @@ All six were measured rather than reasoned about. Redash against both production
 sites, and the public Moodle plugin directory. **One of them changes the shape of
 this project, so read 9.15 first.**
 
-**9.15 THE IMPORTANT ONE: there is no production Soapbox data to migrate.**
+**9.15 THE IMPORTANT ONE: there is no production old SOLA speech tool data to migrate.**
 
 |  | learn.saylor.org | degrees.saylor.org |
 |---|---|---|
@@ -848,12 +848,12 @@ this project, so read 9.15 first.**
 
 The databases are certainly the right ones: the same queries return 209,756
 messages and 15,717 chat users on learn, and 141,696 messages and 1,237 users on
-degrees. SOLA is heavily used. Soapbox is simply switched off.
+degrees. SOLA is heavily used. SOLA's old speech tool is simply switched off.
 
 Three consequences, and they are not small.
 
 1. **Migration is not a gate on SOLA 8.0 for Saylor.** The entire "removing
-   Soapbox deletes student work" argument, which is why the tables were separated
+   SOLA's old speech tool deletes student work" argument, which is why the tables were separated
    from the code removal, rests on there being student work. For Saylor there is
    one score row and no recordings at all. The argument still holds in principle
    for any other site running SOLA, and the code removal and table drop should
@@ -861,13 +861,13 @@ Three consequences, and they are not small.
    evidence's.
 2. **The migrator can move down the build order.** It was phased early because it
    blocked a deadline. It does not.
-3. **Nothing shipped for Soapbox in v7.5.0, v7.5.1 or v7.5.2 has ever run in
+3. **Nothing shipped for SOLA's old speech tool in v7.5.0, v7.5.1 or v7.5.2 has ever run in
    production.** Both sites run plugin build `2026091001`, which is v7.4.1. That
    does not make the defects fixed in those releases imaginary, they were real and
    the dev fleet runs them, but it does mean no learner was ever affected by any
    of them. The body-language observation that outlived its video never wrote a
    row on a production site, and the course purge that kept transcripts never had
-   a Soapbox transcript to keep.
+   an old SOLA speech tool transcript to keep.
 
 **9.11 Both production sites run Moodle 4.5.13+ (Build 20260903).**
 So the 5.x core AI instance API is not reachable on any Saylor site today. This
@@ -902,7 +902,7 @@ that check exists for other sites and for safety rather than for Saylor.
 
 Note this is a **dedicated bucket**, not the shared `archive-course` default this
 plan assumed from the SOLA source. That makes 9.3 much easier: a lifecycle rule
-on that bucket affects nothing but Soapbox, and with zero objects in it there is
+on that bucket affects nothing but SOLA's old speech tool, and with zero objects in it there is
 nothing to strand. `allowstealth = 1` means stand-in modules can be hidden from
 the course page while remaining available, which 7.4 wanted.
 

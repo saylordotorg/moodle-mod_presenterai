@@ -21,7 +21,7 @@ namespace mod_presenterai\local;
  *
  * Every entry point asks here rather than combining capabilities itself:
  * pluginfile, download.php, the playback and delete web services and the
- * attempt list. Soapbox spread the same decision over four files and they
+ * attempt list. SOLA's old speech tool spread the same decision over four files and they
  * disagreed, which is how a teacher who could watch a recording also turned
  * out to be able to download it.
  *

@@ -655,7 +655,7 @@ class s3_store implements store_interface {
      * The recording shape is byte-identical to soapbox_storage::make_object_key()
      * (prefix/courseid/userid/token.ext), and decks and frame sheets keep their
      * extra segment under the same learner path. That is not nostalgia: the
-     * Soapbox migration carries keys across unchanged, and owns() matches on
+     * old SOLA speech tool migration carries keys across unchanged, and owns() matches on
      * prefix/courseid/userid/, so a key built any other way is rejected as
      * foreign by the check that protects one learner's media from another.
      *
@@ -796,7 +796,7 @@ class s3_store implements store_interface {
     /**
      * A prefix setting as the store uses it: the default when empty, never a leading slash, one trailing slash.
      *
-     * Public so the Soapbox importer compares a prefix exactly as this store would read it.
+     * Public so the old SOLA speech tool importer compares a prefix exactly as this store would read it.
      *
      * @param string $value The prefix setting, already trimmed.
      * @return string

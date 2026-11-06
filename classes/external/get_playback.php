@@ -29,8 +29,8 @@ use mod_presenterai\local\storage\store_factory;
 /**
  * Everything the player needs: the media URL, the slides and the timeline.
  *
- * A port of Soapbox's soapbox_get_playback with two changes. Media that has
- * gone is an answer, not an error: Soapbox threw "assignment not found" for a
+ * A port of the old speech tool's soapbox_get_playback with two changes. Media that has
+ * gone is an answer, not an error: SOLA's old speech tool threw "assignment not found" for a
  * recording retention had deleted, so a planned deletion looked like a broken
  * link (design 8.5). And the S3 URL lives 300 seconds rather than 3600, with
  * the player asking again when it stops working (plan 4.6).

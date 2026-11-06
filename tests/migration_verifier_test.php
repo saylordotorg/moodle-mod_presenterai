@@ -25,7 +25,7 @@ use mod_presenterai\tests\fixtures\fake_source;
 use mod_presenterai\tests\fixtures\sola_rows;
 
 /**
- * The Soapbox migration verifier: plan 7.6 tiers 1 to 3, and the presenterai_migreport row it writes.
+ * The old SOLA speech tool migration verifier: plan 7.6 tiers 1 to 3, and the presenterai_migreport row it writes.
  *
  * Each test imports through the real runner (SOLA is the fake_source double), then verifies, sometimes after
  * doctoring a row on either side. Storage is an object_checker double that knows which keys exist and how big
@@ -880,7 +880,7 @@ final class migration_verifier_test extends \advanced_testcase {
     }
 
     /**
-     * Test a course with no Soapbox data at all passes with every count zero.
+     * Test a course with no old SOLA speech tool data at all passes with every count zero.
      */
     public function test_an_empty_course_passes(): void {
         $result = $this->verify();

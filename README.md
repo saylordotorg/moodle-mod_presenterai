@@ -2,9 +2,13 @@
 
 An activity module in which a learner records a video or audio presentation in the browser, optionally presents a PDF slide deck while speaking, and receives a transcript, a rubric score and written per criterion feedback.
 
-> **Status: v0.5.4 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's Soapbox feature (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
+> **Status: v0.5.5 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's old speech tool (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
 
-## What's new in 0.5.4
+## What's new in 0.5.5
+
+Wording only. The importer's messages, its help text, the privacy descriptions and the docs now call the tool PresenterAI replaced "SOLA's old speech tool". Nothing about how the plugin works changes: no code path, no table, no setting.
+
+## What was new in 0.5.4
 
 Two changes, and neither touches a table or a learner's screen.
 
@@ -36,7 +40,7 @@ The Moodle plugins directory review found six things ([issues 12 to 17](https://
 
 ## What was new in 0.5.0
 
-- **An importer for SOLA's Soapbox feature.** Dry run by default, resumable, reversible, verified, and it never writes to SOLA. See [the runbook](docs/MIGRATION-RUNBOOK.md).
+- **An importer for SOLA's old speech tool.** Dry run by default, resumable, reversible, verified, and it never writes to SOLA. See [the runbook](docs/MIGRATION-RUNBOOK.md).
 - **A migrated attempt that expired before it was scored reads "Deleted on <date>"** instead of "Not uploaded".
 
 ## What was new in 0.4.0
@@ -164,11 +168,11 @@ Where the media leaves your site: to your chosen storage backend, to your chosen
 
 ## Relationship to the SOLA plugin
 
-PresenterAI replaces "Soapbox", a feature inside `local_ai_course_assistant` (the SOLA course assistant plugin). Soapbox is deprecated as of SOLA v7.5.2, its code is removed in v8.0, and its database tables are dropped later, per course, only once a migration has been verified for that course.
+PresenterAI replaces SOLA's old speech tool, a feature inside `local_ai_course_assistant` (the SOLA course assistant plugin). SOLA's old speech tool is deprecated as of SOLA v7.5.2, its code is removed in v8.0, and its database tables are dropped later, per course, only once a migration has been verified for that course.
 
-Since 0.5.0 the importer is built: `php mod/presenterai/cli/migrate_from_local.php`. It imports existing Soapbox assignments, topics, recordings, transcripts, scores and feedback into PresenterAI activities in the same courses, including attempts whose video has already been deleted. It's a dry run unless you pass `--apply`, it's safe to run again and resumes after an interruption, it can be rolled back, and it verifies its own work (`--verify`). It writes nothing to SOLA's tables, and it moves no recording: a site that keeps its recordings in S3 points the new activities at the same objects, so it needs PresenterAI's S3 bucket, region and prefix to match SOLA's. It needs SOLA 7.12.1 or later, whose nightly cleanup then leaves the recordings PresenterAI holds alone. Read [the runbook](docs/MIGRATION-RUNBOOK.md) before you run it on a real site.
+Since 0.5.0 the importer is built: `php mod/presenterai/cli/migrate_from_local.php`. It imports existing old SOLA speech tool assignments, topics, recordings, transcripts, scores and feedback into PresenterAI activities in the same courses, including attempts whose video has already been deleted. It's a dry run unless you pass `--apply`, it's safe to run again and resumes after an interruption, it can be rolled back, and it verifies its own work (`--verify`). It writes nothing to SOLA's tables, and it moves no recording: a site that keeps its recordings in S3 points the new activities at the same objects, so it needs PresenterAI's S3 bucket, region and prefix to match SOLA's. It needs SOLA 7.12.1 or later, whose nightly cleanup then leaves the recordings PresenterAI holds alone. Read [the runbook](docs/MIGRATION-RUNBOOK.md) before you run it on a real site.
 
-PresenterAI works without SOLA installed. Only the importer looks at SOLA, and only through one reader class. It reads SOLA's Soapbox tables and settings. It checks for SOLA's cleanup interlock and asks SOLA's interlock helper for the shared site id. And it asks SOLA's rubric manager (`rubric_manager::speech_preset()` and its visual criteria) for the speaking-level presets it uses to rebuild old scores. Each SOLA class is called only when `class_exists()` or `defined()` says it's there. Nothing else in the plugin calls SOLA's code.
+PresenterAI works without SOLA installed. Only the importer looks at SOLA, and only through one reader class. It reads SOLA's old speech tool tables and settings. It checks for SOLA's cleanup interlock and asks SOLA's interlock helper for the shared site id. And it asks SOLA's rubric manager (`rubric_manager::speech_preset()` and its visual criteria) for the speaking-level presets it uses to rebuild old scores. Each SOLA class is called only when `class_exists()` or `defined()` says it's there. Nothing else in the plugin calls SOLA's code.
 
 ## Installation
 

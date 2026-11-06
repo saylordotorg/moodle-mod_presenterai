@@ -17,7 +17,7 @@
 namespace mod_presenterai\local\migration;
 
 /**
- * What a Soapbox import of one course would do, or did: the value the dry run prints.
+ * What an old SOLA speech tool import of one course would do, or did: the value the dry run prints.
  *
  * runner::plan_course() fills it without writing anything; runner::apply_course() fills the same shape and then
  * the outcome of each assignment. It holds ids, counts, codes and messages only: no transcript, no feedback, no

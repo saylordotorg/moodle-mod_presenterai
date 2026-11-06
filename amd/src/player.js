@@ -16,7 +16,7 @@
 /**
  * Play a recording back, with its slides following the stored timeline.
  *
- * Ported from Soapbox's soapbox_player.js, with two changes the design asks
+ * Ported from the old speech tool's soapbox_player.js, with two changes the design asks
  * for. A recording whose media is gone is a sentence, not an error: get_playback
  * returns a structured "media gone" answer and this renders why (design 8.5).
  * And because an S3 playback URL lives 300 seconds (plan 4.6), a media error is

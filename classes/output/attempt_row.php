@@ -100,7 +100,7 @@ final class attempt_row {
         $deletedat = (int) ($rec->mediadeletedat ?? 0);
         if ($deletedat <= 0) {
             // A row that lost its media before anything recorded when, which is
-            // what a Soapbox migration produces (DECISIONS.md D8).
+            // what an old SOLA speech tool migration produces (DECISIONS.md D8).
             return ['key' => 'attempt_deleted', 'a' => null];
         }
 
@@ -121,7 +121,7 @@ final class attempt_row {
      * Whether a row never received its bytes, so there's no media for it to have lost.
      *
      * An uploading row never did, and neither does an abandoned one that records no deletion. An abandoned row
-     * that does record one, a date in mediadeletedat or a reason in mediagonereason, is a migrated Soapbox
+     * that does record one, a date in mediadeletedat or a reason in mediagonereason, is a migrated old SOLA speech tool
      * attempt whose media expired before it was scored. It did upload, SOLA deleted the video, and the importer
      * stores such an attempt as abandoned on purpose (IMPLEMENTATION-PLAN 7.4), so it reads as deleted rather
      * than as "not uploaded". Nothing here writes either column on an abandoned row: drop_media() needs media

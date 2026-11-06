@@ -25,7 +25,7 @@ use mod_presenterai\local\recording_manager;
 /**
  * Start an attempt, or resume the one this learner left unused.
  *
- * Replaces Soapbox's get_upload_url (D16). It creates the row and nothing else:
+ * Replaces the old speech tool's get_upload_url (D16). It creates the row and nothing else:
  * no key is minted here, because the recording's key is asked for only when
  * the learner presses Stop, so an S3 upload URL can never expire while they are
  * still speaking. start_upload mints keys, one kind at a time.
