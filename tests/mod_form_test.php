@@ -23,7 +23,7 @@ require_once($CFG->dirroot . '/course/modlib.php');
 require_once($CFG->dirroot . '/mod/presenterai/mod_form.php');
 
 /**
- * The 0.6.0 settings form: the presentation type first, Saylor's defaults, the grouped settings and the
+ * The 0.6.0 settings form: the presentation type first, the ungraded defaults, the grouped settings and the
  * read only rubric.
  *
  * @package    mod_presenterai

@@ -437,14 +437,14 @@ $string['presentationtype_general_persuasive'] = 'Persuasive, with the general r
 $string['presentationtype_help'] = 'What learners are asked to do. The type sets the built-in rubric and the tone of the AI feedback, and picking one fills in a suggested length, slides and starter topics, which you can change.
 
 * Introduction or practice: a short, low-stakes talk, 0:20 to 1:30, with a short, encouraging rubric.
-* Informative: explaining or teaching a topic, 3 to 5 minutes, with the COMM101 informative speech rubric.
-* Persuasive: arguing for a position, 4 to 6 minutes, with the COMM101 persuasive speech rubric.
+* Public speaking: informative: explaining or teaching a topic, 3 to 5 minutes, with a built-in informative speech rubric.
+* Public speaking: persuasive: arguing for a position, 4 to 6 minutes, with a built-in persuasive speech rubric.
 * Speech to entertain: engaging an audience with stories and humor, 3 to 5 minutes.
 * ESL Beginner, Intermediate and Advanced: English as a second language practice, 1 to 3 minutes, with criteria for that level. An accent is never marked down.
 
 A rubric chosen below, or defined for this activity or course, replaces the built-in rubric but keeps the tone.';
-$string['presentationtype_informative'] = 'Informative';
-$string['presentationtype_persuasive'] = 'Persuasive';
+$string['presentationtype_informative'] = 'Public speaking: informative';
+$string['presentationtype_persuasive'] = 'Public speaking: persuasive';
 $string['presentationtype_practice'] = 'Introduction or practice';
 $string['presenterai:addinstance'] = 'Add a new PresenterAI activity';
 $string['presenterai:deleteanyrecording'] = 'Delete any recording';

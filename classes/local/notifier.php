@@ -20,7 +20,7 @@ namespace mod_presenterai\local;
  * Tells a learner that one of their attempts has a score to read.
  *
  * The message says only that a score is ready and where to find it. It
- * doesn't name who scored, because at Saylor nobody does by hand and the same
+ * doesn't name who scored, because on many sites nobody scores by hand and the same
  * message will carry AI scores in phase 3, and it promises nothing about what
  * happens next (DECISIONS.md, "there is no teacher").
  *
