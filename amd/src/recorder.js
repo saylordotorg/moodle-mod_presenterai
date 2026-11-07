@@ -720,7 +720,14 @@ export const init = (root, config, hooks) => {
             stopbtn.focus();
         }
         timerid = window.setInterval(tick, 500);
-        await say('rec_status_recording', null, true);
+        // The indicator beside the timer already says "Recording", so the status line stays empty
+        // and only the screen reader announcement carries the words.
+        setStatus('', false);
+        try {
+            hooks.announce(await getString('rec_status_recording', 'mod_presenterai'));
+        } catch (e) {
+            // The announcement is a courtesy; recording carries on without it.
+        }
     };
 
     if (!window.MediaRecorder || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
