@@ -104,13 +104,16 @@ class rubric_form extends \moodleform {
         }
         // The general rubric every activity used before 0.6.0, last, for anyone matching an older activity.
         $presets[rubric_manager::LEVEL_GENERAL] = get_string('presentationtype_general', 'mod_presenterai');
+        // Register before the button is created: Moodle adds the skip client validation attributes at
+        // creation time, so a button registered afterwards would still run the Name and Type rules, and
+        // the errors would show below the visible area. Applying a preset only swaps the criteria.
+        $mform->registerNoSubmitButton('applypreset');
         $group = [
             $mform->createElement('select', 'preset', get_string('rubricpreset', 'mod_presenterai'), $presets),
             $mform->createElement('submit', 'applypreset', get_string('rubricpreset_apply', 'mod_presenterai')),
         ];
         $mform->addGroup($group, 'presetgroup', get_string('rubricpreset', 'mod_presenterai'), ' ', false);
         $mform->setType('preset', PARAM_ALPHANUMEXT);
-        $mform->registerNoSubmitButton('applypreset');
         $mform->addHelpButton('presetgroup', 'rubricpreset', 'mod_presenterai');
 
         $maxoptions = [];

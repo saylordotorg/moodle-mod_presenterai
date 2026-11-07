@@ -165,6 +165,8 @@ final class rubric_form_test extends \advanced_testcase {
         preg_match_all('/<option value="([^"]*)"/', $m[1], $values);
         $this->assertSame(['', 'video', 'speech'], $values[1]);
         $this->assertStringContainsString('name="applypreset"', $html);
+        // Applying a preset must not run Name and Type validation in the browser.
+        $this->assertMatchesRegularExpression('/<input[^>]*name="applypreset"[^>]*data-skip-validation="1"/', $html);
         $this->assertSame(1, preg_match('/<select[^>]*name="preset"[^>]*>(.*?)<\/select>/s', $html, $m));
         preg_match_all('/<option value="([^"]*)"/', $m[1], $values);
         $this->assertSame(['', 'practice', 'informative', 'persuasive', 'entertain', 'esl_beginner', 'esl_intermediate',
