@@ -25,14 +25,13 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'mod_presenterai';
-$plugin->version   = 2026110601;
-$plugin->release   = '0.6.0';
+$plugin->version   = 2026110700;
+$plugin->release   = '0.6.1';
 $plugin->maturity  = MATURITY_BETA;
 
-// Moodle 4.5. Both Saylor production sites run 4.5.13+, verified 2026-09-20, so
-// a higher floor would put the plugin out of reach of the only sites that run
-// it. The core AI subsystem exists on 4.5 with a static API and changes to an
-// instance API on 5.x; the adapter carries that branch rather than the floor
-// being raised to avoid it. See docs/IMPLEMENTATION-PLAN.md section 5.
+// Moodle 4.5 is a long term support release, so a higher floor would put the
+// plugin out of reach of many sites. The core AI subsystem exists on 4.5 with a
+// static API and changes to an instance API on 5.x; the adapter carries that
+// branch rather than the floor being raised to avoid it. See docs/IMPLEMENTATION-PLAN.md section 5.
 $plugin->requires  = 2024100700;
 $plugin->supported = [405, 503];

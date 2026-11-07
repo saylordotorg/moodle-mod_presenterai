@@ -2,16 +2,20 @@
 
 An activity module in which a learner records a video or audio presentation in the browser, optionally presents a PDF slide deck while speaking, and receives a transcript, a rubric score and written per criterion feedback.
 
-> **Status: v0.6.0 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's old speech tool (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
+> **Status: v0.6.1 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's old speech tool (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
 
-## What's new in 0.6.0
+## What's new in 0.6.1
+
+Wording only. The two built-in speech presets are now called "Public speaking: informative" and "Public speaking: persuasive", and the plugin's text, comments and docs no longer name any one institution. Nothing about how the plugin works changes: no code path, no table, no setting. Activities keep their stored preset keys (`informative`, `persuasive`), so existing activities and their rubrics are untouched.
+
+## What was new in 0.6.0
 
 Rubric levels and a simpler page for course designers and learners. One new nullable column (`presenterai.preset`); every activity made before 0.6.0 keeps the rubric it had.
 
 - **Rubric levels.** A criterion can carry five written levels, 5 Excellent, 4 Proficient, 3 Developing, 2 Beginning and 1 Not yet, each with a description, and a rubric can rename the labels. The AI picks the level that best matches the recording, gives its score and says which level the learner reached and what the next level up looks like. Learners see "4 of 5, Proficient". A score of 0 still means not attempted. Criteria without levels work exactly as before, and the model's JSON answer is the same shape.
-- **New built-in rubrics.** COMM101 informative and persuasive speech rubrics, grouped from Tamara Gillis's COMM101 evaluation forms (introduction, organization and transitions, support and sources, language, delivery, conclusion, and persuasive appeals for the persuasive one); a short, encouraging introduction or practice rubric; and a speech to entertain rubric with humor and storytelling. The three ESL rubrics keep their criteria and gain levels written for each proficiency, and so do the two body language criteria, which are still feedback only unless an activity scores them.
+- **New built-in rubrics.** Informative and persuasive speech rubrics ("Public speaking: informative" and "Public speaking: persuasive"), grouped from standard speech evaluation forms (introduction, organization and transitions, support and sources, language, delivery, conclusion, and persuasive appeals for the persuasive one); a short, encouraging introduction or practice rubric; and a speech to entertain rubric with humor and storytelling. The three ESL rubrics keep their criteria and gain levels written for each proficiency, and so do the two body language criteria, which are still feedback only unless an activity scores them.
 - **One "Presentation type" setting,** right after the name: Introduction or practice, Informative, Persuasive, Speech to entertain, ESL Beginner, ESL Intermediate or ESL Advanced. It replaces the presentation type and speaking level selects, chooses the built-in rubric, and fills in a suggested length, slides and two or three starter topics that you can edit or delete. The rubric is shown on the form with its levels, and once the activity exists "Edit rubric" opens the rubric editor and comes back to the form.
-- **Saylor's defaults for a new activity:** no grade (ungraded practice), review before release off, recordings kept 30 days. Attempts, review before release, slide design and body language feedback and retention are under one collapsed "More settings" heading.
+- **Ungraded practice by default for a new activity:** no grade (ungraded practice), review before release off, recordings kept 30 days. Attempts, review before release, slide design and body language feedback and retention are under one collapsed "More settings" heading.
 - **A simpler learner page.** Three numbered steps: choose a topic (when there are topics), record with one Start and Finish button and a timer that shows the minimum and maximum (Finish waits for the minimum), and read your feedback. One line says who can see the recording and when it's deleted, using the activity's real retention. The latest attempt's feedback is a card at the top, with each criterion's level and the tips as "Try next time", and it refreshes itself every 20 seconds while scoring ("Scoring, usually about 2 minutes"). Every attempt is below, collapsed, under "All attempts (n)".
 
 ## What was new in 0.5.5
@@ -23,7 +27,7 @@ Wording only. The importer's messages, its help text, the privacy descriptions a
 Two changes, and neither touches a table or a learner's screen.
 
 - **Moodle 5.3 is supported.** The plugin now declares support for 5.3 and runs in CI on it, next to 4.5, 5.0 and 5.1.
-- **New installs default the Gemini route to `gemini-3.1-flash-lite`.** Google redirects `gemini-2.5-flash` to a weaker model on 1 December 2026, and 3.1 Flash-Lite held up better in Saylor's tests (jailbreak resistance within two points of 2.5 Flash, about a ninth of the cost). The spend ledger now prices it, so it doesn't count as free. A site that already saved a Gemini model keeps it, and the setting is still free text if you want another model.
+- **New installs default the Gemini route to `gemini-3.1-flash-lite`.** Google redirects `gemini-2.5-flash` to a weaker model on 1 December 2026, and 3.1 Flash-Lite held up better in our tests (jailbreak resistance within two points of 2.5 Flash, about a ninth of the cost). The spend ledger now prices it, so it doesn't count as free. A site that already saved a Gemini model keeps it, and the setting is still free text if you want another model.
 
 ## What was new in 0.5.3
 
@@ -65,7 +69,7 @@ The Moodle plugins directory review found six things ([issues 12 to 17](https://
 
 [![PresenterAI demo video](https://img.youtube.com/vi/pbhYyMntobc/maxresdefault.jpg)](https://youtu.be/pbhYyMntobc)
 
-[Watch the three-minute demo on YouTube](https://youtu.be/pbhYyMntobc). It shows 0.5.4 on Saylor University's development site, with the automatic workflow Saylor uses: an instructor adds the activity, sets the length limits and picks the course rubric, with review before release off; a learner records a speech; and a transcript, a score on every criterion and tips for next time come back within a few minutes. The instructor can still open any attempt and change a score, but nothing waits for them. The learner on camera is an AI-generated person, not a real student, and the narration is AI-generated.
+[Watch the three-minute demo on YouTube](https://youtu.be/pbhYyMntobc). It shows 0.5.4 on a development site, with a fully automatic workflow: an instructor adds the activity, sets the length limits and picks the course rubric, with review before release off; a learner records a speech; and a transcript, a score on every criterion and tips for next time come back within a few minutes. The instructor can still open any attempt and change a score, but nothing waits for them. The learner on camera is an AI-generated person, not a real student, and the narration is AI-generated.
 
 ## What it does
 
@@ -127,7 +131,7 @@ A teacher can score any attempt by hand, and can override the AI's score on any 
 
 ## Teacher review before release
 
-Off by default, and switched on per activity with "Review AI feedback before learners see it" under the AI feedback heading. Sites with no teacher in the loop, Saylor among them, leave it off.
+Off by default, and switched on per activity with "Review AI feedback before learners see it" under the AI feedback heading. Sites with no teacher in the loop leave it off.
 
 When it's on, the AI still scores each recording, but the score and all of its feedback, including the body language summary and the tips, are held. Until a teacher releases the attempt:
 
@@ -174,7 +178,7 @@ Every AI call is logged with the route, provider, model, token counts, image cou
 
 The plugin stores, per attempt: the media (until deleted), the separate audio track on video attempts, the slide deck, the still frame sheet on video attempts, the transcript, the per criterion scores and feedback, and the model's observation about body language. All of it is covered by the privacy API: exported on a subject access request, deleted on an erasure request, and removed with the course or the activity. Deleting a learner's data purges the storage objects before the database rows, in that order, so a deleted row never leaves an orphaned object.
 
-Where the media leaves your site: to your chosen storage backend, to your chosen speech to text endpoint, and to your chosen AI provider. Nothing is sent to Saylor.
+Where the media leaves your site: to your chosen storage backend, to your chosen speech to text endpoint, and to your chosen AI provider. Nothing is sent to the plugin's authors.
 
 ## Relationship to the SOLA plugin
 

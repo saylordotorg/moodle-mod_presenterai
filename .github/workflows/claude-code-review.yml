@@ -1,8 +1,8 @@
 name: Claude Code Review
 
-# Copied from SOLA (saylordotorg/moodle-local_ai_course_assistant), with only
+# Copied from a sibling Moodle plugin's workflow, with only
 # the paths that skip a review changed for this repository. The PR numbers,
-# run ids and versions in the comments below are SOLA's: they record how each
+# run ids and versions in the comments below are that plugin's: they record how each
 # safeguard was found there, and they're kept so nobody takes one out here.
 
 on:

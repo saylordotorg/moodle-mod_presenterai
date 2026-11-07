@@ -89,10 +89,10 @@ final class rubric_manager {
     /** @var string The short, encouraging rubric for an introduction or practice talk. */
     public const PRESET_PRACTICE = 'practice';
 
-    /** @var string The COMM101 informative speech rubric. */
+    /** @var string The informative speech rubric. */
     public const PRESET_INFORMATIVE = 'informative';
 
-    /** @var string The COMM101 persuasive speech rubric. */
+    /** @var string The persuasive speech rubric. */
     public const PRESET_PERSUASIVE = 'persuasive';
 
     /** @var string The speech to entertain rubric, derived from the informative one. */
@@ -184,9 +184,9 @@ final class rubric_manager {
      * type has its own hint (scoring_prompt::ptype_hint()).
      *
      * Every preset criterion except the general preset's has five written
-     * levels (rubric:<key>_l5 to _l1) with the default labels. The COMM101
-     * presets group the questions on Tamara Gillis's COMM101 informative and
-     * persuasive evaluation forms into criteria. Their Delivery criterion
+     * levels (rubric:<key>_l5 to _l1) with the default labels. The informative
+     * and persuasive presets group the questions of standard informative and
+     * persuasive speech evaluation forms into criteria. Their Delivery criterion
      * judges what a transcript can show (fluency, pace, fillers, notes read
      * aloud); gestures and eye contact belong to the two visual criteria, which
      * stay feedback only (D23), so a spoken criterion never asks the model to

@@ -1,6 +1,6 @@
 # PresenterAI (`mod_presenterai`) implementation plan
 
-**Status:** founding plan, nothing built yet. Repository `https://github.com/saylordotorg/moodle-mod_presenterai`, empty at the time of writing.
+**Status:** founding plan, nothing built yet. Repository `https://github.com/example-org/moodle-mod_presenterai`, empty at the time of writing.
 **Written:** 20 September 2026, against SOLA `local_ai_course_assistant` v7.5.2 (`version.php:28,32`: `$plugin->version = 2026091900`, `$plugin->release = '7.5.2'`) and a Moodle 4.5 checkout (Moodle core files are cited relative to its root).
 **Supersedes:** `moodle-mod_soapbox/docs/IMPLEMENTATION-PLAN.md`, which was written for a plugin called `mod_soapbox` against SOLA 7.5.0, before the rename and before the two product requirements in section 1.3.
 
@@ -70,7 +70,7 @@ Section 5 is that abstraction, and it is honest about the part that is easy to g
 
 | Not in v1.0 | Why |
 |---|---|
-| Server side ffmpeg frame sampling | ffmpeg is not on the Saylor dev fleet (DECISIONS.md, "On question 10"), and the browser sampler shipped in SOLA v7.5.1 and works (`amd/src/soapbox_frames.js`). A second sampler that almost nobody can run is maintenance with no user. Revisit if a site asks. |
+| Server side ffmpeg frame sampling | ffmpeg is not on the reference dev fleet (DECISIONS.md, "On question 10"), and the browser sampler shipped in SOLA v7.5.1 and works (`amd/src/soapbox_frames.js`). A second sampler that almost nobody can run is maintenance with no user. Revisit if a site asks. |
 | `FEATURE_ADVANCED_GRADING` (core `gradingform_rubric`) | Our rubric carries per criterion prompt text the model reads. Mapping it onto core's grading form definitions loses that text. Obvious v2. |
 | Moodle mobile app support (`db/mobile.php`) | The app cannot send a session cookie to `pluginfile.php`, so the filesystem backend would need token URLs, which are bearer URLs and undo part of the revocation advantage in 4.5. Needs a decision first (section 9.10). |
 | Migration into the Moodle file storage backend | The S3 to S3 migration moves no bytes. A migration into file storage is a byte copy of every surviving object into moodledata, a different operation with different failure modes. v1 refuses `--backend=fs` with a clear message. Both investigation A and investigation D reached this independently. |
@@ -219,7 +219,7 @@ Replaces `local_ai_course_assistant_sbx_rec` (`db/install.xml:760-790`).
 
 Four design choices here need their reasoning spelled out, because three of them are corrections to the prior plan.
 
-**`status` no longer carries `deleted`, and that is a bug fix, not a tidy up.** Today `status` conflates two lifecycles: the scoring pipeline and the media lifecycle. `classes/task/soapbox_cleanup.php:131-138` overwrites a `scored` row with `deleted` when retention fires. The prior plan then says grades are computed over `status = 'scored'` rows only "so a failed transcription never drags a grade down and a retention-deleted-but-scored attempt still counts". The second half of that sentence is false against the status model it ports. Concretely: a learner submits, scores 82 percent, the grade lands, seven days pass, cleanup flips the row to `deleted`, and the next `presenterai_update_grades()` run recomputes over zero `scored` rows and the learner's grade goes to null. On a site with retention off it never happens. At Saylor, with a seven day clock and the gradebook finally real, it happens to every learner in week two.
+**`status` no longer carries `deleted`, and that is a bug fix, not a tidy up.** Today `status` conflates two lifecycles: the scoring pipeline and the media lifecycle. `classes/task/soapbox_cleanup.php:131-138` overwrites a `scored` row with `deleted` when retention fires. The prior plan then says grades are computed over `status = 'scored'` rows only "so a failed transcription never drags a grade down and a retention-deleted-but-scored attempt still counts". The second half of that sentence is false against the status model it ports. Concretely: a learner submits, scores 82 percent, the grade lands, seven days pass, cleanup flips the row to `deleted`, and the next `presenterai_update_grades()` run recomputes over zero `scored` rows and the learner's grade goes to null. On a site with retention off it never happens. On the reference deployment, with a seven day clock and the gradebook finally real, it happens to every learner in week two.
 
 So `status` keeps only scoring states: `uploading`, `uploaded`, `scoring`, `scored`, `failed`, `abandoned`. "The bytes are gone" is `storagekey IS NULL`, which is already true after a retention run, plus `mediadeletedat` if you want to know when. `abandoned` is for rows that will never be scored: a staged upload that was never finished, and a migrated row whose media expired before it was ever scored. Grades are computed over score rows, never over media existence (section 6).
 
@@ -510,13 +510,13 @@ The `backend` column per row is what makes this survivable, and it has to be res
 - Changing the site setting affects new recordings only. No bytes move, no downtime.
 - S3 settings must stay valid and visible while any `backend = 's3'` row survives, and the health check shows a count of rows on the other backend. Clearing the credentials would orphan them silently, because `is_configured()` goes false and the cleanup task's early return (`:47-49`) would skip them forever.
 - Backup and restore: a recording restores as media-less (null keys, `mediadeletedat` set, status `scored` or `abandoned`) unless the backup came from the same site with the same backend and, for S3, the same bucket. A filesystem backup carries the bytes inside the mbz; an S3 backup carries only keys.
-- `cli/migrate_storage.php --to=fs|s3 [--dry-run] [--limit=N]` exists for a site that decides to leave S3: fetch, put, verify size, update `backend` and `storagekey` in one transaction, then delete the source. Idempotent, resumable, never deletes before the target verifies. It is not part of the old SOLA speech tool migration and it is not for Saylor.
+- `cli/migrate_storage.php --to=fs|s3 [--dry-run] [--limit=N]` exists for a site that decides to leave S3: fetch, put, verify size, update `backend` and `storagekey` in one transaction, then delete the source. Idempotent, resumable, never deletes before the target verifies. It is not part of the old SOLA speech tool migration and it is not for the reference deployment.
 
 ### 4.8 The default for a fresh install is `fs`
 
 Because it works with no configuration, keeps no secret at rest in `mdl_config_plugins`, needs no bucket CORS rule whose failure mode is an opaque browser error after the learner has finished speaking, and lets core do the compliance work (context deletion removes the files with no plugin code, backup and restore carry them, the privacy API exports and deletes them through the standard file provider). A site that wants object storage economics can have them without the plugin knowing, through `tool_objectfs` and `$CFG->alternative_file_system_class`, which `file_storage` honours (`lib/filestorage/file_storage.php:74-75`).
 
-Saylor stays on `s3`, because identical bucket, region and prefix is what keeps the migration metadata only. The default and the Saylor setting simply differ, which is what the setting is for.
+The reference deployment stays on `s3`, because identical bucket, region and prefix is what keeps the migration metadata only. The default and the reference setting simply differ, which is what the setting is for.
 
 ---
 
@@ -609,7 +609,7 @@ This is the reason the old speech tool's data is fragile, and it is the largest 
 
 **Teacher workflow.** `report.php` lists submissions per learner with status, attempt number, length, AI percentage, teacher percentage and spend. `grade.php` opens one attempt with the slide synced player, the transcript, the visual evidence and editable per criterion fields prefilled from the AI row; saving writes an `origin = 'teacher'` row, updates `presenterai_recording.scoreid`, fires `recording_scored` and re-pushes the grade.
 
-**One correction the prior plan has not absorbed.** DECISIONS.md is unambiguous: at Saylor "there is no teacher, no human evaluation, no moderation and no appeal path. Every word of feedback a learner gets is the entire product." That is not a reason to cut the teacher screens, because PresenterAI is a public plugin and most sites do have teachers. It is a reason to stop treating teacher review as a safeguard anywhere in the design, and specifically to **strike the learner facing sentence in the rubric help text promising that a teacher's override always wins**, because at Saylor that sentence is false. DECISIONS.md asked for this re-read before phase 3 and this is it.
+**One correction the prior plan has not absorbed.** DECISIONS.md is unambiguous: on the reference deployment "there is no teacher, no human evaluation, no moderation and no appeal path. Every word of feedback a learner gets is the entire product." That is not a reason to cut the teacher screens, because PresenterAI is a public plugin and most sites do have teachers. It is a reason to stop treating teacher review as a safeguard anywhere in the design, and specifically to **strike the learner facing sentence in the rubric help text promising that a teacher's override always wins**, because on the reference deployment that sentence is false. DECISIONS.md asked for this re-read before phase 3 and this is it.
 
 **Outcomes, flagged rather than asserted.** The prior plan says a criterion carrying an `objectiveid` maps to a course outcome and is graded through core `grade_outcomes`, replacing the bespoke `objective_manager::record_attempt()` partial credit path in `score_speech.php`, with the `>= 0.5` mastery threshold preserved. I did not verify that core's outcomes API accepts that normalised partial credit shape, or that the threshold survives the translation. Treat outcomes as a phase 2 spike with a written answer before any code, not as a settled design.
 
@@ -731,7 +731,7 @@ Per course, recorded as a `presenterai_migreport` row, not observed once and rem
 
 ### 7.7 Rollout, and what cannot be done safely
 
-Rollout order `dev.sylr.org`, then `degrees.saylor.org`, then `learn.saylor.org`. Degrees first despite being the accredited site, because it is the smaller corpus and the records risk is what we most need to observe under low volume; `grade = 0` everywhere is what makes that safe. Stand ins stay in place for at least one full term before `--remove-url-stubs`.
+Rollout order `the dev site`, then `site B`, then `site A`. Degrees first despite being the accredited site, because it is the smaller corpus and the records risk is what we most need to observe under low volume; `grade = 0` everywhere is what makes that safe. Stand ins stay in place for at least one full term before `--remove-url-stubs`.
 
 Four things stated plainly:
 
@@ -751,7 +751,7 @@ Each phase ends somewhere installable, tested and useful on its own. Phase 0's r
 
 **Phase 1. Recording, storage, slide synced playback. No AI.** `store_interface`, `media_ref`, **both** `fs_store` and `s3_store`, `store_factory`, `probe` with both arms, `upload.php` with negotiated resumable chunking, `begin_attempt`, `finalize_recording`, `get_playback`, `render_deck`, `delete_recording`, the deck renderer (Ghostscript via `$CFG->pathtogs`, 110 DPI, 60 page cap, `-dSAFER`), `recorder.js`, `uploader.js`, `slides.js`, `view.js`, `player.js`, the retention task with optional retention, the learner download, the deletion date callout, topics with their file area.
 
-Building both stores here is a change from the prior plan, which had S3 in phase 5 as a Saylor migration concern. Investigations A and C differed on emphasis, A wanting both stores first class from the start and C wanting `fs` first because it is the default. **Resolved by doing both in phase 1:** the interface has to be shaped by both backends or it gets shaped around the File API and then bent for S3, and `s3_store` is a port of an existing 341 line class whose signing is already pinned by a test, so it is cheaper than it sounds. `fs` remains the shipped default.
+Building both stores here is a change from the prior plan, which had S3 in phase 5 as a reference migration concern. Investigations A and C differed on emphasis, A wanting both stores first class from the start and C wanting `fs` first because it is the default. **Resolved by doing both in phase 1:** the interface has to be shaped by both backends or it gets shaped around the File API and then bent for S3, and `s3_store` is a port of an existing 341 line class whose signing is already pinned by a test, so it is cheaper than it sounds. `fs` remains the shipped default.
 *Ships:* the whole learner experience including slides beside video on playback, on a stock Moodle with no AI and no S3 configured.
 
 **Phase 2. Gradebook, teacher screens, privacy.** Scores written by hand, `grader`, the four grade functions, `gradingmethod`, `report.php`, `grade.php` plus `grading.js`, completion, the four events, the message provider, the privacy provider (deletion purges storage objects before rows), course reset, and the outcomes spike with a written answer.
@@ -763,10 +763,10 @@ The prior plan had body language as its own phase because it was new work. It is
 *Ships:* everything today's SOLA's old speech tool does, as an activity, with grades.
 
 **Phase 4. Migration. BUILT in 0.5.0 (2026-10-19): see `docs/superpowers/specs/2026-10-19-soapbox-importer-design.md` and `docs/MIGRATION-RUNBOOK.md`; where they differ from this section, they win. No longer on SOLA 8.0's critical path, see 9.15.** `migration/from_local_aica`, `presenterai_migration_map`, `presenterai_migreport`, `cli/migrate_from_local.php`, `migrate.php`, the verification tiers, `--rollback`, the SOLA side interlock in `soapbox_cleanup::execute()`, `migration_test`, and the written runbook. Rollout dev, degrees, learn.
-*Ships:* Saylor can cut over, and SOLA 8.0 is unblocked for any site that has old SOLA speech tool data.
+*Ships:* The reference deployment can cut over, and SOLA 8.0 is unblocked for any site that has old SOLA speech tool data.
 
 This phase was written when migration was believed to gate SOLA 8.0. The measured answer to
-9.15 is that both Saylor sites have SOLA's old speech tool switched off with zero recordings, so for Saylor
+9.15 is that both reference sites have SOLA's old speech tool switched off with zero recordings, so for the reference deployment
 there is nothing to migrate and 8.0 is already unblocked. The phase stays, because the plugin
 is public and another site may have data, and because the SOLA-side interlock in
 `soapbox_cleanup::execute()` is worth having either way. It no longer has to come before
@@ -786,9 +786,9 @@ The prior DECISIONS.md rests the entire no consent decision on learner visibilit
 *Recommendation:* (c). The learner gets the transparency the decision assumed, the raw note stays available to a teacher and to a privacy export, and the rewrite is the same call that already produces the feedback.
 
 **9.2 Default retention for a fresh install: keep forever, or 7 days?**
-The prior plan recommended 28 days for graded instances and 7 for ungraded. Investigation C recommended keep forever by default with Saylor setting 7. These conflict.
-*Options:* (a) 0, keep forever, with a loud disk note on the settings page; (b) 7 days, matching Saylor today; (c) the prior plan's grading dependent rule.
-*Recommendation:* (a), and reject (c) outright. A retention window that changes when a teacher turns grading on is invisible coupling, and deleting a graded learner's evidence by default is the more surprising behaviour for an activity whose whole point is assessment. Saylor sets 7 explicitly on both sites, which matches the recorded decision. The 28 day hard cap goes regardless.
+The prior plan recommended 28 days for graded instances and 7 for ungraded. Investigation C recommended keep forever by default with the reference deployment setting 7. These conflict.
+*Options:* (a) 0, keep forever, with a loud disk note on the settings page; (b) 7 days, matching the reference deployment today; (c) the prior plan's grading dependent rule.
+*Recommendation:* (a), and reject (c) outright. A retention window that changes when a teacher turns grading on is invisible coupling, and deleting a graded learner's evidence by default is the more surprising behaviour for an activity whose whole point is assessment. The reference deployment sets 7 explicitly on both sites, which matches the recorded decision. The 28 day hard cap goes regardless.
 
 **9.3 What happens to the S3 lifecycle rule on the `soapbox/` prefix?**
 PresenterAI cannot see it and cannot override it.
@@ -825,7 +825,7 @@ The prior plan recommends leaving it in SOLA indefinitely. `.wiki/Migration-to-P
 **9.10 Must recordings play in the Moodle mobile app in v1?**
 If yes, the filesystem backend needs `tokenpluginfile.php` URLs, which are bearer URLs and partly undo the revocation advantage in section 4.6.
 *Options:* (a) no app support in v1; (b) app support with token URLs and a short expiry.
-*Recommendation:* (a). Saylor is on S3, where the URL is already a bearer token, so this costs Saylor nothing and keeps the filesystem story clean for everyone else.
+*Recommendation:* (a). The reference deployment is on S3, where the URL is already a bearer token, so this costs the reference deployment nothing and keeps the filesystem story clean for everyone else.
 
 ### Facts established, 20 September 2026
 
@@ -835,7 +835,7 @@ this project, so read 9.15 first.**
 
 **9.15 THE IMPORTANT ONE: there is no production old SOLA speech tool data to migrate.**
 
-|  | learn.saylor.org | degrees.saylor.org |
+|  | Site A | Site B |
 |---|---|---|
 | `soapbox_enabled` (site) | `0` | `0` |
 | per-course overrides ON | none | one, course 16 |
@@ -852,9 +852,9 @@ degrees. SOLA is heavily used. SOLA's old speech tool is simply switched off.
 
 Three consequences, and they are not small.
 
-1. **Migration is not a gate on SOLA 8.0 for Saylor.** The entire "removing
+1. **Migration is not a gate on SOLA 8.0 for the reference deployment.** The entire "removing
    SOLA's old speech tool deletes student work" argument, which is why the tables were separated
-   from the code removal, rests on there being student work. For Saylor there is
+   from the code removal, rests on there being student work. For the reference deployment there is
    one score row and no recordings at all. The argument still holds in principle
    for any other site running SOLA, and the code removal and table drop should
    still be separated for them, but the urgency was mine rather than the
@@ -870,7 +870,7 @@ Three consequences, and they are not small.
    an old SOLA speech tool transcript to keep.
 
 **9.11 Both production sites run Moodle 4.5.13+ (Build 20260903).**
-So the 5.x core AI instance API is not reachable on any Saylor site today. This
+So the 5.x core AI instance API is not reachable on any reference site today. This
 settles 9.4 in favour of option (a): target 4.5 and carry the version branch, or
 the core AI requirement does not exist on the only sites we run.
 
@@ -888,13 +888,13 @@ file migration stays out of scope, as the prior plan assumed.
 
 **9.14 No shared or dangling score links**, trivially, because there are no
 recordings. Nothing for the duplicate check in section 7.2 to trip on today, so
-that check exists for other sites and for safety rather than for Saylor.
+that check exists for other sites and for safety rather than for the reference deployment.
 
 **9.16 Storage configuration, both sites identical:**
 
 | setting | value |
 |---|---|
-| bucket | `saylor-soapbox-prod` |
+| bucket | `example-bucket` |
 | prefix | `soapbox/` |
 | region | `us-east-1` |
 | retention | 7 days |
@@ -915,7 +915,7 @@ the course page while remaining available, which 7.4 wanted.
 #### Original list, superseded
 
 
-**9.11** Which Moodle version learn.saylor.org and degrees.saylor.org run today, and Catalyst's upgrade timeline. This decides whether the 5.x core AI path is reachable at all (9.4).
+**9.11** Which Moodle version site A and site B run today, and Catalyst's upgrade timeline. This decides whether the 5.x core AI path is reachable at all (9.4).
 **9.12** Whether `presenterai` is free in the Moodle plugin directory. A clash means a rename touching every file, table and string, so check before phase 0 ends.
 **9.13** `SELECT COUNT(*) FROM mdl_local_ai_course_assistant_sbx_topic WHERE pdf_itemid <> 0` on both sites. If it is not zero, something wrote those values that I did not find and the topic file migration comes back.
 **9.14** Whether any `sbx_rec` rows share a `scoreid`, and how many score rows are orphaned. Duplicates must stop the migration (section 7.2) and I do not know whether they exist.

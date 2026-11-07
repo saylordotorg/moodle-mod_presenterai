@@ -26,7 +26,7 @@
  * stay open; everything a course designer rarely changes (attempts, review
  * before release, body language and slide design feedback, retention) is
  * under one collapsed "More settings" heading. A new activity starts with
- * Saylor's defaults: no grade, review before release off, recordings kept 30
+ * these defaults: no grade, review before release off, recordings kept 30
  * days.
  *
  * The grade is core's modgrade element plus a grading method saying how
@@ -94,7 +94,7 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $this->add_more_settings();
 
         $this->standard_grading_coursemodule_elements();
-        // Saylor's use is ungraded practice, so a new activity has no grade.
+        // The default use is ungraded practice, so a new activity has no grade.
         // An existing activity's own grade still wins over this default.
         $mform->setDefault('grade', 0);
         $this->add_gradingmethod_element();

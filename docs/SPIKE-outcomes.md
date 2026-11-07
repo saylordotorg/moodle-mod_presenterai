@@ -15,8 +15,8 @@ Partly. Core outcomes work for PresenterAI the same way they work for `mod_assig
 ## What that means for the prior plan's design
 
 1. There's no criterion-to-outcome link in core. To grade an outcome from a criterion, PresenterAI would need its own mapping (a criterion field holding the outcome's grade item number, chosen from the outcomes attached to that activity) and would have to keep it valid when a teacher detaches an outcome or restores the course elsewhere, where outcome ids change.
-2. "Normalised partial credit" can't be stored as such. It has to become a scale index. The main grade's scale rule, `index = clamp(ceil(pct * count), 1, count)`, would give the `>= 0.5` threshold exactly on a two-item scale (Not met / Met) and a different cut on longer scales. That's a pedagogical choice, not a translation, and it would be the AI deciding mastery with no teacher in the loop at Saylor.
-3. `enableoutcomes` is off on a stock site, and whether either Saylor site has it on wasn't checked.
+2. "Normalised partial credit" can't be stored as such. It has to become a scale index. The main grade's scale rule, `index = clamp(ceil(pct * count), 1, count)`, would give the `>= 0.5` threshold exactly on a two-item scale (Not met / Met) and a different cut on longer scales. That's a pedagogical choice, not a translation, and it would be the AI deciding mastery with no teacher in the loop on the reference deployment.
+3. `enableoutcomes` is off on a stock site, and whether either reference site has it on wasn't checked.
 
 ## What phase 2 ships
 

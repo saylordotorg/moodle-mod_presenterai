@@ -12,7 +12,7 @@ Section 12 lists what an adversarial pass found, what changed in response, and w
 
 **Settled here.** How the learner facing body language summary is produced, checked, stored, exported and deleted. How retention and download are configured, what happens to existing recordings when an admin changes a setting, and exactly what a learner is told in every combination.
 
-**Not settled here, and deliberately so.** Whether the two visual criteria contribute to the gradebook at all (open question 9.17), whether a learner can opt out per attempt (9.18), who reads the staff surfaces at Saylor (9.19), whether there is a per activity download setting (9.20), whether a learner can delete their own recording (9.21), and whether PresenterAI ships 45 non English locales (9.22). Those six are in DECISIONS.md Part 4. They arose from doing this design and none of them reopens D21 or D22.
+**Not settled here, and deliberately so.** Whether the two visual criteria contribute to the gradebook at all (open question 9.17), whether a learner can opt out per attempt (9.18), who reads the staff surfaces on the reference deployment (9.19), whether there is a per activity download setting (9.20), whether a learner can delete their own recording (9.21), and whether PresenterAI ships 45 non English locales (9.22). Those six are in DECISIONS.md Part 4. They arose from doing this design and none of them reopens D21 or D22.
 
 **The dependency worth stating up front.** Almost all of section 3 and section 4 is worth building under any answer to 9.17, because a summary that carries no mark still has to be safe, honest and in the learner's language. What changes with 9.17 is how much is riding on it.
 
@@ -343,7 +343,7 @@ The summary goes on `presenterai_score`, not on `presenterai_recording`, for the
 
 `storevisualevidence`, checkbox, **default 1**, which is what D21 decided. When it is off the note is built, used for scoring, and discarded without ever being written. `visualevidenceat` and the clock stay for the sites that keep it.
 
-The setting exists because the readers D21 assumes may not exist on a given site. At Saylor nobody holds `teacher`, `editingteacher` or `manager` in a course (`IMPLEMENTATION-PLAN.md:612`), so the grading screen has no reader, and the export route is thinner than it looks: the note expires at 30 days and the statutory response window for a subject access request is one month, so by the time most requests are answered the field is already null. A site with real teachers and a real grading workflow turns it on knowingly; a site without them can reduce the inference to something transient inside a prompt. What Saylor sets it to is open question 9.19.
+The setting exists because the readers D21 assumes may not exist on a given site. On the reference deployment nobody holds `teacher`, `editingteacher` or `manager` in a course (`IMPLEMENTATION-PLAN.md:612`), so the grading screen has no reader, and the export route is thinner than it looks: the note expires at 30 days and the statutory response window for a subject access request is one month, so by the time most requests are answered the field is already null. A site with real teachers and a real grading workflow turns it on knowingly; a site without them can reduce the inference to something transient inside a prompt. Whon the reference deployment sets it to is open question 9.19.
 
 ### 5.3 The rejected text is logged, to a staff only table
 
@@ -618,7 +618,7 @@ Bare keys with underscores, no `soapbox:` style prefix. SOLA uses a prefix becau
 
 `{$a}` carrying the site name is filled from `format_string($SITE->fullname)`. **No `[[uniname]]`.** PresenterAI is clean room (D3) and has no branding resolver. SOLA's comment at `soapbox_present.php:146-153` records what happens when a caller forgets one: `get_string()` shipped the literal `[[uniname]] storage` to every learner in all 46 locales, and `tests/branding_test.php` could not catch it because it asserts no string retains a token after `apply()` runs, not that a caller remembered to run it.
 
-**No learner string says "your teacher."** DECISIONS.md Part 1 records that Saylor's learners are fully online and self paced with no teacher, no human evaluation and no appeal path. Where a route out is offered it is gated on a route existing.
+**No learner string says "your teacher."** DECISIONS.md Part 1 records that the reference deployment's learners are fully online and self paced with no teacher, no human evaluation and no appeal path. Where a route out is offered it is gated on a route existing.
 
 ### 9.3 Before recording: the policy callout
 
@@ -827,7 +827,7 @@ SOLA's own rule, verbatim from `tests/lang_completeness_test.php:330-333`: "Noth
 
 **Allowlist eligible.** Everything in 9.7 plus the CLI output of `apply_retention.php`.
 
-**A judgement call, flagged rather than asserted.** `retentiondays_inst`, `retentiondays_inst_help` and `retentiondays_locked` are module form strings seen by a teacher. SOLA's written rule covers learners only and SOLA's practice puts teacher surfaces on the allowlist. Recommendation: translate them anyway, because PresenterAI is a public plugin (D1) and a Moodle site in Brazil has Portuguese speaking teachers, where Saylor's admin pages have exactly one reader. This is a recommendation, not a rule that exists.
+**A judgement call, flagged rather than asserted.** `retentiondays_inst`, `retentiondays_inst_help` and `retentiondays_locked` are module form strings seen by a teacher. SOLA's written rule covers learners only and SOLA's practice puts teacher surfaces on the allowlist. Recommendation: translate them anyway, because PresenterAI is a public plugin (D1) and a Moodle site in Brazil has Portuguese speaking teachers, where the reference deployment's admin pages have exactly one reader. This is a recommendation, not a rule that exists.
 
 **A trap worth naming.** `privacy:metadata:*` strings are not admin strings. A learner reaches them through Moodle's data registry when they make their own data request. SOLA has 68 privacy strings sitting in `IDENTICAL_TO_ENGLISH_BACKLOG` (`tests/lang_completeness_test.php:796`), which is the worse failure mode: present in every locale file, so a parity test passes and "46/46 with zero missing keys" is true, while the learner reads English. PresenterAI needs both gates from day one, the parity gate and the identical to English gate, or it accrues the same debt invisibly.
 
@@ -899,7 +899,7 @@ The related finding, that there is no learner opt out and the machinery for one 
 | F9 | On the core AI route there is no schema, so layer 1's guarantee is unenforceable | Combined with F10 below: the core AI route does not carry visual evidence at all. Section 3.6 |
 | F10 | `core_ai\manager` stores the full prompt forever in `ai_action_generate_text`, outside every clock D5 built, and there is no `ai/db/` directory in 4.5 to prune it | The raw note is never put in a prompt sent through the core AI route. Section 3.6 |
 | F11 | The rejection event carried no text, making the stated tuning plan impossible | `presenterai_gatelog`, staff only, 7 day clock, declared in privacy, named on the settings page. Section 5.3. Who reads it is open question 9.19 |
-| F12 | The raw note is justified by readers who may not exist, and the export route is near vacuous within 30 days | `storevisualevidence` site setting, default 1, which is what D21 decided. A site with no graders turns it off. Section 5.2, and what Saylor sets is open question 9.19 |
+| F12 | The raw note is justified by readers who may not exist, and the export route is near vacuous within 30 days | `storevisualevidence` site setting, default 1, which is what D21 decided. A site with no graders turns it off. Section 5.2, and whon the reference deployment sets is open question 9.19 |
 | F13 | `current_language()` does not work inside an adhoc task and would deterministically give learner B learner A's language | Resolved from the loaded user record as `$user->lang ?: $CFG->lang`. Section 3.4 |
 | F14 | The not assessed string tells a rate limited learner their camera could not be read, then tells them to do the thing they already did | Split into `visual_not_assessed` and `visual_not_analysed`, the second carrying no advice. Sections 6 (a2) and 9.6 |
 | F15 | Two whole categories missing from the deny list, assistive equipment and most headwear, and `frame` was simultaneously a deny term and a layer 3 observable | Both groups added, and the `frame` collision resolved in favour of the observable with `chair back`, `headrest` and `armrest` carrying the assistive case. Section 4.4 |
@@ -931,7 +931,7 @@ These are not fixed and are not going to be. They are here so nobody discovers t
 
 **On the core AI scoring route there is no body language feedback at all**, by decision, for the two reasons in section 3.6. A site that configures core AI and nothing else gets the five spoken criteria and the `visual_not_analysed` string. That is a real reduction in what the settings page can promise and it is stated at the point of choosing.
 
-**Every remedy in this document that routes to a staff member routes to nobody at Saylor.** The grading screen, the raw note capability, the gate rejection report and the admin health line all assume a reader who holds `teacher`, `editingteacher` or `manager` in a course. At Saylor nobody does (`IMPLEMENTATION-PLAN.md:612`). Open question 9.19 exists to force an answer rather than let the design keep quietly assuming one.
+**Every remedy in this document that routes to a staff member routes to nobody on the reference deployment.** The grading screen, the raw note capability, the gate rejection report and the admin health line all assume a reader who holds `teacher`, `editingteacher` or `manager` in a course. On the reference deployment nobody does (`IMPLEMENTATION-PLAN.md:612`). Open question 9.19 exists to force an answer rather than let the design keep quietly assuming one.
 
 ---
 
@@ -951,7 +951,7 @@ These are not fixed and are not going to be. They are here so nobody discovers t
 | Section 5.8 / new | State that the core AI scoring route carries no visual evidence and produces no body language feedback |
 | Section 6 | Add the rule that a gate rejection sets a visual criterion to `assessed = false` |
 | Section 9.1 | Now decided. See D21 |
-| Section 9.2 | Now decided: 0, keep forever. Saylor sets 7 explicitly on both sites, which matches carried decision 7 |
+| Section 9.2 | Now decided: 0, keep forever. The reference deployment sets 7 explicitly on both sites, which matches carried decision 7 |
 | Section 9, new | Add 9.17 to 9.22 from DECISIONS.md Part 4 |
 | Phase 1 list (`:752`) | `delete_recording` needs its two capabilities and the media only semantics. Add the six capabilities from section 7.3 |
 | Phase 3 list (`:760`) | Add `summary_gate`, the per language deny list data files, the judge call, the luminance check, `visual_summary_rejected`, `visual_summary_judge_unavailable` and the CI fixture set from section 4.1 |
@@ -961,7 +961,7 @@ These are not fixed and are not going to be. They are here so nobody discovers t
 
 ## 14. What could not be established
 
-- **Whether the Saylor bucket `saylor-soapbox-prod` is versioned, and whether the IAM policy grants `s3:GetBucketVersioning` or `s3:GetLifecycleConfiguration`.** This decides whether the storage self test can detect either condition or must rely entirely on the admin declaration. Plan section 9.16 records bucket, prefix, region, retention and `allowstealth`, but not the policy.
+- **Whether the reference bucket `example-bucket` is versioned, and whether the IAM policy grants `s3:GetBucketVersioning` or `s3:GetLifecycleConfiguration`.** This decides whether the storage self test can detect either condition or must rely entirely on the admin declaration. Plan section 9.16 records bucket, prefix, region, retention and `allowstealth`, but not the policy.
 - **Whether a bucket lifecycle rule currently exists on that bucket and at what age.** Plan section 9.3 is still open. Section 9.16 notes the bucket is dedicated and empty, which makes removing any rule at cutover cheap, but does not say whether one is there.
 - **Whether GD is guaranteed present**, which the layer 0 luminance check needs. It must degrade to a skip with a debugging note rather than a fatal, and the storage self test must report when it is unavailable.
 - **The core Moodle line references for file deletion timing and trash cleanup** are carried from `IMPLEMENTATION-PLAN.md` section 4.5. Core was not re-read to verify those line numbers. The consequence for learner facing wording holds either way: on the filesystem backend, deletion is honestly "unreachable within seconds, gone from disk within about a day", not "gone".

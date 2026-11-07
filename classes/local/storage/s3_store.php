@@ -717,7 +717,7 @@ class s3_store implements store_interface {
      * Where requests go, and how much of the path the bucket occupies.
      *
      * With no endpoint override this is AWS virtual-hosted style, exactly as the
-     * source hard-coded it, so existing Saylor keys sign to the same URLs they
+     * source hard-coded it, so existing keys sign to the same URLs they
      * signed before the port.
      *
      * With an override the host comes from the setting. Path style then puts the
@@ -774,8 +774,8 @@ class s3_store implements store_interface {
      * Whether the bucket goes in the path rather than the host.
      *
      * Only honoured alongside an endpoint override. On AWS the host carries the
-     * bucket, so respecting this flag there would silently change every URL the
-     * Saylor bucket has ever been addressed by, which is the one thing this port
+     * bucket, so respecting this flag there would silently change every URL an
+     * existing bucket has ever been addressed by, which is the one thing this port
      * is not allowed to do.
      *
      * @return bool
