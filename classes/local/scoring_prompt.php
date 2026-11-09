@@ -77,6 +77,8 @@ final class scoring_prompt {
      *                 - slides string, the slide context, may be ''
      *                 - visualblock string, may be ''
      *                 - wantsummary bool, whether to ask for visual_summary
+     *                 - sources string[], the sources the learner was given to cite, may be empty
+     *                 - minsources int, how many of them the learner must cite, 0 for no minimum
      * @return array ['system' => string, 'user' => string (the fenced slides and transcript, then the request),
      *     'schema' => ['name' => string, 'schema' => array]]
      */
@@ -90,6 +92,8 @@ final class scoring_prompt {
         $slides = trim((string) ($p['slides'] ?? ''));
         $visualblock = trim((string) ($p['visualblock'] ?? ''));
         $wantsummary = !empty($p['wantsummary']);
+        $sourcelist = array_values(array_filter(array_map('strval', (array) ($p['sources'] ?? [])), 'strlen'));
+        $minsources = max(0, min((int) ($p['minsources'] ?? 0), count($sourcelist)));
 
         $context = rubric_manager::preset_hint((string) ($p['level'] ?? ''));
         if ($topic !== '') {
@@ -158,6 +162,7 @@ final class scoring_prompt {
             . $shape
             . $noinstructor
             . "\n\n" . prompt_text::get('prompt:scoring_rubricheading') . "\n" . implode("\n", $rubriclines)
+            . self::sources_block($sourcelist, $minsources)
             . ($visualblock !== '' ? "\n\n" . $visualblock : '')
             . $datarule;
 
@@ -166,6 +171,32 @@ final class scoring_prompt {
             'user' => $user,
             'schema' => ['name' => self::SCHEMA_NAME, 'schema' => self::schema($wantsummary)],
         ];
+    }
+
+    /**
+     * The assigned sources section of the system prompt (0.7.0), or '' when
+     * the activity gives none, so an activity without them is sent exactly the
+     * prompt it was before.
+     *
+     * The list is the teacher's, not the learner's, so it goes in the system
+     * prompt rather than the fenced user message.
+     *
+     * @param string[] $sources The sources, one per entry.
+     * @param int $min How many the learner must cite, already capped at the list's length.
+     * @return string
+     */
+    public static function sources_block(array $sources, int $min): string {
+        if (empty($sources)) {
+            return '';
+        }
+        $lines = [];
+        foreach (array_values($sources) as $i => $source) {
+            $lines[] = ($i + 1) . '. ' . $source;
+        }
+        $rule = $min > 0
+            ? prompt_text::get('prompt:scoring_sources_min', (object) ['min' => $min, 'count' => count($sources)])
+            : prompt_text::get('prompt:scoring_sources');
+        return "\n\n" . prompt_text::get('prompt:scoring_sourcesheading') . "\n" . implode("\n", $lines) . "\n" . $rule;
     }
 
     /**

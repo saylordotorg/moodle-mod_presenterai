@@ -51,6 +51,7 @@ use mod_presenterai\local\grader;
 use mod_presenterai\local\instance_manager;
 use mod_presenterai\local\presentation_types;
 use mod_presenterai\local\rubric_manager;
+use mod_presenterai\local\sources;
 use mod_presenterai\local\topic_manager;
 use mod_presenterai\output\rubrics_page;
 
@@ -91,6 +92,7 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $this->add_recording_elements();
         $this->add_rubric_elements();
         $this->add_topic_elements();
+        $this->add_source_elements();
         $this->add_more_settings();
 
         $this->standard_grading_coursemodule_elements();
@@ -218,6 +220,14 @@ class mod_presenterai_mod_form extends moodleform_mod {
         $dayschosen = ($data['retentionmode'] ?? '') === 'days';
         if ($dayschosen && $this->can_set_retention() && (int) ($data['retentiondaysvalue'] ?? 0) < 1) {
             $errors['retentiondaysvalue'] = get_string('retentiondaysmin', 'mod_presenterai');
+        }
+
+        $given = count(sources::parse($data['sources'] ?? ''));
+        $minsources = (int) ($data['minsources'] ?? 0);
+        if ($minsources < 0) {
+            $errors['minsources'] = get_string('valuenotnegative', 'mod_presenterai');
+        } else if ($minsources > $given) {
+            $errors['minsources'] = get_string('error:minsourcesovercount', 'mod_presenterai', $given);
         }
 
         $suffix = $this->get_suffix();
@@ -668,6 +678,28 @@ class mod_presenterai_mod_form extends moodleform_mod {
             get_string('addtopics', 'mod_presenterai'),
             true
         );
+    }
+
+    /**
+     * Sources (0.7.0): the sources learners are given to cite, one per line,
+     * and how many of them a learner must cite. The AI is told the list and
+     * only credits a source from it cited with its author or organization and
+     * its year.
+     *
+     * @return void
+     */
+    private function add_source_elements(): void {
+        $mform = $this->_form;
+
+        $mform->addElement('header', 'sourcesheading', get_string('sourcesheading', 'mod_presenterai'));
+        $mform->addElement('textarea', 'sources', get_string('sources', 'mod_presenterai'), ['rows' => 6, 'cols' => 80]);
+        $mform->setType('sources', PARAM_TEXT);
+        $mform->addHelpButton('sources', 'sources', 'mod_presenterai');
+
+        $mform->addElement('text', 'minsources', get_string('minsources', 'mod_presenterai'), ['size' => 4]);
+        $mform->setType('minsources', PARAM_INT);
+        $mform->setDefault('minsources', 0);
+        $mform->addHelpButton('minsources', 'minsources', 'mod_presenterai');
     }
 
     /**

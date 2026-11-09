@@ -211,6 +211,8 @@ final class scorer {
             'slides' => (string) $slides['text'],
             'visualblock' => $visualblock,
             'wantsummary' => $evidenceok && $visualblock !== '',
+            'sources' => sources::parse($instance->sources ?? null),
+            'minsources' => sources::required($instance),
         ]);
 
         $client = route_resolver::client_for(route_resolver::PURPOSE_SCORE);

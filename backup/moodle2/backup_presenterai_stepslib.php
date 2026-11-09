@@ -62,7 +62,7 @@ class backup_presenterai_activity_structure_step extends backup_activity_structu
         // course (the restore target supplies it).
         $presenterai = new backup_nested_element('presenterai', ['id'], [
             'name', 'intro', 'introformat', 'ptype', 'mode', 'minseconds', 'maxseconds',
-            'maxattempts', 'storedattempts', 'rubricid', 'speakinglevel', 'preset', 'slidesenabled',
+            'maxattempts', 'storedattempts', 'rubricid', 'speakinglevel', 'preset', 'sources', 'minsources', 'slidesenabled',
             'slidevision', 'videovision', 'visualscored', 'allowvisualoptout', 'reviewbeforerelease', 'retentiondays', 'grade',
             'gradingmethod',
             'completionsubmit', 'completionminscore', 'legacyassignid', 'timecreated', 'timemodified',

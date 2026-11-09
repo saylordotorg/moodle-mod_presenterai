@@ -256,5 +256,21 @@ function xmldb_presenterai_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026110601, 'presenterai');
     }
 
+    if ($oldversion < 2026110900) {
+        // 0.7.0: sources the teacher gives learners to cite, and how many of them a learner must cite. Existing
+        // rows get none, so no activity's scoring changes on upgrade.
+        $table = new xmldb_table('presenterai');
+        $field = new xmldb_field('sources', XMLDB_TYPE_TEXT, null, null, null, null, null, 'preset');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $field = new xmldb_field('minsources', XMLDB_TYPE_INTEGER, '4', null, XMLDB_NOTNULL, null, '0', 'sources');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026110900, 'presenterai');
+    }
+
     return true;
 }

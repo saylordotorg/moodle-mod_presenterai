@@ -107,6 +107,7 @@ final class view_page implements \renderable, \templatable {
             'cmid' => (int) $this->context->instanceid,
             'contextid' => (int) $this->context->id,
             'topics' => $this->topics(),
+            'sources' => \mod_presenterai\local\sources::export_for_view($this->instance, $this->context),
             'retentionline' => policy::retention_line($this->instance, $this->context, $this->userid),
             'prunewarning' => policy::prune_warning($this->instance, $this->userid),
             'latest' => $this->card(self::latest_row($attempts)),

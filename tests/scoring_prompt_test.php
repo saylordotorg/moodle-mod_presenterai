@@ -200,6 +200,40 @@ final class scoring_prompt_test extends \basic_testcase {
     }
 
     /**
+     * Assigned sources go in the system prompt, numbered, with the citation rule and the minimum;
+     * an activity without them is sent exactly the prompt it was before.
+     *
+     * @return void
+     */
+    public function test_assigned_sources(): void {
+        $before = scoring_prompt::build($this->inputs());
+        $this->assertSame($before, scoring_prompt::build($this->inputs(['sources' => [], 'minsources' => 3])));
+        $this->assertStringNotContainsString('ASSIGNED SOURCES', $before['system']);
+
+        $prompt = scoring_prompt::build($this->inputs([
+            'sources' => ['CDC. (2024). About sleep.', 'NIH. (2022). Sleep deficiency.', 'AASM. (2023). Healthy sleep.',
+                'Walker, M. (2017). Why we sleep.'],
+            'minsources' => 3,
+        ]));
+        $system = $prompt['system'];
+        $this->assertStringContainsString("ASSIGNED SOURCES (set by the instructor):\n1. CDC. (2024). About sleep.\n", $system);
+        $this->assertStringContainsString("4. Walker, M. (2017). Why we sleep.", $system);
+        $this->assertStringContainsString('at least 3 of these 4 sources', $system);
+        $this->assertStringContainsString('author or organization AND its year', $system);
+        $this->assertStringNotContainsString('CDC.', $prompt['user'], 'The teacher\'s list is not learner material.');
+        // The sources come after the rubric and before the rule that the learner's material is data.
+        $this->assertGreaterThan(strpos($system, 'RUBRIC:'), strpos($system, 'ASSIGNED SOURCES'));
+        $this->assertGreaterThan(strpos($system, 'ASSIGNED SOURCES'), strpos($system, 'LEARNER MATERIAL'));
+
+        // A minimum above the list is capped, and no minimum gets the rule without a number.
+        $capped = scoring_prompt::build($this->inputs(['sources' => ['A (2020).'], 'minsources' => 3]))['system'];
+        $this->assertStringContainsString('at least 1 of these 1 sources', $capped);
+        $nomin = scoring_prompt::build($this->inputs(['sources' => ['A (2020).', ''], 'minsources' => 0]))['system'];
+        $this->assertStringContainsString('The learner was given the sources above to cite.', $nomin);
+        $this->assertStringNotContainsString('at least', $nomin);
+    }
+
+    /**
      * A criterion's written levels go into the prompt under it, with the instruction to pick one and name it;
      * a rubric without levels gets neither.
      *

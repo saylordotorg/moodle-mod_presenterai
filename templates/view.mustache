@@ -38,6 +38,7 @@
     * cmid - The course module id.
     * contextid - The module context id, for the card's refresh.
     * topics - Context for mod_presenterai/topics.
+    * sources - The sources step: hassources, intro, items[] of html.
     * retentionline - The privacy and deletion line, HTML.
     * prunewarning - The pruning warning, or empty.
     * latest - Context for mod_presenterai/latest.
@@ -62,6 +63,14 @@
                     "hasinstructions": true, "files": [], "hasfiles": false},
                 {"id": 4, "title": "City transport", "instructions": "", "hasinstructions": false,
                     "files": [{"filename": "brief.pdf", "url": "https://example.com/brief.pdf"}], "hasfiles": true}
+            ]
+        },
+        "sources": {
+            "hassources": true,
+            "intro": "Cite at least 3 of these 4 sources in your speech. Give each one's author or organization and its year.",
+            "items": [
+                {"html": "Centers for Disease Control and Prevention. (2024). <em>About sleep</em>."},
+                {"html": "National Institutes of Health. (2022). <em>Sleep deprivation and deficiency</em>."}
             ]
         },
         "retentionline": "Your recording is private to you and your instructors and is deleted after 30 days (your transcript and feedback are kept).",
@@ -114,6 +123,19 @@
             {{/topics}}
         </li>
         {{/topics.hastopics}}
+        {{#sources.hassources}}
+        <li class="mod-presenterai-step mb-3" data-step="sources">
+            <h3 class="h5">{{#str}}step_sources, mod_presenterai{{/str}}</h3>
+            {{#sources}}
+            <p class="mb-2">{{intro}}</p>
+            <ul class="mod-presenterai-sources">
+                {{#items}}
+                <li>{{{html}}}</li>
+                {{/items}}
+            </ul>
+            {{/sources}}
+        </li>
+        {{/sources.hassources}}
         <li class="mod-presenterai-step mb-3" data-step="record">
             <h3 class="h5">{{#str}}step_record, mod_presenterai{{/str}}</h3>
             <p class="mod-presenterai-retention small" data-region="retention">{{{retentionline}}}</p>
