@@ -125,6 +125,15 @@ final class instance_manager {
             }
         }
 
+        if (property_exists($data, 'sources')) {
+            $data->sources = sources::clean(is_string($data->sources) ? $data->sources : null);
+        }
+        // A minimum above the number of sources given could never be met.
+        if (property_exists($data, 'minsources')) {
+            $given = count(sources::parse($data->sources ?? ($existing->sources ?? null)));
+            $data->minsources = max(0, min((int) $data->minsources, $given));
+        }
+
         if (property_exists($data, 'reviewbeforerelease')) {
             $data->reviewbeforerelease = empty($data->reviewbeforerelease) ? 0 : 1;
         }

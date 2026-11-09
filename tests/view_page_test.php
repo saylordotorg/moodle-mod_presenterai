@@ -88,6 +88,22 @@ final class view_page_test extends \advanced_testcase {
     }
 
     /**
+     * The sources step is there only when the activity gives sources.
+     *
+     * @return void
+     */
+    public function test_sources_step(): void {
+        $this->resetAfterTest();
+        [$course, $instance, $context, $student] = $this->setup_activity(['sources' => "A (2020).\nB (2021).", 'minsources' => 2]);
+        $data = $this->export($instance, $course, $context, $student);
+        $this->assertTrue($data['sources']['hassources']);
+        $this->assertCount(2, $data['sources']['items']);
+
+        [$course, $instance, $context, $student] = $this->setup_activity();
+        $this->assertFalse($this->export($instance, $course, $context, $student)['sources']['hassources']);
+    }
+
+    /**
      * A learner gets the retention line and the recorder.
      *
      * @return void

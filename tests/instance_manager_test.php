@@ -57,6 +57,27 @@ final class instance_manager_test extends \advanced_testcase {
     }
 
     /**
+     * Sources are stored one per line or as null, and the minimum is capped at the number given.
+     *
+     * @return void
+     */
+    public function test_sources_and_minimum(): void {
+        $data = instance_manager::normalise((object) ['sources' => "\n A (2020). \n\nB (2021).\n", 'minsources' => 5], null);
+        $this->assertSame("A (2020).\nB (2021).", $data->sources);
+        $this->assertSame(2, $data->minsources);
+
+        $data = instance_manager::normalise((object) ['sources' => '   ', 'minsources' => 3], null);
+        $this->assertNull($data->sources);
+        $this->assertSame(0, $data->minsources);
+
+        // A minimum on its own is judged against the stored list.
+        $existing = (object) ['sources' => "A\nB\nC\nD", 'retentiondays' => 30];
+        $data = instance_manager::normalise((object) ['minsources' => 9], $existing);
+        $this->assertSame(4, $data->minsources);
+        $this->assertSame(0, instance_manager::normalise((object) ['minsources' => -2], null)->minsources);
+    }
+
+    /**
      * An unknown mode becomes video; a known one is kept.
      *
      * @return void

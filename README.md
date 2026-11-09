@@ -2,9 +2,13 @@
 
 An activity module in which a learner records a video or audio presentation in the browser, optionally presents a PDF slide deck while speaking, and receives a transcript, a rubric score and written per criterion feedback.
 
-> **Status: v0.6.1 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's old speech tool (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
+> **Status: v0.7.0 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's old speech tool (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
 
-## What's new in 0.6.1
+## What's new in 0.7.0
+
+Sources learners must cite. A new Sources section in the activity settings takes a list of sources, one full citation per line (up to 10), and how many of them a learner must cite, for example 3 of 4. Learners see the list as a "Read your sources" step before they record. The AI is told the list and only credits a source from it that the learner cites aloud with its author or organization and its year; a source mentioned without its year, or one that isn't on the list, doesn't count toward the minimum. A fixed list keeps scoring fair for an introductory course: the AI can't check that a source a learner found on their own is real, but it can check a citation against the list. Two new columns (`presenterai.sources`, `presenterai.minsources`); an activity with no sources is scored exactly as before.
+
+## What was new in 0.6.1
 
 Wording only. The two built-in speech presets are now called "Public speaking: informative" and "Public speaking: persuasive", and the plugin's text, comments and docs no longer name any one institution. Nothing about how the plugin works changes: no code path, no table, no setting. Activities keep their stored preset keys (`informative`, `persuasive`), so existing activities and their rubrics are untouched.
 
