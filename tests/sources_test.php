@@ -73,6 +73,22 @@ final class sources_test extends \advanced_testcase {
     }
 
     /**
+     * Web addresses become links, without the full stop that ends the citation, and nothing else is HTML.
+     *
+     * @return void
+     */
+    public function test_linkify(): void {
+        $this->assertSame(
+            'CDC. (2024). <a target="_blank" rel="noopener" href="https://www.cdc.gov/sleep/about/">'
+                . 'https://www.cdc.gov/sleep/about/</a>.',
+            sources::linkify('CDC. (2024). https://www.cdc.gov/sleep/about/.')
+        );
+        $this->assertSame('&lt;b&gt;A&lt;/b&gt; (2020).', sources::linkify('<b>A</b> (2020).'));
+        $this->assertStringContainsString('href="https://x.org/a?b=1&amp;c=2"', sources::linkify('See https://x.org/a?b=1&c=2'));
+        $this->assertStringNotContainsString('<a', sources::linkify('javascript:alert(1) and ftp://x.org'));
+    }
+
+    /**
      * Learners see each source escaped, with its web address as a link, and the minimum.
      *
      * @return void
@@ -92,7 +108,7 @@ final class sources_test extends \advanced_testcase {
         ], $context);
         $this->assertTrue($view['hassources']);
         $this->assertCount(2, $view['items']);
-        $this->assertStringContainsString('<a href="https://www.cdc.gov/sleep/about/"', $view['items'][0]['html']);
+        $this->assertStringContainsString('href="https://www.cdc.gov/sleep/about/">', $view['items'][0]['html']);
         $this->assertStringNotContainsString('<script>', $view['items'][1]['html']);
         $this->assertStringContainsString('at least 1 of these 2', $view['intro']);
     }
