@@ -84,7 +84,8 @@ final class sources {
      * Context for the learner's sources step in templates/view.mustache.
      *
      * Each line is escaped and its web addresses made into links, so a
-     * teacher can paste a citation with its URL.
+     * teacher can paste a citation with its URL. The links are made here, not
+     * left to the URL-to-link filter, which a site may have turned off.
      *
      * @param \stdClass $instance The presenterai row.
      * @param \context $context The activity's context.
@@ -95,7 +96,7 @@ final class sources {
         $required = self::required($instance);
         $items = [];
         foreach ($list as $line) {
-            $items[] = ['html' => format_text(s($line), FORMAT_MOODLE, ['context' => $context, 'para' => false])];
+            $items[] = ['html' => self::linkify($line)];
         }
         $intro = $required > 0
             ? get_string('sources_intro_min', 'mod_presenterai', (object) ['min' => $required, 'count' => count($list)])
@@ -105,5 +106,30 @@ final class sources {
             'intro' => $intro,
             'items' => $items,
         ];
+    }
+    /**
+     * One source as HTML: escaped, with each http(s) address made into a link
+     * that opens in a new tab. Punctuation that ends a citation (a full stop
+     * after the URL) stays outside the link.
+     *
+     * @param string $line One source.
+     * @return string
+     */
+    public static function linkify(string $line): string {
+        $out = '';
+        $parts = preg_split('~(https?://[^\s<>"\']+)~iu', $line, -1, PREG_SPLIT_DELIM_CAPTURE);
+        foreach ($parts as $i => $part) {
+            if ($i % 2 === 0) {
+                $out .= s($part);
+                continue;
+            }
+            $trail = '';
+            if (preg_match('~[.,;:!?)\]]+$~u', $part, $m)) {
+                $trail = $m[0];
+                $part = \core_text::substr($part, 0, \core_text::strlen($part) - \core_text::strlen($trail));
+            }
+            $out .= \html_writer::link($part, s($part), ['target' => '_blank', 'rel' => 'noopener']) . s($trail);
+        }
+        return $out;
     }
 }
