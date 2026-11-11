@@ -4,11 +4,15 @@
     background-color: #f8f9fa;
 }
 
+/* A fixed 16:9 box: before the camera starts the video has no picture, and the browser's
+   default 300x150 size would make it half as tall as it is while recording. */
 .mod-presenterai-preview {
     display: block;
     width: 100%;
     max-width: 640px;
-    max-height: 360px;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    object-fit: contain;
     background: #000;
     border-radius: 6px;
 }
