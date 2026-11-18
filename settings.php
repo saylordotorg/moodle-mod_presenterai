@@ -382,6 +382,13 @@ if ($ADMIN->fulltree) {
         'whisper-1',
         PARAM_RAW_TRIMMED
     ));
+    $settings->add(new admin_setting_configtext(
+        'mod_presenterai/sttlanguage',
+        get_string('sttlanguage', 'mod_presenterai'),
+        get_string('sttlanguage_desc', 'mod_presenterai'),
+        'en',
+        PARAM_ALPHA
+    ));
     $settings->add(new admin_setting_configcheckbox(
         'mod_presenterai/sttwarm',
         get_string('sttwarm', 'mod_presenterai'),

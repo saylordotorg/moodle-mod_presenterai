@@ -114,6 +114,26 @@ class stt_client implements stt_interface {
     }
 
     /**
+     * The spoken language sent to the transcription service, an ISO 639-1 code.
+     *
+     * English unless the admin set another code, or cleared the setting to let
+     * the service detect it. Detection is unreliable for accented speech:
+     * Whisper heard English read with Nigerian, Arabic and Spanish accents as
+     * Telugu, Arabic and Spanish and wrote that language out, so the learner
+     * got no score or a much lower one (DECISIONS.md D34).
+     *
+     * @return string A code such as 'en', or '' to let the service detect it.
+     */
+    public static function language(): string {
+        $value = get_config('mod_presenterai', 'sttlanguage');
+        if ($value === false) {
+            return 'en';
+        }
+        $value = strtolower(trim((string) $value));
+        return preg_match('/^[a-z]{2,3}$/', $value) ? $value : '';
+    }
+
+    /**
      * Transcribe a file.
      *
      * @param string $filepath A readable local file.
@@ -147,6 +167,10 @@ class stt_client implements stt_interface {
             ),
             'model' => $this->model,
         ];
+        $language = self::language();
+        if ($language !== '') {
+            $body['language'] = $language;
+        }
         $response = http_client::post($this->endpoint, $headers, $body, ['timeout' => self::TIMEOUT]);
         $data = json_decode($response['body'], true);
         http_client::raise_for_status($response['status'], $this->describe_error($data, $response['body']));
