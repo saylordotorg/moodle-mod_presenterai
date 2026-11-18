@@ -70,7 +70,40 @@ final class ai_stt_client_test extends \advanced_testcase {
         $this->assertSame('video/webm', $request['body']['file']->getMimeType());
         $this->assertSame('sample.webm', $request['body']['file']->getPostFilename());
         $this->assertSame('whisper-1', $request['body']['model']);
+        $this->assertSame('en', $request['body']['language']);
         $this->assertSame('openai', $client->route());
+    }
+
+    /**
+     * The spoken language: English by default, an admin's code when set, and
+     * none (the service detects it) when cleared or not a language code.
+     *
+     * @return void
+     */
+    public function test_language(): void {
+        $this->resetAfterTest();
+        http_client::set_test_handler(fn() => [
+            'status' => 200,
+            'body' => file_get_contents(__DIR__ . '/fixtures/ai/whisper.json'),
+        ]);
+        $client = new stt_client('https://stt.example.com/v1/audio/transcriptions', '', 'small');
+
+        unset_config('sttlanguage', 'mod_presenterai');
+        $this->assertSame('en', stt_client::language());
+
+        set_config('sttlanguage', ' ES ', 'mod_presenterai');
+        $this->assertSame('es', stt_client::language());
+        $client->transcribe(self::SAMPLE, 'audio/webm');
+        $this->assertSame('es', http_client::last_requests()[0]['body']['language']);
+
+        set_config('sttlanguage', '', 'mod_presenterai');
+        $this->assertSame('', stt_client::language());
+        $client->transcribe(self::SAMPLE, 'audio/webm');
+        $requests = http_client::last_requests();
+        $this->assertArrayNotHasKey('language', end($requests)['body']);
+
+        set_config('sttlanguage', 'english', 'mod_presenterai');
+        $this->assertSame('', stt_client::language());
     }
 
     /**

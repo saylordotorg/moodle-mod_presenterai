@@ -229,6 +229,11 @@ Nothing else goes in: no other learner's data, no other activity, no transcript 
 
 "Previous" is by attempt number, then id, the same order as the learner's progress table, so the comparison the feedback makes is the one the learner sees. A rubric edited between two attempts can make the comparison misleading: the two percentages were scored against different criteria, and nothing in the prompt or the table says so. That's accepted for now, because teachers rarely change a rubric mid-activity; if they do, the scores are still each right for their own rubric.
 
+**D34. Transcription is told the spoken language, English by default.**
+Recorded 18 November 2026, for 0.8.2. An accent test on dev read Tamara's COMM101 model speech in six English accents (AI voices) and sent each to the transcription service the way 0.8.1 did, with no language. Whisper detected the language from the accent: Nigerian English came back as Telugu script, Arabic accented English as Arabic text and Spanish accented English translated into Spanish. The first two would fail to score and the third scored 27 of 35 against 34 for the same speech in US English. With `language=en` all six transcribed with 93 to 99 percent of the words right, and all six scored 33 or 34 of 35 over three runs each, the same as US English.
+
+So `stt_client` sends `language`, from the new site setting `sttlanguage` (default `en`; a cleared setting or a value that isn't a two or three letter code sends none and the service detects it). Per activity languages can come later if a non English speaking activity needs one.
+
 ## Part 4: open questions these two decisions raised
 
 These are **new information produced by designing 9.1 and 9.2**, not a reopening of either. D21 and D22 stand as taken. What the design work found is that both of them sit on top of an older assumption nobody has written down as a decision, and on four smaller choices the plan never made. They belong in `IMPLEMENTATION-PLAN.md` section 9 when it is next updated and are numbered to continue it.
