@@ -504,7 +504,7 @@ final class view_page_test extends \advanced_testcase {
         $this->assertSame(get_string('card_status_scoring', 'mod_presenterai'), $data['latest']['status']);
         $html = $PAGE->get_renderer('core')->render_from_template('mod_presenterai/view', $data);
         $this->assertStringContainsString('data-scoring="1"', $html);
-        $this->assertStringContainsString('Scoring, usually about 2 minutes', $html);
+        $this->assertStringContainsString('Scoring, usually 2 to 5 minutes', $html);
 
         $DB->set_field('presenterai_recording', 'status', 'scored', ['id' => $rec->id]);
         $generator->create_score([

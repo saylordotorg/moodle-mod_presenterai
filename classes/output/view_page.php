@@ -205,7 +205,7 @@ final class view_page implements \renderable, \templatable {
     /**
      * Context for templates/latest.mustache, from one exported attempt row.
      *
-     * The status reads "Scoring, usually about 2 minutes" while
+     * The status reads "Scoring, usually 2 to 5 minutes" while
      * pending_state() says so (which is what the page polls on), "Waiting to
      * be scored" when it says waiting, "Ready" once a released score is
      * there, the review sentence while a teacher holds it (D28), and the
