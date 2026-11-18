@@ -72,7 +72,7 @@ final class progress_test extends \advanced_testcase {
      *
      * @param int $userid The learner.
      * @param int $presenteraiid The activity.
-     * @param int $timecreated When the recording was made.
+     * @param int $attempt The attempt number.
      * @param float|null $pct The score's percentage, or null for no score row.
      * @param array $score Other fields for the score row.
      * @param string $status The recording's status.
@@ -81,7 +81,7 @@ final class progress_test extends \advanced_testcase {
     private function scored(
         int $userid,
         int $presenteraiid,
-        int $timecreated,
+        int $attempt,
         ?float $pct,
         array $score = [],
         string $status = 'scored'
@@ -90,7 +90,7 @@ final class progress_test extends \advanced_testcase {
             'presenteraiid' => $presenteraiid,
             'userid' => $userid,
             'status' => $status,
-            'timecreated' => $timecreated,
+            'attemptnumber' => $attempt,
         ]);
         if ($pct !== null) {
             $this->gen->create_score($score + [
@@ -99,7 +99,6 @@ final class progress_test extends \advanced_testcase {
                 'overallpct' => $pct,
                 'released' => 1,
                 'tips' => json_encode(['Tip for ' . $pct]),
-                'timecreated' => $timecreated + 5,
             ]);
         }
         return $rec;
@@ -111,21 +110,21 @@ final class progress_test extends \advanced_testcase {
      * @return void
      */
     public function test_previous_released_reads_only_the_learners_own_earlier_released_score(): void {
-        $now = time();
         $uid = (int) $this->learner->id;
         $pid = (int) $this->instance->id;
         $other = $this->getDataGenerator()->create_and_enrol($this->course, 'student');
         $otheractivity = $this->getDataGenerator()->create_module('presenterai', ['course' => $this->course->id]);
 
-        $first = $this->scored($uid, $pid, $now - 500, 60.0, ['tips' => json_encode(['Open with the claim.', '', 'Slow down.'])]);
+        $first = $this->scored($uid, $pid, 1, 60.0, ['tips' => json_encode(['Open with the claim.', '', 'Slow down.'])]);
         $this->assertNull(score_manager::previous_released($first), 'A first attempt has no previous one.');
 
-        $held = $this->scored($uid, $pid, $now - 400, 90.0, ['released' => 0]);
-        $this->scored($uid, $pid, $now - 350, null, [], 'failed');
-        $this->scored((int) $other->id, $pid, $now - 300, 99.0);
-        $this->scored($uid, (int) $otheractivity->id, $now - 250, 95.0);
-        $current = $this->scored($uid, $pid, $now - 200, null, [], 'scoring');
-        $this->scored($uid, $pid, $now - 100, 70.0);
+        $held = $this->scored($uid, $pid, 2, 90.0, ['released' => 0]);
+        $this->scored($uid, $pid, 3, null, [], 'failed');
+        $this->scored((int) $other->id, $pid, 3, 99.0);
+        $this->scored($uid, (int) $otheractivity->id, 3, 95.0);
+        // Attempt 5 made before attempt 4 is still a later attempt: the order is the attempt number.
+        $this->scored($uid, $pid, 5, 70.0);
+        $current = $this->scored($uid, $pid, 4, null, [], 'scoring');
 
         $previous = score_manager::previous_released($current);
         $this->assertSame((int) $first->id, $previous['recordingid'], 'Held, failed, later, other learner or other activity used.');
@@ -133,7 +132,8 @@ final class progress_test extends \advanced_testcase {
         $this->assertSame(['Open with the claim.', 'Slow down.'], $previous['tips']);
 
         // Once the held score is released it's the previous one; a teacher's score on it wins, and has no tips.
-        $this->gen->create_score(['recordingid' => $held->id, 'origin' => 'teacher', 'overallpct' => 85.0, 'timecreated' => $now]);
+        $this->gen->create_score(['recordingid' => $held->id, 'origin' => 'teacher', 'overallpct' => 85.0,
+            'timecreated' => time() + 10]);
         $previous = score_manager::previous_released($current);
         $this->assertSame((int) $held->id, $previous['recordingid']);
         $this->assertEqualsWithDelta(85.0, $previous['pct'], 0.001);
@@ -141,14 +141,13 @@ final class progress_test extends \advanced_testcase {
     }
 
     /**
-     * Two recordings made in the same second are ordered by id.
+     * Two recordings with the same attempt number are ordered by id, as the progress table orders them.
      *
      * @return void
      */
-    public function test_previous_released_same_second(): void {
-        $now = time();
-        $a = $this->scored((int) $this->learner->id, (int) $this->instance->id, $now, 40.0);
-        $b = $this->scored((int) $this->learner->id, (int) $this->instance->id, $now, 50.0);
+    public function test_previous_released_same_attempt_number(): void {
+        $a = $this->scored((int) $this->learner->id, (int) $this->instance->id, 2, 40.0);
+        $b = $this->scored((int) $this->learner->id, (int) $this->instance->id, 2, 50.0);
         $this->assertSame((int) $a->id, score_manager::previous_released($b)['recordingid']);
         $this->assertNull(score_manager::previous_released($a));
     }
@@ -162,9 +161,8 @@ final class progress_test extends \advanced_testcase {
         global $CFG;
         require_once($CFG->libdir . '/gradelib.php');
 
-        $now = time();
-        $this->scored((int) $this->learner->id, (int) $this->instance->id, $now - 100, 55.5);
-        $current = $this->scored((int) $this->learner->id, (int) $this->instance->id, $now, null, [], 'scoring');
+        $this->scored((int) $this->learner->id, (int) $this->instance->id, 1, 55.5);
+        $current = $this->scored((int) $this->learner->id, (int) $this->instance->id, 2, null, [], 'scoring');
 
         $this->assertSame(['pct' => 55.5, 'tips' => ['Tip for 55.5']], scorer::previous($current, $this->instance));
 

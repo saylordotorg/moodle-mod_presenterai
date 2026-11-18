@@ -22,7 +22,8 @@ namespace mod_presenterai\local;
  * A port of the prompt in SOLA's score_speech (classes/external/score_speech.php:108-262):
  * a supportive coach reading a speech to text transcript, the speaking level's
  * coaching register, the presentation type, the topic and timing, the rule
- * that a self paced learner with no instructor needs concrete actions, the
+ * that a self paced learner with no instructor needs concrete actions (since
+ * 0.8.0 part of the evidence and next steps rule), the
  * rubric lines, and the slides and the transcript.
  *
  * The transcript and the slide text are the learner's own words, so they are
@@ -177,16 +178,16 @@ final class scoring_prompt {
         }
         $shape .= '}';
 
-        $noinstructor = "\n\n" . prompt_text::get('prompt:scoring_noinstructor');
-        // Every rubric, whatever its criteria (0.8.0, D32).
-        $quality = "\n\n" . prompt_text::get('prompt:scoring_substance')
-            . "\n\n" . prompt_text::get('prompt:scoring_actionable')
+        // Every rubric, whatever its criteria (0.8.0, D32). The actionable rule
+        // took in the old self-paced (no instructor) rule, so there's one rule
+        // about evidence and next steps, not two that overlap.
+        $quality = "\n\n" . prompt_text::get('prompt:scoring_actionable')
+            . "\n\n" . prompt_text::get('prompt:scoring_substance')
             . "\n\n" . prompt_text::get('prompt:scoring_fairness');
 
         $system = prompt_text::get('prompt:scoring_system', $context)
             . "\n"
             . $shape
-            . $noinstructor
             . $quality
             . "\n\n" . prompt_text::get('prompt:scoring_rubricheading') . "\n" . implode("\n", $rubriclines)
             . self::sources_block($sourcelist, $minsources)

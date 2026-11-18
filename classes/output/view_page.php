@@ -409,6 +409,9 @@ final class view_page implements \renderable, \templatable {
         if (count($scored) < 2) {
             return ['hasprogress' => false, 'summary' => '', 'rows' => []];
         }
+        // Attempt number, then id: the same key score_manager::previous_released()
+        // uses, so each row's change is against the attempt the scoring prompt
+        // called "previous".
         usort($scored, static function (array $a, array $b): int {
             return [(int) $a['attempt'], (int) $a['recid']] <=> [(int) $b['attempt'], (int) $b['recid']];
         });

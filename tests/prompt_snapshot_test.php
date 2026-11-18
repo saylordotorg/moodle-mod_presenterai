@@ -36,7 +36,8 @@ use mod_presenterai\local\vision\visual_prompts;
  * to, and any stored rubric without levels) is byte for byte what it was.
  *
  * Regenerated for 0.8.0, on purpose, from a speaking SME's review (DECISIONS.md D32, D33): every scoring prompt gains
- * three paragraphs before the rubric (SUBSTANCE, EVIDENCE AND NEXT STEPS, FAIRNESS); the default rubric's
+ * three paragraphs before the rubric (EVIDENCE AND NEXT STEPS, which takes in the old self-paced rule, SUBSTANCE and
+ * FAIRNESS); criterion feedback is two or three sentences and the overall comment two to four; the default rubric's
  * "Content & Relevance" description names a clear main point supported by evidence and reasoning; and the new
  * previous_attempt case pins the fenced previous attempt block and the rule that goes with it. Nothing else in the
  * fixture changed: the visual prompts, the slide prompt, the presentation type hints, the level labels and every

@@ -311,6 +311,10 @@ final class scoring_prompt_test extends \basic_testcase {
         ];
         foreach ($inputs as $name => $input) {
             $system = scoring_prompt::build($input)['system'];
+            // The self-paced rule is folded into the actionable one, and the counts are explicit.
+            $this->assertSame(1, substr_count($system, 'has no instructor to ask'), $name);
+            $this->assertStringContainsString('For each criterion give two or three sentences', $system, $name);
+            $this->assertStringContainsString('an overall comment of two to four sentences', $system, $name);
             // Substance (1): a clear main point, supported, sound reasoning, how convincing.
             $this->assertStringContainsString('SUBSTANCE: judge what the learner says, not only how they say it.', $system, $name);
             $this->assertStringContainsString('a clear main point or claim', $system, $name);
@@ -323,7 +327,7 @@ final class scoring_prompt_test extends \basic_testcase {
                 $system,
                 $name
             );
-            $this->assertStringContainsString('end with one specific next step for that criterion', $system, $name);
+            $this->assertStringContainsString('then give one specific next step for that criterion', $system, $name);
             $this->assertStringContainsString('put first the tip that would raise the score most', $system, $name);
             // Fairness (3), for every rubric, not only ESL Beginner.
             $this->assertStringContainsString(
@@ -347,6 +351,27 @@ final class scoring_prompt_test extends \basic_testcase {
     }
 
     /**
+     * A transcript with a garbled word still gets the fairness rule, and the word stays in the fenced transcript.
+     *
+     * No model is called: this pins what the model is told, not what it does.
+     *
+     * @return void
+     */
+    public function test_garbled_word_gets_the_fairness_rule(): void {
+        $garbled = 'Good afternoon. Wind turbins convert kinetick energy into electrisity, and the blabes are shaped like wings.';
+        $prompt = scoring_prompt::build($this->inputs(['transcript' => $garbled]));
+
+        $this->assertStringContainsString("<transcript>\n" . $garbled . "\n</transcript>", $prompt['user']);
+        $this->assertStringNotContainsString('blabes', $prompt['system']);
+        $this->assertStringContainsString(
+            'A word in the transcript that looks odd or out of place is most likely a speech-to-text error: treat it as a'
+                . " transcription artefact, not as the speaker's mistake, and never quote it as one.",
+            $prompt['system']
+        );
+        $this->assertStringContainsString('never lower any score because of an accent', $prompt['system']);
+    }
+
+    /**
      * A later attempt carries the learner's previous score and tips, fenced in the user message (0.8.0, D33).
      *
      * @return void
@@ -365,7 +390,7 @@ final class scoring_prompt_test extends \basic_testcase {
         );
         $this->assertStringNotContainsString('Open with the claim', $prompt['system'], 'Model-written tips are in the system.');
         $this->assertStringContainsString(
-            'PREVIOUS ATTEMPT: the user message also carries, inside <previous_attempt> tags',
+            'PREVIOUS ATTEMPT: the user message also carries, inside <previous_attempt> tags, the overall score and any tips',
             $prompt['system']
         );
         $this->assertStringContainsString('never raise or lower a score because of the previous one', $prompt['system']);
