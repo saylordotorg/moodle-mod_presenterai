@@ -213,6 +213,7 @@ final class scorer {
             'wantsummary' => $evidenceok && $visualblock !== '',
             'sources' => sources::parse($instance->sources ?? null),
             'minsources' => sources::required($instance),
+            'previous' => self::previous($rec, $instance),
         ]);
 
         $client = route_resolver::client_for(route_resolver::PURPOSE_SCORE);
@@ -293,6 +294,25 @@ final class scorer {
             $summaryout === null ? null : (string) $summaryout,
             (string) ($out['visualstatus'] ?? '')
         );
+    }
+
+    /**
+     * The learner's own previous released score at this activity, for the prompt (0.8.0, D33), or null.
+     *
+     * Nothing is passed when the gradebook hides the learner's grade from
+     * them, for the same reason a held score isn't: the new feedback mustn't
+     * tell them a result the course is holding back.
+     *
+     * @param \stdClass $rec The recording row being scored.
+     * @param \stdClass $instance The presenterai row.
+     * @return array|null ['pct' => float, 'tips' => string[]], or null.
+     */
+    public static function previous(\stdClass $rec, \stdClass $instance): ?array {
+        $previous = score_manager::previous_released($rec);
+        if ($previous === null || gradebook::hidden_from($instance, (int) $rec->userid)) {
+            return null;
+        }
+        return ['pct' => $previous['pct'], 'tips' => $previous['tips']];
     }
 
     /**

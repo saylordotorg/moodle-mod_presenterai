@@ -129,6 +129,7 @@ final class view_page implements \renderable, \templatable {
                 // learner might look for a Download link against (design 9.5).
                 'showdownloadoffnote' => !$candownload && $hasmedia,
             ],
+            'progress' => self::progress($attempts),
         ];
 
         if ($data['canrecord']) {
@@ -382,6 +383,80 @@ final class view_page implements \renderable, \templatable {
             'topicselect' => count($topics) > 1,
             'singletopicid' => count($topics) === 1 ? (int) $topics[0]['id'] : 0,
             'topics' => array_values($topics),
+        ];
+    }
+
+    /**
+     * The learner's progress across their scored attempts, for templates/progress.mustache (0.8.0).
+     *
+     * Only attempts that show a score on the learner's own list count: an
+     * attempt whose score is held for review (D28) or hidden by the gradebook
+     * has none there, so it has none here either. With fewer than two there's
+     * no progress to show, and hasprogress is false.
+     *
+     * @param array $attempts attempt_row::export() results, in any order.
+     * @return array ['hasprogress' => bool, 'summary' => string, 'rows' => list of
+     *     ['attempt' => string, 'score' => string, 'change' => string, 'direction' => string]]
+     */
+    public static function progress(array $attempts): array {
+        $scored = [];
+        foreach ($attempts as $row) {
+            $shown = !empty($row['hasscore']) && empty($row['inreview']) && isset($row['scorepct']);
+            if ($shown && is_numeric($row['attempt'] ?? null)) {
+                $scored[] = $row;
+            }
+        }
+        if (count($scored) < 2) {
+            return ['hasprogress' => false, 'summary' => '', 'rows' => []];
+        }
+        // Attempt number, then id: the same key score_manager::previous_released()
+        // uses, so each row's change is against the attempt the scoring prompt
+        // called "previous".
+        usort($scored, static function (array $a, array $b): int {
+            return [(int) $a['attempt'], (int) $a['recid']] <=> [(int) $b['attempt'], (int) $b['recid']];
+        });
+
+        $rows = [];
+        $before = null;
+        foreach ($scored as $row) {
+            $pct = round((float) $row['scorepct'], 2);
+            if ($before === null) {
+                $change = get_string('progress_first', 'mod_presenterai');
+                $direction = 'first';
+            } else {
+                $delta = round($pct - $before, 2);
+                $points = format_float(abs($delta), 2, true, true);
+                if ($delta > 0) {
+                    $change = get_string('progress_up', 'mod_presenterai', $points);
+                    $direction = 'up';
+                } else if ($delta < 0) {
+                    $change = get_string('progress_down', 'mod_presenterai', $points);
+                    $direction = 'down';
+                } else {
+                    $change = get_string('progress_same', 'mod_presenterai');
+                    $direction = 'same';
+                }
+            }
+            $rows[] = [
+                'attempt' => (string) (int) $row['attempt'],
+                'score' => (string) $row['score'],
+                'change' => $change,
+                'direction' => $direction,
+            ];
+            $before = $pct;
+        }
+
+        $first = reset($rows);
+        $last = end($rows);
+        return [
+            'hasprogress' => true,
+            'summary' => get_string('progress_summary', 'mod_presenterai', (object) [
+                'first' => $first['score'],
+                'firstattempt' => $first['attempt'],
+                'last' => $last['score'],
+                'lastattempt' => $last['attempt'],
+            ]),
+            'rows' => $rows,
         ];
     }
 

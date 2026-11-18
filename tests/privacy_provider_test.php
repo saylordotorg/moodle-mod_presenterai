@@ -436,7 +436,7 @@ final class privacy_provider_test extends \core_privacy\tests\provider_testcase 
         );
         $this->assertArrayHasKey('aiservice', $items);
         $this->assertEqualsCanonicalizing(
-            ['audio', 'transcript', 'frames', 'slides', 'feedback'],
+            ['audio', 'transcript', 'frames', 'slides', 'feedback', 'previousattempt'],
             array_keys($items['aiservice']->get_privacy_fields())
         );
         $this->assertArrayHasKey('core_ai', $items);

@@ -389,6 +389,33 @@ final class scorer_test extends \advanced_testcase {
     }
 
     /**
+     * A second attempt's prompt carries the first attempt's released score and tips, fenced (0.8.0, D33).
+     *
+     * @return void
+     */
+    public function test_second_attempt_gets_the_previous_attempt(): void {
+        $client = self::fake_client([self::default_answer(), self::default_answer()]);
+        route_resolver::set_test_stt(self::fake_stt([self::TRANSCRIPT, self::TRANSCRIPT]));
+        route_resolver::set_test_client(route_resolver::PURPOSE_SCORE, $client);
+
+        $first = $this->recording_with_media(['attemptnumber' => 1, 'timecreated' => time() - 60]);
+        $this->score((int) $first->id);
+        [$system, $user] = $client->calls[0];
+        $this->assertStringNotContainsString('<previous_attempt>', $user, 'A first attempt has no previous one.');
+        $this->assertStringNotContainsString('PREVIOUS ATTEMPT', $system);
+
+        $second = $this->recording_with_media(['attemptnumber' => 2]);
+        $this->score((int) $second->id);
+        [$system, $user] = $client->calls[1];
+        $this->assertStringStartsWith(
+            "<previous_attempt>\nOverall score: 80%\nTips given:\n- Slow down.\n- Look up.\n</previous_attempt>\n\n<transcript>",
+            $user
+        );
+        $this->assertStringContainsString('PREVIOUS ATTEMPT', $system);
+        $this->assertStringNotContainsString('Slow down.', $system, 'Model-written tips are in the system prompt.');
+    }
+
+    /**
      * A client without structured output gets no schema, and the prompt still asks for JSON.
      *
      * @return void

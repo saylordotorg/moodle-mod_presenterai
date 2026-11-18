@@ -163,6 +163,67 @@ final class score_manager {
     }
 
     /**
+     * The learner's own previous released score at the same activity, for the scoring prompt (0.8.0, D33).
+     *
+     * Previous means the latest recording by the same learner in the same
+     * activity that comes before this one and whose current score (a
+     * teacher's, else the AI's) is released and has a percentage. "Before" is
+     * by attempt number, then id, the same key view_page::progress() sorts by,
+     * so the attempt the prompt compares with is the row before it in the
+     * learner's own progress table. A score held
+     * for review (D28) is skipped, because the learner hasn't seen it and the
+     * new feedback mustn't quote it. Nobody else's data is ever read.
+     *
+     * @param \stdClass $rec The presenterai_recording row being scored.
+     * @return array|null ['recordingid' => int, 'pct' => float, 'tips' => string[]], or null when there's none.
+     */
+    public static function previous_released(\stdClass $rec): ?array {
+        global $DB;
+
+        $attempt = (int) ($rec->attemptnumber ?? 0);
+        // The limit is deliberate: a learner rarely has more than a handful of
+        // attempts, and only the first earlier one with a released score is
+        // used, so 20 bounds the query without ever missing a realistic case.
+        $earlier = $DB->get_records_select(
+            'presenterai_recording',
+            'presenteraiid = :p AND userid = :u AND id <> :id AND status = :scored
+                AND (attemptnumber < :n1 OR (attemptnumber = :n2 AND id < :id2))',
+            [
+                'p' => (int) $rec->presenteraiid,
+                'u' => (int) $rec->userid,
+                'id' => (int) $rec->id,
+                'id2' => (int) $rec->id,
+                'scored' => self::RECORDING_STATUS_SCORED,
+                'n1' => $attempt,
+                'n2' => $attempt,
+            ],
+            'attemptnumber DESC, id DESC',
+            'id',
+            0,
+            20
+        );
+        if (empty($earlier)) {
+            return null;
+        }
+        $current = self::current_scores(array_keys($earlier));
+        foreach (array_keys($earlier) as $rid) {
+            $score = $current[(int) $rid] ?? null;
+            if ($score === null || $score->overallpct === null || !self::is_released($score)) {
+                continue;
+            }
+            $tips = [];
+            $decoded = json_decode((string) ($score->tips ?? ''), true);
+            foreach (is_array($decoded) ? $decoded : [] as $tip) {
+                if (is_scalar($tip) && trim((string) $tip) !== '') {
+                    $tips[] = trim((string) $tip);
+                }
+            }
+            return ['recordingid' => (int) $rid, 'pct' => (float) $score->overallpct, 'tips' => $tips];
+        }
+        return null;
+    }
+
+    /**
      * The criteria of a score row, in a shape the screens can rely on.
      *
      * @param \stdClass $score A presenterai_score row.
