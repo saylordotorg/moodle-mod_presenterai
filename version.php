@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'mod_presenterai';
-$plugin->version   = 2026111800;
-$plugin->release   = '0.8.0';
+$plugin->version   = 2026111801;
+$plugin->release   = '0.8.1';
 $plugin->maturity  = MATURITY_BETA;
 
 // Moodle 4.5 is a long term support release, so a higher floor would put the
