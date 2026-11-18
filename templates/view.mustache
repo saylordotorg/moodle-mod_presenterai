@@ -49,6 +49,7 @@
     * recorder - Context for mod_presenterai/recorder, or null.
     * config - Recorder settings for the data attributes, or null.
     * attempts - Context for mod_presenterai/attempts, plus count.
+    * progress - Context for mod_presenterai/progress: hasprogress, summary and rows (0.8.0).
 
     Example context (json):
     {
@@ -110,6 +111,11 @@
             "count": 0,
             "showdownloadoffnote": false,
             "rows": []
+        },
+        "progress": {
+            "hasprogress": false,
+            "summary": "",
+            "rows": []
         }
     }
 }}
@@ -163,6 +169,11 @@
     {{#showsubmissions}}
     <p class="mod-presenterai-submissions-link"><a href="{{submissionsurl}}">{{#str}}viewsubmissions, mod_presenterai{{/str}}</a></p>
     {{/showsubmissions}}
+    {{#progress}}
+    {{#hasprogress}}
+    {{> mod_presenterai/progress }}
+    {{/hasprogress}}
+    {{/progress}}
     {{#attempts}}
     {{#hasattempts}}
     <details class="mod-presenterai-allattempts mt-3" data-region="allattempts">

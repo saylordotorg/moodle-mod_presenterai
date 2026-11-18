@@ -172,6 +172,7 @@ class provider implements
             'frames' => 'privacy:metadata:aiservice:frames',
             'slides' => 'privacy:metadata:aiservice:slides',
             'feedback' => 'privacy:metadata:aiservice:feedback',
+            'previousattempt' => 'privacy:metadata:aiservice:previousattempt',
         ], 'privacy:metadata:aiservice');
 
         return $collection;

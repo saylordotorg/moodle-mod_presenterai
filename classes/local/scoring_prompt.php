@@ -45,6 +45,16 @@ namespace mod_presenterai\local;
  * strict mode refuses a property that's in one and not the other; the empty
  * string is how a model declines.
  *
+ * Since 0.8.0 every prompt also says three things whatever the rubric: judge
+ * the substance of the talk (a clear point, supported, soundly reasoned) in
+ * the content criterion; cite a few of the learner's words or name the moment
+ * in each criterion's feedback and end it with one next step; and never mark
+ * down an accent, a dialect or non-native grammar, outside a criterion that
+ * assesses language accuracy (D32). When the learner has a previous released
+ * score at the activity, its percentage and tips go in the user message,
+ * fenced like the transcript, so the overall comment can say what improved
+ * (D33).
+ *
  * @package    mod_presenterai
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -58,6 +68,12 @@ final class scoring_prompt {
 
     /** @var int Most topic title characters put in the prompt. */
     public const MAX_TOPIC_CHARS = 300;
+
+    /** @var int Most tips from the previous attempt put in the prompt. */
+    public const MAX_PREVIOUS_TIPS = 3;
+
+    /** @var int Most characters of each previous tip put in the prompt. */
+    public const MAX_PREVIOUS_TIP_CHARS = 400;
 
     /** @var string The schema's name, for the clients that send one. */
     public const SCHEMA_NAME = 'presentation_feedback';
@@ -79,6 +95,8 @@ final class scoring_prompt {
      *                 - wantsummary bool, whether to ask for visual_summary
      *                 - sources string[], the sources the learner was given to cite, may be empty
      *                 - minsources int, how many of them the learner must cite, 0 for no minimum
+     *                 - previous array|null, the learner's own previous released score at this activity:
+     *                   ['pct' => float, 'tips' => string[]], or null for none (0.8.0)
      * @return array ['system' => string, 'user' => string (the fenced slides and transcript, then the request),
      *     'schema' => ['name' => string, 'schema' => array]]
      */
@@ -94,6 +112,7 @@ final class scoring_prompt {
         $wantsummary = !empty($p['wantsummary']);
         $sourcelist = array_values(array_filter(array_map('strval', (array) ($p['sources'] ?? [])), 'strlen'));
         $minsources = max(0, min((int) ($p['minsources'] ?? 0), count($sourcelist)));
+        $previous = self::previous_block($p['previous'] ?? null);
 
         $context = rubric_manager::preset_hint((string) ($p['level'] ?? ''));
         if ($topic !== '') {
@@ -120,6 +139,9 @@ final class scoring_prompt {
         if ($slides !== '') {
             $user .= "<slides>\n" . self::fence(\core_text::substr($slides, 0, self::MAX_SLIDES_CHARS)) . "\n</slides>\n\n";
             $context .= ' ' . prompt_text::get('prompt:scoring_slides');
+        }
+        if ($previous !== '') {
+            $user .= "<previous_attempt>\n" . self::fence($previous) . "\n</previous_attempt>\n\n";
         }
         $user .= "<transcript>\n" . self::fence($transcript) . "\n</transcript>\n\n" . self::user_message();
 
@@ -156,14 +178,20 @@ final class scoring_prompt {
         $shape .= '}';
 
         $noinstructor = "\n\n" . prompt_text::get('prompt:scoring_noinstructor');
+        // Every rubric, whatever its criteria (0.8.0, D32).
+        $quality = "\n\n" . prompt_text::get('prompt:scoring_substance')
+            . "\n\n" . prompt_text::get('prompt:scoring_actionable')
+            . "\n\n" . prompt_text::get('prompt:scoring_fairness');
 
         $system = prompt_text::get('prompt:scoring_system', $context)
             . "\n"
             . $shape
             . $noinstructor
+            . $quality
             . "\n\n" . prompt_text::get('prompt:scoring_rubricheading') . "\n" . implode("\n", $rubriclines)
             . self::sources_block($sourcelist, $minsources)
             . ($visualblock !== '' ? "\n\n" . $visualblock : '')
+            . ($previous !== '' ? "\n\n" . prompt_text::get('prompt:scoring_previous') : '')
             . $datarule;
 
         return [
@@ -200,6 +228,40 @@ final class scoring_prompt {
     }
 
     /**
+     * The previous attempt's text for the fenced <previous_attempt> block (0.8.0, D33), or '' for none.
+     *
+     * It's the learner's own previous released score at the same activity:
+     * its percentage and up to three of its tips. The tips were written by a
+     * model from that attempt's transcript, so they go in the user message,
+     * fenced and named as data, never in the system prompt.
+     *
+     * @param mixed $previous ['pct' => float, 'tips' => string[]], or null.
+     * @return string
+     */
+    public static function previous_block($previous): string {
+        if (!is_array($previous) || !isset($previous['pct']) || !is_numeric($previous['pct'])) {
+            return '';
+        }
+        $pct = round((float) $previous['pct'], 1);
+        $lines = [prompt_text::get('prompt:scoring_previousscore', (string) ($pct == (int) $pct ? (int) $pct : $pct))];
+        $tips = [];
+        foreach ((array) ($previous['tips'] ?? []) as $tip) {
+            $tip = is_scalar($tip) ? trim(preg_replace('/\s+/u', ' ', (string) $tip)) : '';
+            if ($tip !== '') {
+                $tips[] = '- ' . \core_text::substr($tip, 0, self::MAX_PREVIOUS_TIP_CHARS);
+            }
+            if (count($tips) >= self::MAX_PREVIOUS_TIPS) {
+                break;
+            }
+        }
+        if (!empty($tips)) {
+            $lines[] = prompt_text::get('prompt:scoring_previoustips');
+            array_push($lines, ...$tips);
+        }
+        return implode("\n", $lines);
+    }
+
+    /**
      * The request that ends the user message, after the fenced learner material.
      *
      * @return string English prompt text.
@@ -216,7 +278,7 @@ final class scoring_prompt {
      * @return string
      */
     public static function fence(string $text): string {
-        return (string) preg_replace('~<(/?)\s*(transcript|slides)\b~i', '<$1-$2', $text);
+        return (string) preg_replace('~<(/?)\s*(transcript|slides|previous_attempt)\b~i', '<$1-$2', $text);
     }
 
     /**

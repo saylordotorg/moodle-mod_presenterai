@@ -262,6 +262,8 @@ final class attempt_row {
             // percentage and shows an empty cell rather than 0%.
             'hasscore' => $score !== null && $score->overallpct !== null,
             'score' => ($score !== null && $score->overallpct !== null) ? format_float((float) $score->overallpct, 2) . '%' : '',
+            // The same percentage as a number, for the progress summary (0.8.0), or null.
+            'scorepct' => ($score !== null && $score->overallpct !== null) ? (float) $score->overallpct : null,
             'hasfeedback' => $feedback !== null,
             'feedback' => $feedback ?? self::empty_feedback(),
             'feedbackaria' => get_string('feedback_toggle_aria', 'mod_presenterai', $recorded),

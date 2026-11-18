@@ -35,6 +35,13 @@ use mod_presenterai\local\vision\visual_prompts;
  * prompt built from a rubric without levels (the general preset, which every activity made before 0.6.0 falls back
  * to, and any stored rubric without levels) is byte for byte what it was.
  *
+ * Regenerated for 0.8.0, on purpose, from a speaking SME's review (DECISIONS.md D32, D33): every scoring prompt gains
+ * three paragraphs before the rubric (SUBSTANCE, EVIDENCE AND NEXT STEPS, FAIRNESS); the default rubric's
+ * "Content & Relevance" description names a clear main point supported by evidence and reasoning; and the new
+ * previous_attempt case pins the fenced previous attempt block and the rule that goes with it. Nothing else in the
+ * fixture changed: the visual prompts, the slide prompt, the presentation type hints, the level labels and every
+ * preset but the general one are byte for byte what they were in 0.7.2.
+ *
  * @package    mod_presenterai
  * @category   test
  * @copyright  2026 Saylor Academy
@@ -189,6 +196,12 @@ final class prompt_snapshot_test extends \advanced_testcase {
             'practice' => ['ptype' => 'practice', 'criteria' => rubric_manager::preset_criteria('practice', false),
                 'minseconds' => 20, 'maxseconds' => 90, 'durationseconds' => 60],
             'entertain' => ['ptype' => 'entertain', 'criteria' => rubric_manager::preset_criteria('entertain', false)],
+            'previous_attempt' => ['previous' => ['pct' => 62.5, 'tips' => [
+                'Open with your main claim.',
+                'Give one statistic with its source.',
+                'End by restating the claim.',
+                'A fourth tip that is dropped.',
+            ]]],
         ];
         $inputs = [];
         foreach ($variants as $name => $over) {
