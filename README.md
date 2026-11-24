@@ -89,9 +89,9 @@ The Moodle plugins directory review found six things ([issues 12 to 17](https://
 
 ## Demo video
 
-[![PresenterAI demo video](https://img.youtube.com/vi/pbhYyMntobc/maxresdefault.jpg)](https://youtu.be/pbhYyMntobc)
+[![PresenterAI demo video](https://img.youtube.com/vi/LkVn4rngX7I/maxresdefault.jpg)](https://youtu.be/LkVn4rngX7I)
 
-[Watch the three-minute demo on YouTube](https://youtu.be/pbhYyMntobc). It shows 0.5.4 on a development site, with a fully automatic workflow: an instructor adds the activity, sets the length limits and picks the course rubric, with review before release off; a learner records a speech; and a transcript, a score on every criterion and tips for next time come back within a few minutes. The instructor can still open any attempt and change a score, but nothing waits for them. The learner on camera is an AI-generated person, not a real student, and the narration is AI-generated.
+[Watch the two-minute demo on YouTube](https://youtu.be/LkVn4rngX7I). It shows 0.8 on a development site, in a pilot with a public speaking course. An instructor adds the activity, picks a presentation type and a rubric with five written levels per criterion, and lists the sources learners must cite aloud. A learner records a speech, and the AI scores every criterion with feedback that quotes what the learner said and ends with one next step. Your progress shows each attempt, scoring never marks down an accent, and an instructor can open any attempt and change any score. The attempts shown are test attempts, and the narration is AI-generated.
 
 ## What it does
 
