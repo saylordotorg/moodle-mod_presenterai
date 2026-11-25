@@ -528,6 +528,90 @@ final class scorer_test extends \advanced_testcase {
     }
 
     /**
+     * A reply that leaves spoken criteria out altogether fails for a teacher, not a 100 percent.
+     *
+     * The same attack as marking them not assessed, by omission: a learner who
+     * tells the model to "only return the Content criterion" must not get full
+     * marks on Content alone, so a spoken criterion the reply leaves out counts
+     * as not assessed for the guard.
+     *
+     * @return void
+     */
+    public function test_omitted_spoken_criteria_fail_for_a_teacher(): void {
+        global $DB;
+
+        $first = rubric_manager::default_criteria()[0]['name'];
+        route_resolver::set_test_stt(self::fake_stt([]));
+        route_resolver::set_test_client(route_resolver::PURPOSE_SCORE, self::fake_client([self::answer([$first => [5, true]])]));
+        $rec = $this->recording_with_media(['transcript' => self::TRANSCRIPT]);
+
+        $out = $this->score((int) $rec->id);
+
+        $this->assertSame('failed', $this->reload((int) $rec->id)->status);
+        $this->assertStringContainsString('too_few_assessed', $out);
+        $this->assertFalse($DB->record_exists('presenterai_score', ['recordingid' => $rec->id]));
+    }
+
+    /**
+     * One omitted spoken criterion is kept on the score as not assessed, so the teacher sees the gap.
+     *
+     * @return void
+     */
+    public function test_one_omitted_spoken_criterion_is_stored_as_not_assessed(): void {
+        global $DB;
+
+        $criteria = rubric_manager::default_criteria();
+        $scores = [];
+        foreach ($criteria as $criterion) {
+            $scores[$criterion['name']] = [4, true];
+        }
+        $omitted = $criteria[2]['name'];
+        unset($scores[$omitted]);
+        route_resolver::set_test_stt(self::fake_stt([]));
+        route_resolver::set_test_client(route_resolver::PURPOSE_SCORE, self::fake_client([self::answer($scores)]));
+        $rec = $this->recording_with_media(['transcript' => self::TRANSCRIPT]);
+
+        $this->score((int) $rec->id);
+
+        $score = $DB->get_record('presenterai_score', ['recordingid' => $rec->id], '*', MUST_EXIST);
+        $stored = score_manager::decode_criteria($score);
+        $this->assertCount(count($criteria), $stored, 'The omitted criterion vanished from the score.');
+        $byname = array_column($stored, null, 'name');
+        $this->assertArrayHasKey($omitted, $byname);
+        $this->assertFalse($byname[$omitted]['assessed']);
+        $this->assertSame(0, (int) $byname[$omitted]['score']);
+    }
+
+    /**
+     * fill_missing() adds each prompted spoken criterion the reply left out, and no visual one.
+     *
+     * @return void
+     */
+    public function test_fill_missing_adds_spoken_only(): void {
+        $prompted = [
+            'pace' => ['name' => 'Pace', 'max_score' => 4, 'visual' => false, 'counts' => true],
+            'content' => ['name' => 'Content', 'max_score' => 5, 'visual' => false, 'counts' => true],
+            'structure' => ['name' => 'Structure', 'max_score' => 5, 'visual' => false, 'counts' => true],
+            'body language & gestures' => [
+                'name' => 'Body Language & Gestures', 'max_score' => 5, 'visual' => true, 'counts' => false,
+            ],
+        ];
+        $returned = scorer::allowlist([['name' => 'Content', 'score' => 5, 'assessed' => true]], $prompted);
+
+        $out = scorer::fill_missing($returned, $prompted);
+
+        $this->assertSame([
+            ['name' => 'Content', 'score' => 5, 'max_score' => 5, 'feedback' => '', 'assessed' => true,
+                'visual' => false, 'counts' => true],
+            ['name' => 'Pace', 'score' => 0, 'max_score' => 4, 'feedback' => '', 'assessed' => false,
+                'visual' => false, 'counts' => true],
+            ['name' => 'Structure', 'score' => 0, 'max_score' => 5, 'feedback' => '', 'assessed' => false,
+                'visual' => false, 'counts' => true],
+        ], $out);
+        $this->assertFalse(scorer::enough_spoken_assessed($out), 'One of three spoken criteria, by omission, passed the guard.');
+    }
+
+    /**
      * An invented criterion and a visual one returned without visual evidence never reach the score.
      *
      * @return void
