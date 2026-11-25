@@ -2,3 +2,5 @@
 /.github export-ignore
 /.gitattributes export-ignore
 /docs/superpowers export-ignore
+/docs/marketplace-listing.md export-ignore
+/docs/marketplace-release-notes-*.md export-ignore
