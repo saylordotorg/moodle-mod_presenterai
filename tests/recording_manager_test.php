@@ -857,6 +857,51 @@ final class recording_manager_test extends \advanced_testcase {
     }
 
     /**
+     * A presigned S3 upload always signs its length, so a learner can't park gigabytes in the bucket.
+     *
+     * With no size declared the PUT used to be signed without Content-Length,
+     * so the one URL accepted an object of any size S3 takes (5 GB) until
+     * finalize or the sweep found it.
+     *
+     * @return void
+     */
+    public function test_s3_upload_without_a_size_is_refused(): void {
+        set_config('s3key', 'AKIAIOSFODNN7EXAMPLE', 'mod_presenterai');
+        set_config('s3secret', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'mod_presenterai');
+        set_config('s3bucket', 'presenterai-test', 'mod_presenterai');
+        set_config('s3region', 'us-east-1', 'mod_presenterai');
+
+        $gen = $this->getDataGenerator()->get_plugin_generator('mod_presenterai');
+        $rec = $gen->create_recording([
+            'presenteraiid' => $this->instance->id,
+            'userid' => $this->user->id,
+            'backend' => 's3',
+            'status' => recording_manager::STATUS_UPLOADING,
+            'attemptnumber' => 0,
+        ]);
+
+        foreach ([0, -1] as $size) {
+            $this->assert_refused(
+                'error:uploadsize',
+                fn() => recording_manager::start_upload(
+                    $rec,
+                    $this->instance,
+                    $this->course,
+                    $this->context,
+                    'recording',
+                    'webm',
+                    $size
+                ),
+                'An S3 upload was signed with no length (' . $size . ').'
+            );
+        }
+
+        $target = recording_manager::start_upload($rec, $this->instance, $this->course, $this->context, 'recording', 'webm', 1000);
+        $this->assertSame('PUT', $target['method']);
+        $this->assertStringContainsString('X-Amz-SignedHeaders=content-length%3Bhost', $target['url']);
+    }
+
+    /**
      * The download goes to the URL the store signed, byte for byte, under a readable name.
      *
      * download.php sends this URL as a raw Location header. Anything that

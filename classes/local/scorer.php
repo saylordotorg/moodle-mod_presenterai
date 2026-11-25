@@ -249,6 +249,10 @@ final class scorer {
         if (empty($criteria)) {
             throw new ai_exception('bad_response', false, 'The scoring response named no rubric criterion.');
         }
+        // A spoken criterion the reply left out is not assessed, so leaving one
+        // out shrinks the denominator no more than marking it not assessed does,
+        // and the guard below counts it (0.8.3).
+        $criteria = self::fill_missing($criteria, $prompted);
         if (!self::enough_spoken_assessed($criteria)) {
             // Most likely the learner's own words told the model to drop their
             // weak criteria from the denominator. A teacher can grade it by hand.
@@ -368,6 +372,43 @@ final class scorer {
             ];
         }
         return array_values($out);
+    }
+
+    /**
+     * Add every prompted spoken criterion the reply left out, as not assessed with a score of 0.
+     *
+     * The assessed only denominator means a criterion missing from the reply
+     * leaves rawmax just as an unassessed one does. Without this, a learner who
+     * tells the model, in their talk or on a slide, to return only the
+     * criterion they did best on would get full marks on that one criterion,
+     * because enough_spoken_assessed() only counted what came back. Visual
+     * criteria are left as they are: an absent visual criterion already means
+     * not assessed (D23).
+     *
+     * @param array $criteria The allowlisted criteria, as allowlist() returns them.
+     * @param array $prompted normalized name => resolved rubric criterion, for those in the prompt.
+     * @return array[] $criteria, then the missing spoken criteria in rubric order.
+     */
+    public static function fill_missing(array $criteria, array $prompted): array {
+        $returned = [];
+        foreach ($criteria as $criterion) {
+            $returned[rubric_manager::normalise_name((string) $criterion['name'])] = true;
+        }
+        foreach ($prompted as $key => $def) {
+            if (!empty($def['visual']) || isset($returned[$key])) {
+                continue;
+            }
+            $criteria[] = [
+                'name' => (string) $def['name'],
+                'score' => 0,
+                'max_score' => max(1, (int) $def['max_score']),
+                'feedback' => '',
+                'assessed' => false,
+                'visual' => false,
+                'counts' => !empty($def['counts']),
+            ];
+        }
+        return array_values($criteria);
     }
 
     /**

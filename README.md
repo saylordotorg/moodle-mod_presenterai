@@ -2,7 +2,15 @@
 
 An activity module in which a learner records a video or audio presentation in the browser, optionally presents a PDF slide deck while speaking, and receives a transcript, a rubric score and written per criterion feedback.
 
-> **Status: v0.8.2 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's old speech tool (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
+> **Status: v0.8.3 (beta).** It's ready to try on a test or staging site. It isn't in the Moodle plugins directory yet, and it's English only for now. 0.5.0 added the importer for SOLA's old speech tool (a command line tool, see [the runbook](docs/MIGRATION-RUNBOOK.md)). 0.5.1 stores the S3 secret encrypted. 0.5.2 answers the Moodle plugins directory review: a LICENSE file, explicit capability checks, stricter parameter types and database calls, and the model prompts and rubric defaults read through Moodle's string API. 0.5.3 keeps developer-only files out of the release ZIP and takes a developer's local paths out of the design docs. Releases, each with a ZIP and notes, are on the [releases page](https://github.com/saylordotorg/moodle-mod_presenterai/releases).
+
+## What's new in 0.8.3
+
+Security hardening from a red-team review, and corrections to these docs. No new table, column or setting, and nothing a learner or teacher sees changes unless something tries to game the score.
+
+- **Leaving a criterion out of the AI's answer no longer raises the score.** The score counts only the criteria the AI assessed, and an attempt already went to a teacher when the AI marked more than half of the spoken criteria "not assessed". But a criterion missing from the answer altogether wasn't counted at all, so a learner who talked the AI into returning only the criterion they did best on could get 100 percent. Now a spoken criterion the AI leaves out counts as not assessed: it's shown on the score with no mark, and if more than half are missing the attempt goes to a teacher to grade. DECISIONS.md D35.
+- **An S3 upload always has a size limit.** The browser always says how large a recording, audio track, frame sheet or deck is, and the presigned upload is signed for that size. A request that gave no size used to get an upload URL with no limit, which could have put an object of up to 5 GB in the bucket until the attempt was cleaned up. It's now refused.
+- **The docs say what the plugin does.** This README and the plugins directory listing said every AI call came "with a CSV export and an optional monthly spend cap". Neither exists. The spend per learner is on the Submissions page, and AI calls are limited per learner per hour (scoring 20, transcription 12 per 10 minutes, image analysis 10 per 10 minutes); there's no site-wide cap on spend. The CI line under Contributing now names the Moodle versions CI really runs.
 
 ## What's new in 0.8.2
 
@@ -91,7 +99,7 @@ The Moodle plugins directory review found six things ([issues 12 to 17](https://
 
 [![PresenterAI demo video](https://img.youtube.com/vi/LkVn4rngX7I/maxresdefault.jpg)](https://youtu.be/LkVn4rngX7I)
 
-[Watch the two-minute demo on YouTube](https://youtu.be/LkVn4rngX7I). It shows 0.8 on a development site, in a pilot with a public speaking course. An instructor adds the activity, picks a presentation type and a rubric with five written levels per criterion, and lists the sources learners must cite aloud. A learner records a speech, and the AI scores every criterion with feedback that quotes what the learner said and ends with one next step. Your progress shows each attempt, scoring never marks down an accent, and an instructor can open any attempt and change any score. The attempts shown are test attempts, and the narration is AI-generated.
+[Watch the two-minute demo on YouTube](https://youtu.be/LkVn4rngX7I). It shows 0.8 on a development site, in a pilot with a public speaking course. An instructor adds the activity, picks a presentation type and a rubric with five written levels per criterion, and lists the sources learners must cite aloud. A learner records a speech, and the AI scores every criterion with feedback that quotes what the learner said and ends with one next step. Your progress shows each attempt, scoring never marks down an accent, and an instructor can open any attempt and change any score. The attempts shown are test attempts, and the narration is AI-generated. Since the video, 0.8.1 reworded the message shown while an attempt is being scored, 0.8.2 tells transcription which language learners speak, and 0.8.3 is security fixes and corrections to these docs; the steps the video walks through work the same way.
 
 ## What it does
 
@@ -105,7 +113,7 @@ The Moodle plugins directory review found six things ([issues 12 to 17](https://
 
 ## What makes it different from a generic assignment
 
-- **The feedback is the product.** It is written for a learner who may have nobody to ask, so every criterion names something specific that was observed and one concrete action, rather than a grade and a adjective.
+- **The feedback is the product.** It is written for a learner who may have nobody to ask, so every criterion names something specific that was observed and one concrete action, rather than a grade and an adjective.
 - **Slides stay in sync.** The timeline of slide advances is captured while recording, so playback is a real reconstruction of the presentation rather than a video of a face.
 - **Nothing is assessed from evidence that does not exist.** If the visual evidence is too weak to judge body language, those criteria are removed from the prompt entirely and from the denominator, and the learner is told why that part of their feedback is missing. A learner is never scored zero for something that was never looked at.
 
@@ -194,7 +202,7 @@ Other things worth knowing:
 - Core AI's per user policy acceptance is not enforced by core on the plugin's behalf. If you want that consent step, enable it in this plugin's settings.
 - All AI work runs in a scheduled or adhoc task, never in the learner's web request.
 
-Every AI call is logged with the route, provider, model, token counts, image count, audio seconds and an estimated cost, with a CSV export and an optional monthly spend cap.
+Every AI call is logged with the route, provider, model, token counts, image count, audio seconds and an estimated cost, and the Submissions page shows each learner's estimated AI spend in the activity. There's no CSV export of the log and no site-wide spend cap. What bounds spend is per learner: each learner's AI calls are rate limited (scoring 20 an hour, transcription 12 and image analysis 10 per 10 minutes), the activity's attempt limit, and at most 10 unfinished attempts open at once. A site that needs a hard monthly ceiling should set one with its AI provider.
 
 ## Privacy
 
@@ -216,7 +224,7 @@ Download `mod_presenterai.zip` from the [latest release](https://github.com/sayl
 
 ## Contributing
 
-Issues and pull requests are welcome. CI runs `moodle-plugin-ci` (PHPUnit, Behat, phpcs, phpdoc, grunt) against Moodle 4.5 and main on PHP 8.1 through 8.3, and a pull request that does not pass it will not be merged. Every pull request that changes code also gets an automated Claude code review, and mentioning `@claude` in a comment asks Claude about the change; both need the repository's `ANTHROPIC_API_KEY` secret. New behavior needs a test; the test suite is the acceptance gate for every phase in the implementation plan, not a formality after it.
+Issues and pull requests are welcome. CI runs `moodle-plugin-ci` (PHPUnit, phpcs, phpdoc, mustache lint, grunt, and its Behat step, though the plugin has no Behat features yet) on PostgreSQL against Moodle 4.5 (PHP 8.1 and 8.3), 5.0, 5.1 and 5.3 (PHP 8.3), and a pull request that does not pass it will not be merged. Every pull request that changes code also gets an automated Claude code review, and mentioning `@claude` in a comment asks Claude about the change; both need the repository's `ANTHROPIC_API_KEY` secret. New behavior needs a test; the test suite is the acceptance gate for every phase in the implementation plan, not a formality after it.
 
 ## Licence
 
