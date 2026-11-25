@@ -200,6 +200,7 @@ $string['error:unsafeendpoint'] = 'This endpoint isn\'t allowed. It must use htt
 $string['error:uploadbusy'] = 'Another part of this upload is still being written. Try again in a moment.';
 $string['error:uploadid'] = 'That upload id is not one this site issued.';
 $string['error:uploadmissing'] = 'The recording did not finish uploading. Try uploading it again.';
+$string['error:uploadsize'] = 'The upload did not say how large it is. Reload the page and try again.';
 $string['error:uploadtoolarge'] = 'This recording is larger than this site allows, which is {$a}. Record a shorter presentation, or ask your site administrator to raise the limit.';
 $string['errorstorenotconfigured'] = 'The "{$a}" storage backend is selected but is not fully configured, so the plugin has refused to read or write media rather than quietly using the other backend. Fill in the missing settings in Site administration, or, if recordings are still stored there, restore the settings they were made with.';
 $string['errorunknownbackend'] = 'Unknown storage backend "{$a}". This site is asking for a storage backend the plugin does not have, either because the setting holds a value nothing recognises or because a recording was made by a newer version of the plugin.';

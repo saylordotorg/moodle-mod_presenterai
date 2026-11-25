@@ -533,6 +533,12 @@ final class recording_manager {
 
         $store = store_factory::for_recording($rec);
         $chunked = !$store->supports_direct_upload();
+        if (!$chunked && $sizebytes <= 0) {
+            // A presigned PUT signs the declared length, so S3 refuses any other
+            // size. With no length to sign, one URL would take an object of any
+            // size S3 accepts until finalize or the sweep found it (0.8.3).
+            throw new \moodle_exception('error:uploadsize', 'mod_presenterai');
+        }
 
         if (!$isdeck) {
             self::commit_pending_deck($rec, $ctx, $course);
